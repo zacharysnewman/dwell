@@ -54,6 +54,10 @@ const EXTRAPOLATE_MS: f64 = 250.0;
 /// A position and rotation.
 type Placed = (DVec3, DQuat);
 
+/// A light source riding a body ([`Pieces::light_cells`]): its cell's centre (world), the body's
+/// up, its state, a flicker seed and the body's turn.
+pub type LightCell = ([f64; 3], [f64; 3], StateId, u32, DQuat);
+
 struct Piece {
     cells: Vec<PieceCell>,
     /// Its cells' offsets and states (this client's), for its settle glide, its edits and aiming
@@ -301,7 +305,8 @@ impl Pieces {
     /// "Placing torches on dynamic bodies should work too"), at the poses drawn at `now_ms`: each lit
     /// cell's centre (world), the body's up there (the face's up turned with it), its state and a
     /// flicker seed of its body and cell.
-    pub fn light_cells(&self, now_ms: f64) -> Vec<([f64; 3], [f64; 3], StateId, u32)> {
+    /// Last, the body's turn (grid → world), to place what leans in its grid (a wall torch's flame).
+    pub fn light_cells(&self, now_ms: f64) -> Vec<LightCell> {
         let at = self.draw_ms(now_ms);
         let mut out = Vec::new();
         for (&id, p) in &self.map {
@@ -322,7 +327,7 @@ impl Pieces {
                     ^ (c[0] as u32).wrapping_mul(0x9e37_79b1)
                     ^ (c[1] as u32).wrapping_mul(0x85eb_ca77)
                     ^ (c[2] as u32).wrapping_mul(0xc2b2_ae3d);
-                out.push((centre.to_array(), up.to_array(), m, seed));
+                out.push((centre.to_array(), up.to_array(), m, seed, rotation));
             }
         }
         out

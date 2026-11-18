@@ -1049,6 +1049,7 @@ fn shaped_voxel(
     k: &Kind,
     [x, y, z]: [i32; 3],
     damage: Option<&DamageView>,
+    opened: &dyn Fn([i32; 3]) -> bool,
 ) {
     let Some(def) = k.def else {
         return;
@@ -1063,7 +1064,9 @@ fn shaped_voxel(
             }
             let (axis, sign) = FACES[tag];
             let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
-            !face_covered(def, tag, cover(&cells.kind(nx, ny, nz)))
+            // A side toward a damaged block draws (BUGS.md #217, as a cube's: #187): its
+            // carving may show it.
+            !face_covered(def, tag, cover(&cells.kind(nx, ny, nz))) || opened([nx, ny, nz])
         })
         .collect();
     let polys: Vec<Vec<[f64; 3]>> = faces
@@ -3476,7 +3479,8 @@ fn mesh_cells(
                         .then(|| ramp_hits.get(&[cx, cy, cz]))
                         .flatten()
                         .map(|&i| &damaged[i].2);
-                    shaped_voxel(&mut opaque, &cells, &k, [cx, cy, cz], hit);
+                    let opened = |n: [i32; 3]| damaged_here.contains(&n) || border.contains(&n);
+                    shaped_voxel(&mut opaque, &cells, &k, [cx, cy, cz], hit, &opened);
                 }
                 if let Some(cut) = (!carved.is_empty())
                     .then(|| carved.get(&[cx, cy, cz]))

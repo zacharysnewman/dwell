@@ -17,6 +17,16 @@ Found 2026-11-18 (not reported): the mesher's style kept a block's facing only f
 Owner, 2026-11-18: "One bug I'd love to prioritize is slopes show holes when damaging block edges next to them." Owner
 should see: hitting a block beside a slope (its damage look, cracks and dents near the shared edge) leaves the slope
 drawn whole, no gap or see-through hole where they meet. Priority (owner); next after the wall torch.
+Fixed 2026-11-18: a slope's (shaped cell's) sides were culled where its neighbour covered them, damaged or not; the
+cube (#187) and the log (#190) already drew theirs toward a damaged block. `shaped_voxel` now draws a side toward a
+damaged cell (in the chunk or its border). Test `dwell-mesh` `a_slopes_side_toward_a_damaged_block_draws` (both faces),
+red before.
+Owner, 2026-11-18, on the wall torch screenshot: "The flame doesn't line up over the torch in that wall torch
+screenshot." Fixed 2026-11-18: the flame stood over the cell's middle, the stick's top (sheared toward the wall below
+the cell's top) beside it; the flame now moves by the lean at its base (`dwell_blocks::lean_shift`, `Cross::lean_out_m`),
+on the ground and on bodies (turned with the body). Test `dwell-mesh` `a_wall_torchs_flame_sits_on_its_drawn_stick`
+(both faces). Browser checks: the flame on the stick's top; a pickaxed stone beside a slope shows the slope's side in
+its carved edge.
 
 ### 216. A cannon on a body splits when the body breaks apart under it
 

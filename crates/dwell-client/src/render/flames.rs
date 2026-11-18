@@ -56,7 +56,12 @@ pub fn placed_flames(world: &dwell_world::VoxelWorld, eye: [f64; 3]) -> Vec<Plac
             let lo = dwell_world::pos_of_cell(c);
             let up = face.up();
             let rise = f64::from(look.base_m) - 0.5 * dwell_world::CELL[1];
-            let base = std::array::from_fn(|k| lo[k] + 0.5 * dwell_world::CELL[k] + up[k] * rise);
+            // Over a wall torch's leaning stick (owner, 2026-11-18: "The flame doesn't line up over
+            // the torch").
+            let lean = dwell_blocks::lean_shift(m, f64::from(look.base_m));
+            let base = std::array::from_fn(|k| {
+                lo[k] + 0.5 * dwell_world::CELL[k] + up[k] * rise + lean[k]
+            });
             Some(PlacedFlame {
                 base,
                 face,

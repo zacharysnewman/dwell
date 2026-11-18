@@ -6003,7 +6003,7 @@ impl<S: Scene> Game<S> {
         flames.extend(
             riding
                 .iter()
-                .filter_map(|&(c, up, m, seed)| body_flame(c, up, m, seed, camera_eye)),
+                .filter_map(|&(c, up, m, seed, turn)| body_flame(c, up, m, seed, turn, camera_eye)),
         );
         self.scene.borrow_mut().set_placed_flames(flames);
         // The portals' motes near the eye (BIFACIAL_WORLD.md §12.1).
@@ -6051,24 +6051,21 @@ impl<S: Scene> Game<S> {
         );
         // And the torches riding bodies (BUGS.md #212).
         let reach = dwell_look::lights::LIGHTS.shadows.placed_m;
-        placed.extend(
-            self.pieces
-                .light_cells(now_ms)
-                .into_iter()
-                .filter_map(|(c, _, m, seed)| {
-                    let d = (0..3)
-                        .map(|k| (c[k] - camera_eye[k]).powi(2))
-                        .sum::<f64>()
-                        .sqrt();
-                    let source = dwell_blocks::try_info(m)?.light?;
-                    (d <= reach).then_some(crate::render::lights::PlacedLight {
-                        pos: c,
-                        source,
-                        seed,
-                        riding: true,
-                    })
-                }),
-        );
+        placed.extend(self.pieces.light_cells(now_ms).into_iter().filter_map(
+            |(c, _, m, seed, _)| {
+                let d = (0..3)
+                    .map(|k| (c[k] - camera_eye[k]).powi(2))
+                    .sum::<f64>()
+                    .sqrt();
+                let source = dwell_blocks::try_info(m)?.light?;
+                (d <= reach).then_some(crate::render::lights::PlacedLight {
+                    pos: c,
+                    source,
+                    seed,
+                    riding: true,
+                })
+            },
+        ));
         self.scene.borrow_mut().set_placed_lights(placed);
         // The hulls' dry air near the eye: no water drawn there (docs/CANNONS.md §12 H3).
         let hulls = self
@@ -8157,6 +8154,7 @@ fn body_flame(
     up: [f64; 3],
     m: StateId,
     seed: u32,
+    turn: dwell_physics::DQuat,
     eye: [f64; 3],
 ) -> Option<crate::render::flames::PlacedFlame> {
     use dwell_look::flames::{FLAME_TUNABLES, FLAMES, find};
@@ -8167,8 +8165,10 @@ fn body_flame(
         return None;
     }
     let rise = f64::from(look.base_m) - 0.5 * dwell_world::CELL_H;
+    // Over a wall torch's leaning stick, its lean turned with the body.
+    let lean = (turn * DVec3::from(dwell_blocks::lean_shift(m, f64::from(look.base_m)))).to_array();
     Some(crate::render::flames::PlacedFlame {
-        base: std::array::from_fn(|k| c[k] + up[k] * rise),
+        base: std::array::from_fn(|k| c[k] + up[k] * rise + lean[k]),
         face: FaceFrame::at_height(c[1]),
         source,
         seed,
