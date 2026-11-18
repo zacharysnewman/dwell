@@ -947,6 +947,9 @@ pub struct Game<S: Scene> {
     /// The moving body's cell under the crosshair, when nearer than the block aimed at
     /// (docs/BUILT_BODIES.md §4).
     body_target: Option<crate::pieces::BodyHit>,
+    /// A held Place's stroke on a moving body (BUGS.md #209): the body, the cells sent to it, the
+    /// block, and when it began; each frame it places against the face aimed at, once a cell.
+    body_drag: Option<BodyDrag>,
     /// When the last body edit went (ms), for the edit interval.
     body_edit_ms: f64,
     /// When the last punch short of breaking was sent (ms; `breaking.hand.repeatS` apart).
@@ -1280,6 +1283,7 @@ impl<S: Scene> Game<S> {
             proxies: HashSet::default(),
             pieces: crate::pieces::Pieces::default(),
             body_target: None,
+            body_drag: None,
             body_edit_ms: f64::NEG_INFINITY,
             punch_ms: None,
             glides: crate::settle_glide::Glides::default(),
@@ -3181,7 +3185,7 @@ impl<S: Scene> Game<S> {
         // A built body takes it; so does a natural one afloat (felled logs: it becomes a raft, owner
         // 2026-11-18), which the server decides (on land it refuses).
         let builds = self.pieces.kind_of(b.body).is_some();
-        let material = self.selected_material();
+        let material = self.body_material(&b);
         if action == EditAction::Place && (!builds || material == 0) {
             self.sounds.push(sound_event(SoundKind::Deny));
             return false;
@@ -3230,6 +3234,61 @@ impl<S: Scene> Game<S> {
         true
     }
 
+    /// The selected block as it goes on body `b`: faced by the look in the body's grid (BUGS.md
+    /// #211), 0 without one.
+    fn body_material(&self, b: &crate::pieces::BodyHit) -> StateId {
+        let inv = b.rotation.inverse();
+        let to_grid = |v: [f64; 3]| (inv * DVec3::from(v)).to_array();
+        self.interaction
+            .faced_for_body(&to_grid, FaceFrame::at_height(b.position.y))
+            .unwrap_or(0)
+    }
+
+    /// A held Place's stroke on a moving body (BUGS.md #209; owner, 2026-11-18: "Drag building on
+    /// dynamic bodies seems to break after the first few and just keeps trying to place in the same
+    /// spot"): once held a moment, each frame the face of that body aimed at gets the block beside it,
+    /// one request a cell (body edits aren't predicted: the cell shows when the server answers) at the
+    /// edit pace, so sweeping the aim lays a row.
+    fn body_drag_build(&mut self, now_ms: f64) {
+        let Some(d) = &self.body_drag else {
+            return;
+        };
+        if now_ms - d.started_ms < BODY_DRAG_HOLD_MS
+            || now_ms - self.body_edit_ms < players::BLOCK_EDIT_INTERVAL_MS as f64
+        {
+            return;
+        }
+        let Some(b) = self.body_target.filter(|b| b.body == d.body) else {
+            return;
+        };
+        let dir = dwell_world::edit::FACE_DIRS[usize::from(b.face)];
+        let new = [b.cell[0] + dir[0], b.cell[1] + dir[1], b.cell[2] + dir[2]];
+        if body_drag_skips(&d.sent, new, self.pieces.block_at(b.body, new).is_some()) {
+            return;
+        }
+        let material = self.body_material(&b);
+        if material == 0 {
+            return;
+        }
+        self.body_edit_ms = now_ms;
+        if let Some(d) = &mut self.body_drag {
+            d.sent.push(new);
+        }
+        self.bodies
+            .swing_arms(dwell_characters::animator::Swing::Place);
+        self.outbox
+            .borrow_mut()
+            .push(Send::Control(Message::BodyEditRequest(
+                dwell_protocol::BodyEditRequest {
+                    body: b.body,
+                    cell: b.cell.map(|v| v as i16),
+                    face: b.face,
+                    action: dwell_protocol::BlockEditAction::Place,
+                    material,
+                },
+            )));
+    }
+
     /// Breaks or places as [`edit`](Self::edit), with the button held by `holder`: a place
     /// starts a drag stroke from the block placed (docs/ITEMS.md §5), built on each frame until
     /// `holder` lets go ([`release_place`](Self::release_place)).
@@ -3259,6 +3318,16 @@ impl<S: Scene> Game<S> {
         {
             let lined_up = b.rotation.angle_between(dwell_physics::DQuat::IDENTITY) < 1e-3;
             let placed = self.edit(action, now_ms);
+            // A moving body (afloat, turned): the stroke builds on in its own grid (BUGS.md #209).
+            if placed && !lined_up {
+                let dir = dwell_world::edit::FACE_DIRS[usize::from(b.face)];
+                let new = [b.cell[0] + dir[0], b.cell[1] + dir[1], b.cell[2] + dir[2]];
+                self.body_drag = Some(BodyDrag {
+                    body: b.body,
+                    sent: vec![new],
+                    started_ms: now_ms,
+                });
+            }
             if placed && lined_up {
                 let dir = dwell_world::edit::FACE_DIRS[usize::from(b.face)];
                 let new = [b.cell[0] + dir[0], b.cell[1] + dir[1], b.cell[2] + dir[2]];
@@ -3506,6 +3575,7 @@ impl<S: Scene> Game<S> {
 
     pub fn release_place(&mut self, holder: dwell_game::build_drag::Holder) {
         self.drag.release(holder);
+        self.body_drag = None;
         self.blueprints.held = false;
         // The weapon's block (swordplay): a tap turns the stance, else the block drops.
         if self.guard_input.pressed()
@@ -3653,7 +3723,9 @@ impl<S: Scene> Game<S> {
     fn drag_build(&mut self, eye: Option<[f64; 3]>, dir: [f64; 3], now_ms: f64) {
         if self.dead || !self.region.enabled {
             self.drag.cancel();
+            self.body_drag = None;
         }
+        self.body_drag_build(now_ms);
         // A first place waiting for the body: it goes once the body is clear of it.
         if let Some(w) = self.drag.waiting() {
             let m = Message::BlockEditRequest(w.request.clone());
@@ -7060,6 +7132,23 @@ fn own_body_draw(active: bool, placed_from_eyes: Option<f64>) -> (bool, bool) {
     (active && !whole, active && whole)
 }
 
+/// A held Place's stroke on a moving body ([`Game::body_drag_build`]).
+#[derive(Clone, Debug)]
+struct BodyDrag {
+    body: u32,
+    /// The cells (its grid) a place was sent for in this stroke.
+    sent: Vec<[i32; 3]>,
+    started_ms: f64,
+}
+
+/// How long Place is held before a stroke on a moving body builds on (a click places one block).
+const BODY_DRAG_HOLD_MS: f64 = 150.0;
+
+/// Whether a body stroke skips cell `new`: sent already this stroke, or filled.
+fn body_drag_skips(sent: &[[i32; 3]], new: [i32; 3], filled: bool) -> bool {
+    filled || sent.contains(&new)
+}
+
 /// The helm camera's blend after `dt` s (docs/CANNONS.md C5): toward 1 at the helm, toward 0 off it,
 /// the whole way in `ease_s` (at once for none).
 fn helm_blend_step(blend: f64, at_helm: bool, dt: f64, ease_s: f64) -> f64 {
@@ -7298,6 +7387,16 @@ mod tests {
         assert_eq!(v[0]["npc"], false);
         assert_eq!(v[0]["at"][2], 3.0);
         assert_eq!(v[1]["npc"], true);
+    }
+
+    #[test]
+    fn a_body_stroke_sends_each_cell_once() {
+        // BUGS.md #209: it kept placing at the same spot (the body's cell shows only when the
+        // server answers). face-a-only: cells of a body's own grid, no face.
+        let sent = vec![[1, 1, 0]];
+        assert!(body_drag_skips(&sent, [1, 1, 0], false), "sent already");
+        assert!(body_drag_skips(&sent, [2, 1, 0], true), "filled");
+        assert!(!body_drag_skips(&sent, [2, 1, 0], false), "a new cell");
     }
 
     dwell_world::both_faces!(

@@ -361,6 +361,41 @@ impl BlockInteraction {
         Some((cell, self.faced(slot, slot.material, cell)))
     }
 
+    /// The selected item's state as it goes on a moving body (BUGS.md #211; owner, 2026-11-18: "Placing
+    /// a cannon should always face the cardinal direction placed, even on dynamic bodies"): its
+    /// `facing` turned by the look as the body's grid sees it (`to_grid` turns a world direction into
+    /// that grid), the nearest of the body's four sides; on face `face` its mirror as the body's cells
+    /// are. None without a selected block.
+    pub fn faced_for_body(
+        &self,
+        to_grid: &dyn Fn([f64; 3]) -> [f64; 3],
+        face: FaceFrame,
+    ) -> Option<StateId> {
+        use crate::items::ItemFacing;
+        let slot = self.palette.get(self.selected)?;
+        let m = slot.material;
+        if m == 0 {
+            return None;
+        }
+        let look = to_grid(view_direction(self.yaw, 0.0, self.face));
+        let m = match slot.facing {
+            ItemFacing::None => m,
+            ItemFacing::Away => {
+                dwell_blocks::with_property(m, "facing", compass(look)).unwrap_or(m)
+            }
+            ItemFacing::Toward => {
+                dwell_blocks::with_property(m, "facing", compass(look.map(|v| -v))).unwrap_or(m)
+            }
+        };
+        Some(
+            if slot.facing == ItemFacing::None && slot.upper.is_empty() {
+                m
+            } else {
+                face.state(m)
+            },
+        )
+    }
+
     /// `m`, a slot's face-local state, as it goes in `cell`: its `facing` turned by the look (a
     /// slope: uphill ahead, owner 2026-10-30), and in face B's mirror there.
     fn faced(&self, slot: &PaletteSlot, m: StateId, cell: [i32; 3]) -> StateId {
@@ -514,6 +549,44 @@ mod tests {
         let ladder = slots.iter().find(|s| s.ladder).expect("a ladder slot");
         assert_eq!(ladder.drag, crate::items::ItemDrag::Vertical);
     }
+
+    dwell_world::both_faces!(
+        fn a_cannon_on_a_turned_body_faces_the_way_it_was_placed(f: FaceFrame) {
+            // BUGS.md #211 (owner, 2026-11-18: "Placing a cannon should always face the cardinal
+            // direction placed, even on dynamic bodies").
+            let mut b = BlockInteraction::new();
+            b.selected = b
+                .palette
+                .iter()
+                .position(|s| dwell_blocks::block_of(s.material).name == "dwell:cannon")
+                .expect("the cannon in the palette");
+            b.face = f;
+            // Looking along the world's +X (yaw 90).
+            b.yaw = 90.0;
+            let look = view_direction(90.0, 0.0, f);
+            let want = |facing: &str| {
+                let m =
+                    dwell_blocks::with_property(b.palette[b.selected].material, "facing", facing)
+                        .unwrap();
+                f.state(m)
+            };
+            // An unturned body: the world's way, east.
+            let same = |v: [f64; 3]| v;
+            assert_eq!(b.faced_for_body(&same, f), Some(want(compass(look))));
+            // A body turned a quarter about +Y: the world's +X is its grid's +Z, south — which
+            // the body turns back to the world's +X.
+            let turned = |v: [f64; 3]| [-v[2], v[1], v[0]];
+            assert_eq!(
+                b.faced_for_body(&turned, f),
+                Some(want(compass(turned(look))))
+            );
+            assert_ne!(
+                compass(turned(look)),
+                compass(look),
+                "the grid's way differs from the world's"
+            );
+        }
+    );
 
     #[test]
     fn mounts_ladders_on_the_clicked_face_facing_out_of_it_or_facing_the_player_on_tops() {

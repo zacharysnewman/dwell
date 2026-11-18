@@ -98,7 +98,19 @@ Last updated: 2026-11-11 (0.52.108).
   compatibility line; questions first: how deep, everywhere or the open sea only.) Owner should see: oceans deep
   enough to sail and sink ships in.
   Owner, 2026-11-18: "We also want to not draw water in that "air" area." Owner should see: no lake water drawn
-  inside a floating hull's air (the hull dry inside), only the hull's own water once it floods (H3).
+  inside a floating hull's air (the hull dry inside), only the hull's own water once it floods (H3). Owner's answers
+  (2026-11-18): H3 "Hide the lake first" (client only; the inner water surface after, with its protocol change); sea
+  depth "Show me options first" (measure today's sea depths across seeds, screenshots of a few deeper versions, before
+  any worldgen change).
+  Owner, 2026-11-18: "Drag building on dynamic bodies seems to break after the first few and just keeps trying to
+  place in the same spot." → BUGS.md #209. Owner, 2026-11-18: "Breaking one cannon block, should break the whole cannon not 1
+  of the 4 blocks. Placing a cannon should always face the cardinal direction placed, even on dynamic bodies." →
+  BUGS.md #210, #211. Owner, 2026-11-18: "Placing torches on dynamic bodies should work too." → #212.
+  Owner, 2026-11-18: "We need sound effects and VFX for cannon fire." Answers: "Flash + smoke puff" (a brief muzzle
+  flash and a drifting grey smoke cloud at the barrel's mouth, dynamite's looks scaled down, data per cannon); "A deep
+  boom" (a synthesized cannon boom, shorter and lower than dynamite's, heard far). Owner should see: a cannon firing
+  booms, with a muzzle flash and a puff of smoke at its barrel. Owner, 2026-11-18: "Where's the ship's wheel? I can't find it in creative?" (It
+  was the item "Helm", a plank cube in the Shapes; renamed "Ship's wheel".)
   Owner, 2026-11-18: "Also, planks look exactly like build platform, we should change build platform to look
   distinctly different from planks." Owner should see: a build platform block that reads at a glance as not planks.
 - **Owner, 2026-11-17 (leaves):** "it's that leaves should be 1 hit I'm realizing, since they don't adapt to damage."
