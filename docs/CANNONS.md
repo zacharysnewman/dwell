@@ -228,3 +228,31 @@ velocity setter, it should exert continuous force as it flies around it, in its 
   force is the body's mass × it. Test: `tests/ships.rs` `a_big_boat_sails_about_as_fast_as_a_small_raft` (both faces:
   8 × 12 × 2 against 4 × 4 × 1 in 3 s; with a fixed 16 kN the big one went 1.3 m to the raft's 8.4 m).
 
+## 12. Hull air, flooding and sinking (design, owner 2026-11-18)
+
+The owner: "I think we'll add sinking and water filling the hull, which would also make boats more buoyant? I think
+based on air inside?" Answers: open-topped hulls count; water comes in "Through holes, by hole size"; the water inside
+is drawn ("Yes, a water surface"); a sunk ship "Settles into the world".
+
+- **H1 — hull air.** A body's **air cells**: the empty cells of its grid's bounding box that water from outside can't
+  reach through its sides or bottom (a flood from the box's sides and floor through empty cells, never in through the
+  top: an open-topped hull's inside is air, a cell above its rim is outside). Each air cell under the water line
+  buoys the body as a filled cell does (its volume of the liquid), and counts in its density for afloat.
+- **H2 — flooding and sinking.** An opening (an air cell's side or floor neighbour that is outside, below the water
+  line outside) lets water in at a rate per opening (data), water over the rim pours in; the hull's water (a volume,
+  per compartment) fills its air cells from the bottom, they stop buoying; a ship that sinks and comes to rest on the
+  bed settles into the world as other pieces do.
+- **H3 — the inner water.** The world's water is not drawn inside a hull's air (owner, 2026-11-18: "We also want to
+  not draw water in that "air" area"); the hull's own water is drawn there at its fill level, tilting with it.
+
+### H1 as built (2026-11-18)
+
+`felling::air_cells(cells, up_step)`: a priority flood over the body's grid box — each empty boundary cell's spill is
+its own row's height (one above the top row for the top face), a cell's spill the higher of its own height and the
+lowest beside it — and a cell is air below its spill. Cached per body by its cells' fingerprint
+(`Felling::air`, pruned with the bodies). In `Felling::float` each air cell under the liquid buoys the body as a cell
+does, and counts in its volume for `afloat`. Tests: `felling::tests::an_open_topped_hulls_inside_is_air_and_a_hole_lets_it_out`
+(both faces: the inside of an open box, none behind a side hole, a mast's cells above the rim outside, none for a
+flat raft); `tests/ships.rs` `an_open_hulls_air_floats_it_higher_than_the_same_hull_holed` (both faces; red without
+the air: the sealed hull, a plank heavier, rode lower).
+
