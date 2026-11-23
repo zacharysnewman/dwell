@@ -56,7 +56,9 @@ item). The sections' order is a proposal for the owner to confirm. The hold is l
   world, `copy(await __dwell.scene('bodies', ''))` in the console copies every body's cells (its own grid). To do with
   it: measure its mass, displacement, counted air and draft; then weigh lighter planks (boards with air, ~200–300 kg/m³),
   hull blocks as thin shells, or the air count. Owner should see: a ship built of planks riding well up in the water,
-  heavier ships (cannons, stone ballast) lower.
+  heavier ships (cannons, stone ballast) lower. Owner, 2026-11-23: "I'm not sure if it's the weight or the air pressure/buoyancy
+  that's causing it." So the measure separates the two: the ship's weight against the lift its counted air and its
+  blocks give (whether the air inside is counted at all, and whether the buoyancy rule weighs it right), before any fix.
 - "Pre-Existing dynamic objects should be synced across the network." Owner should see: a player joining a world with
   rafts, boats or felled logs already moving or at rest sees them where the host does. BUGS.md #222.
 - "Ladders and Doors should work normally on dynamic objects." Owner should see: a ladder placed on a ship climbs as on
