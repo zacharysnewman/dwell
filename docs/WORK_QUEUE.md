@@ -148,6 +148,9 @@ context) at a time with a choice to table it as well as the other options?" Answ
   the sources marked while it's held.
 - **Particles:** "Count scales with the hit": a weak hit (the hand, the wrong tool) a few tiny chips, a strong one
   more, the final break a bigger burst of larger pieces.
+- **Inventory icons:** "Rendered from the game's meshes" (each block's own mesh in one standard three-quarter view at
+  build time, flat items drawn flat, so the icons follow the blocks' looks); look-alikes told apart by "Their own
+  colours and textures only" (two icons still alike mean the blocks need more distinct looks).
 
 ## Owner's list, 2026-11-23, grouped into sections
 
