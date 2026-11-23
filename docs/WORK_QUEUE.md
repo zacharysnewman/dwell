@@ -112,6 +112,14 @@ context) at a time with a choice to table it as well as the other options?" Answ
 - **Flipping a body upright:** "Hold E (think FPS controls like Halo, X on controller), Q is used for inventory", in
   "Both modes". Owner should see: holding E (X on a controller) by a capsized boat rights it.
 - **Draining a flooded hull (creative):** "Hold E inside the hull": bails it dry over a second or two.
+- **Ladders and doors on ships (#223):** owner: "I thought doors open with a right click, left trigger? But yes
+  generally exactly as on land." (Right: doors open with right click, the Use of Place, or the left trigger.)
+- **Rebinding for "hold E":** today E opens the inventory and Q is unbound in play. Owner: "Q inventory, E interact":
+  Q opens the inventory (backpack or creative); E is interact (tap: use a door, helm or cannon; hold: flip a body upright
+  or bail a hull); right click still uses doors. Controller: X is interact (the owner's "X on controller"), the
+  spyglass moves from X to the right stick click ("Right stick click"). Data: shared/input/gamepad.json and the keyboard
+  bindings; Settings' rebinding keeps working. Owner should see: Q opens the inventory, E uses and (held) flips or
+  bails; X likewise on a controller, the spyglass on the right stick click.
 
 ## Owner's list, 2026-11-23, grouped into sections
 
