@@ -134,6 +134,12 @@ context) at a time with a choice to table it as well as the other options?" Answ
 - **Metal ore veins:** owner: "Always at the surface, and veins 1-5 blocks thick, up to 25m long." Each vein starts at
   the surface (an outcrop to spot) and runs down at a sweeping angle; density "Common" (several per 100 m). Owner should
   see: silvery, shiny outcrops easy to find, each a vein 1–5 blocks thick running down up to 25 m.
+  Drops: "Raw ore, pickaxe only" (breaks like hard stone with a pickaxe, none by hand; drops raw metal ore, kept for
+  smelting later: iron bars and metal tools use it once smelting exists).
+- **Character painting:** "Pause menu: 'Character'" (opened from the pause menu in any world; the look saved per
+  device and shown to other players); "Face by face" (click any face of the model and fill it from the palette, with a
+  fill for a whole part such as the shirt or the hair); hat on or off. Owner should see: a Character menu from the
+  pause menu where any face is painted from a palette, the hat toggled, other players seeing the result.
 
 ## Owner's list, 2026-11-23, grouped into sections
 
