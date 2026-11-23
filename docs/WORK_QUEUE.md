@@ -12,11 +12,10 @@ or decision the owner gives goes into this file **in the same turn it arrives**,
 the work, quoting the owner's words; never only in a session's memory or an agent's brief. An item nobody
 recorded doesn't exist for the next session.
 
-**Hold (owner, 2026-11-18): "Put a hold on everything except ships, cannons, etc."** Only the ships and cannons
-work (docs/CANNONS.md C4–C5 and what they need) goes ahead; every other item, the CI failures included, waits until
-the owner lifts the hold. Parked at the hold: the cold desert fix for main's failing `realistic_variety` (branch
-`claude/cold-desert-region`, unmerged: back at 220 mm the one-region check passes, biomes per 4 km² reads 2.796
-against 2.8, 2.958 before 0.73's lee floor; it raises the 0.75 line).
+**Hold lifted (owner, 2026-11-23):** "what's on hold? We'll be pulling everything out of hold and removing the boats,
+cannons only hold rules." The 2026-11-18 hold ("Put a hold on everything except ships, cannons, etc.") is over: the CI
+failures, the queued items and the owner's list of 2026-11-23 are all workable again. (The parked cold desert fix rides
+the deep-seas line, PR #1109.)
 
 ## Owner's list, 2026-11-23, grouped into sections
 
@@ -24,15 +23,19 @@ Owner, 2026-11-23: "These are all items to queue up into our roadmap. But we'll 
 there currently. Also many items may make sense to work in the same section, being related, the same feature, or
 affecting similar features, like the ocean floor depth increase going along with the underground depth increase (solid
 stone, no caves)." Each item below is quoted from that list; reconciled with what the queue already held (noted per
-item). The sections' order is a proposal for the owner to confirm; the hold (ships, cannons) still stands, so section 1
-is the only one inside it.
+item). The sections' order is a proposal for the owner to confirm. The hold is lifted (owner, 2026-11-23, above).
 
-### 1. Moving bodies: ships continued (inside the hold)
+### 1. Moving bodies: ships continued
 
-- "Floating objects need more inertia, boats essentially never stop moving." Owner should see: a boat let go of at
-  the helm slows and comes to rest in the water within a few seconds, heavy boats coasting longer than light ones, none
-  drifting on forever. (Question: "more inertia" and "never stop" pull opposite ways; read as more water drag so they
-  settle, keeping their weight's momentum.) BUGS.md #220.
+- "Floating objects need more inertia, boats essentially never stop moving." Owner, 2026-11-23 (clarified): "I think I
+  may have used the wrong terms. The idea is that in real water boats don't often come to a stop, they keep moving in
+  the same direction for a while even without wind or a motor before the tide/currents exert enough force to move in
+  that direction. Thoughts?" Proposed: the speed-squared drag stays (a fast boat slows quickly); the linear `drag`
+  (shared/physics/bodies.json `water.drag`, 0.15/s, what brings a slow boat to a dead stop) down to about 0.02/s, so a
+  slow boat glides on for a minute or so; both are relative to the water's current (already built: rivers carry bodies),
+  so on a current the boat turns to drift with it. Tides or sea currents on the open sea (still today) would be a new
+  water feature. Owner should see: a boat let go of at the helm keeps gliding the way it was going, slowing gently over
+  about a minute; on a river it gradually turns and drifts with the current. BUGS.md #220.
 - "Water inside of dynamic objects should not visible from underneath or above. It needs a dynamic clipping, not
   column-based, since dynamic objects don't align with columns." Owner should see: from above, below or beside, no lake
   water drawn in a hull's dry inside, at any turn of the hull. Reconciled: CANNONS.md §12 H3 part one (0.75.14) hides the
@@ -60,8 +63,9 @@ is the only one inside it.
   (solid stone, no caves)." Owner should see: digging down from anywhere goes through solid stone for about half a
   kilometre before the bedrock. Reconciled: the deep seas (sea level +40 m, CANNONS.md §18, the 0.76 line, draft PR #1109
   unmerged) change the same constants (`seaLevel`, `coreLayers`); proposed: one line for both, the core 512 m with the
-  sea and the land over it. (Questions first: the cost of half a kilometre of stone a face in chunks, saves and streaming;
-  whether the sea level rides up with it.)
+  sea and the land over it. Owner, 2026-11-23, asked "fold the 512 m underground into that same line, or merge the deep
+  seas first?": "Yes" (read as: fold them into one line, PR #1109). (To measure first: the cost of half a kilometre of
+  stone a face in chunks, saves and streaming; the sea level rides up with the core.)
 - "Add in metal ore veins silvery/shiny they should run into the ground at a random, but sweeping angle." Owner should
   see: silvery, shiny veins in the stone, running down into the ground at sweeping angles, seen in cliffs and when
   digging. (Prototype content, ARCHITECTURE.md §6.1: a data-driven vein system; questions first.)

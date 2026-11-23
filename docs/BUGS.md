@@ -41,10 +41,13 @@ clipping, not column-based, since dynamic objects don't align with columns." H3 
 hides the lake in each hull's turned dry-air box (the four nearest); the owner still sees it. Owner should see: no
 water drawn in a hull's dry inside from any side, at any turn. WORK_QUEUE §1.
 
-### 220. Boats coast on and never come to rest
+### 220. Boats stop dead in still water instead of gliding on
 
-Owner, 2026-11-23: "Floating objects need more inertia, boats essentially never stop moving." Owner should see: a
-boat let go of slows and rests within a few seconds, heavy ones coasting longer. WORK_QUEUE §1.
+Owner, 2026-11-23: "Floating objects need more inertia, boats essentially never stop moving."; clarified: "in real water
+boats don't often come to a stop, they keep moving in the same direction for a while even without wind or a motor
+before the tide/currents exert enough force to move in that direction." The linear water drag (`water.drag` 0.15/s)
+stops a slow boat in seconds. Owner should see: a boat let go of keeps gliding, slowing gently over about a minute, and
+drifts with a current. WORK_QUEUE "Owner's list, 2026-11-23" §1.
 
 ### 219. A Realistic snow line's edge reads speckled (small patches)
 
