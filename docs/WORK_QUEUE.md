@@ -85,6 +85,13 @@ context) at a time with a choice to table it as well as the other options?" Answ
   not on the known list (`characters.spec` "another client sees your body walk…", `play.spec` "local mode streams
   terrain"). Owner: "One quick GPU check": run those two once locally on the GPU; passing, they join the known CI-only
   list in CLAUDE.md; failing, they are bugs to fix. No more time on the rest.
+  Owner, 2026-11-23: "I also would like to skip or not run tests that are flaky in CI only, but still run locally as
+  needed? Thoughts on this?" Proposed: tag each CI-only flaky test `@gpu` in its title; CI's Playwright config leaves
+  them out (`grepInvert`), a local run on the GPU includes them (the owner's `playwright.gpu.config.ts` committed as that
+  config); the tagged ones are those CLAUDE.md lists as failing only under CI's software renderer (#30, #51, #34, #49,
+  touch), and the two unknown specs only if the GPU check passes them; run locally before a merge touching their area;
+  CLAUDE.md's "Known CI failures" kept in step with the tag. Owner should see: CI green but for real failures, the
+  tagged tests still run on a GPU locally.
 - **Snow-line speckle (#219):** owner: "I'm not sure if it looks bad, snowy mountains seem pretty rare in our current
   generation rules." Then: "Send me a screenshot" of the spot (seed 4065579781, Realistic, (−21950, −8850)).
 - **The 512 m underground:** "Measure first": the world's size, generation and load time at 512 m before building.
