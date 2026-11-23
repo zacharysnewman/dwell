@@ -143,6 +143,11 @@ context) at a time with a choice to table it as well as the other options?" Answ
 - **Splitscreen:** "Up to 4 players", "Local and online" (each a full player, in a local, friend or dedicated world).
   Owner should see: two to four players on one screen, each with their own view and HUD, playing locally or joined to
   a friend's world, at 60 fps with tuned visibility and settings.
+- **Water source tool:** "A creative bucket": place puts a water source, break or use takes one away; while held,
+  sources show a marker so they can be seen. Owner should see: a creative bucket that adds and removes water sources,
+  the sources marked while it's held.
+- **Particles:** "Count scales with the hit": a weak hit (the hand, the wrong tool) a few tiny chips, a strong one
+  more, the final break a bigger burst of larger pieces.
 
 ## Owner's list, 2026-11-23, grouped into sections
 
