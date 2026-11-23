@@ -64,6 +64,17 @@ context) at a time with a choice to table it as well as the other options?" Answ
   blocks (questions: their hit count); crafting recipes for the door, the ladder and dynamite (questions: costs). Owner
   should see: hitting a door with a tool shakes the whole door visibly, nothing missing round it; the same for a ladder,
   dynamite and a cannon; doors, ladders and dynamite craftable in adventure. BUGS.md #229.
+- **Dropped items 3x bigger, ground sticks and rocks picked up by walking (Follow-ups):** "Into section 4 (Blocks)".
+- **Door swing (Follow-ups):** with the shake (#229). Owner, 2026-11-23: "With the shake, and the door should be made to
+  take up about the same depth space as a ladder instead of a full block. The position in the block should depend on
+  where you're facing when you place it, doors should face you (like you're outside the house)." Owner should see: a
+  door as thin as a ladder against the cell's side away from the player who placed it (its face toward them, as from
+  outside the house), swinging open and shut.
+- **Hit table (Follow-ups):** merged into section 4's block table (hit rule, hit counts by tool, break times).
+- **Spawn search (Follow-ups):** owner, 2026-11-23: "I've noticed it takes up to 20s. I think this benchmark may be
+  wrong, I'm not sure. Could be for existing worlds it's longer." The ~2 s figure was a new world's; to measure: new
+  and reopened worlds, local and joined, on the owner's machines. Owner should see: "Finding a place to stand" for
+  about a second or less, on new and existing worlds. BUGS.md #230.
 
 ## Owner's list, 2026-11-23, grouped into sections
 
