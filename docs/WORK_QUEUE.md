@@ -140,6 +140,9 @@ context) at a time with a choice to table it as well as the other options?" Answ
   device and shown to other players); "Face by face" (click any face of the model and fill it from the palette, with a
   fill for a whole part such as the shirt or the hair); hat on or off. Owner should see: a Character menu from the
   pause menu where any face is painted from a palette, the hat toggled, other players seeing the result.
+- **Splitscreen:** "Up to 4 players", "Local and online" (each a full player, in a local, friend or dedicated world).
+  Owner should see: two to four players on one screen, each with their own view and HUD, playing locally or joined to
+  a friend's world, at 60 fps with tuned visibility and settings.
 
 ## Owner's list, 2026-11-23, grouped into sections
 
