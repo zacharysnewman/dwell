@@ -95,8 +95,17 @@ context) at a time with a choice to table it as well as the other options?" Answ
 - **Snow-line speckle (#219):** owner: "I'm not sure if it looks bad, snowy mountains seem pretty rare in our current
   generation rules." Then: "Send me a screenshot" of the spot (seed 4065579781, Realistic, (−21950, −8850)).
 - **The 512 m underground:** "Measure first": the world's size, generation and load time at 512 m before building.
-- **Order:** 0.76 in flight (deep seas; the underground measured, then built; rivers from the mountains); after it
-  merges, section 1 (Moving bodies) first ("1 Moving bodies"). The order after section 1 not yet set.
+- **Order (owner, 2026-11-23, by the Q&A):**
+  0. 0.76 in flight: deep seas; the 512 m underground (measured first); rivers from the mountains. With it: the quick
+     GPU check of the two unknown e2e specs and the `@gpu` tag for CI-only flaky tests.
+  1. Builders, a quick fix (#226: blueprint slopes facing the blueprint's way) ("Early, as a quick fix").
+  2. Section 1, Moving bodies.
+  3. Section 8, Far trees and far terrain.
+  4. Section 4, Blocks.
+  5. Section 3, Water.
+  6. Then: "Sky question, character painting, inventory icons, split screen": section 6 (the moonlight question), the
+     character painting (section 7), section 9 (inventory icons), the splitscreen (section 7).
+  The snow-line screenshot (#219) goes to the owner when work resumes.
 
 ## Owner's list, 2026-11-23, grouped into sections
 
