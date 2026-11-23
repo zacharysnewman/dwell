@@ -57,6 +57,11 @@ Owner, 2026-11-23: "Ocean water not settling when affected on the surface, but c
 that move around constantly (until I get far enough away?)." Owner should see: the sea disturbed settles back flat in
 seconds. WORK_QUEUE "Owner's list, 2026-11-23" §3.
 
+Owner, 2026-11-23: "Currently if you place a block one block above sea level over the ocean, so it's almost touching
+the water surface, but just above it not in it, it causes the water to be immediately affected, often resulting in
+explosive fountains of water or acts like a dam." A repro: a block one row over the sea's surface. Owner should see: the
+sea untouched by a block above it, no fountains, no damming.
+
 ### 223. Ladders and doors don't work on moving bodies
 
 Owner, 2026-11-23: "Ladders and Doors should work normally on dynamic objects." Owner should see: a ladder on a ship

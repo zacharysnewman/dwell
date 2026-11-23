@@ -227,8 +227,12 @@ First in this section (owner, 2026-11-23, to share a ship "in a generic way"): c
 - "Ocean water not settling when affected on the surface, but creating big fountains and splashes and that move around
   constantly (until I get far enough away?)." Owner should see: the sea disturbed (a block placed or broken at the
   surface, a ship) settles back flat in seconds, no fountains or splashes moving about. BUGS.md #224.
-- "Water blocked/affected by blocks just above the surface of the water." Owner should see: a block sitting just above
-  the water's surface shapes it (no water drawn through it, the flow going round it). (Questions first.)
+- "Water blocked/affected by blocks just above the surface of the water." Corrected, owner 2026-11-23: "I think I wrote
+  should instead of shouldn't. Currently if you place a block one block above sea level over the ocean, so it's almost
+  touching the water surface, but just above it not in it, it causes the water to be immediately affected, often
+  resulting in explosive fountains of water or acts like a dam." So: a block just above the water must not affect it.
+  With #224 (likely one cause). Owner should see: a block placed one row above the sea, not touching the water, leaves
+  the sea flat and still: no fountains, no damming.
 - "A creative mode tool to create and remove water source blocks. (Maybe a way to see what's source?)" Owner should see:
   a creative tool that adds or removes a water source, and a view that marks the sources.
 
