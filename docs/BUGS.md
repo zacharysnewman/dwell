@@ -369,6 +369,10 @@ Owner, 2026-11-16: "I see the tall grass is like stacking when it grows but that
 extend or stretch up. That looks really bad stacked with gaps." (Photo: tall grass two and three cells high drawn as
 separate short tufts one over another, gaps between them.) Owner should see: tall grass that grows taller as one
 stand, its blades stretching up, no stacked tufts or gaps.
+Reopened 2026-11-23 (owner): "we need to correct the way these render connecting vertically because it looks like 3
+separate and non-connecting tall grass pieces stacked on top of each other which looks bad." The stalk cells under the
+top cell's blades still read as three stacked pieces. With it, the stand's maximum goes from 2 m to 1.5 m ("max grass
+growth to 3 blocks, 1.5m"). WORK_QUEUE "Owner's list, 2026-11-23" §4.
 
 ### 191. A fallen tree's logs settle out of line
 

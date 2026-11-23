@@ -107,6 +107,14 @@ First in this section (owner, 2026-11-23, to share a ship "in a generic way"): c
 
 ### 4. Blocks: damage, particles, new blocks
 
+- Owner, 2026-11-23: "Add this too, max grass growth to 3 blocks, 1.5m. And we need to correct the way these render
+  connecting vertically because it looks like 3 separate and non-connecting tall grass pieces stacked on top of each
+  other which looks bad." Changes the 2026-11-14 request ("it's supposed to be growing up to 2m": up to four ½ m cells,
+  `shared/worldgen/grass.json` `height.cells`) to at most three cells; and reopens BUGS.md #192 (2026-11-16: "it's
+  supposed to extend or stretch up"), whose fix (stalk cells under the top cell's blades) still reads as separate
+  stacked tufts. Owner should see: tall grass at most 1.5 m, a stand of any height reading as one plant, its blades
+  running unbroken from the ground to the tips.
+
 - "Maybe planned already, but we should iron out which blocks should show damage (dirt) and which should follow the
   shake rule (doors), and which should just break in one hit (leaves)." Owner should see: a table, every block's hit
   rule (damage look, shake, one hit), for the owner to settle, then the game following it. Reconciled: block damage
