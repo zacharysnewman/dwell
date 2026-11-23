@@ -88,6 +88,8 @@ context) at a time with a choice to table it as well as the other options?" Answ
 - **Snow-line speckle (#219):** owner: "I'm not sure if it looks bad, snowy mountains seem pretty rare in our current
   generation rules." Then: "Send me a screenshot" of the spot (seed 4065579781, Realistic, (−21950, −8850)).
 - **The 512 m underground:** "Measure first": the world's size, generation and load time at 512 m before building.
+- **Order:** 0.76 in flight (deep seas; the underground measured, then built; rivers from the mountains); after it
+  merges, section 1 (Moving bodies) first ("1 Moving bodies"). The order after section 1 not yet set.
 
 ## Owner's list, 2026-11-23, grouped into sections
 
