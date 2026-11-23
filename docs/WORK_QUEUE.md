@@ -106,6 +106,12 @@ context) at a time with a choice to table it as well as the other options?" Answ
   6. Then: "Sky question, character painting, inventory icons, split screen": section 6 (the moonlight question), the
      character painting (section 7), section 9 (inventory icons), the splitscreen (section 7).
   The snow-line screenshot (#219) goes to the owner when work resumes.
+- **Copying a body as a blueprint:** "Aim at it with the copy tool": with the region copy tool, aiming at a moving body
+  and copying takes the whole body onto the clipboard in its original rotation (saved and exported from the Structures
+  panel). Pasting it: "A moving body again" (it floats if over water).
+- **Flipping a body upright:** "Hold E (think FPS controls like Halo, X on controller), Q is used for inventory", in
+  "Both modes". Owner should see: holding E (X on a controller) by a capsized boat rights it.
+- **Draining a flooded hull (creative):** "Hold E inside the hull": bails it dry over a second or two.
 
 ## Owner's list, 2026-11-23, grouped into sections
 
