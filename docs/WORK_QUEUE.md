@@ -76,6 +76,15 @@ context) at a time with a choice to table it as well as the other options?" Answ
   and reopened worlds, local and joined, on the owner's machines. Owner should see: "Finding a place to stand" for
   about a second or less, on new and existing worlds. BUGS.md #230.
   Then, 2026-11-23: "Actually can drop it, I'm getting <4/s spawn times." Dropped.
+- **CI failures:** owner, 2026-11-23: "Im not sure, what failures are important in CI? I think we're not blocking on CI
+  failures currently, but if there's real broken things we want to fix, but don't want to spend a bunch of time on long
+  running tests that are flaky in CI only?" Main's last run (#1108): two real failures, both fixed on the deep-seas
+  branch (the Realistic golden stale since the wall torch moved block ids, which stopped the Rust run with 294 tests
+  unrun; `buildModes.gen.ts` unformatted: the items generator now quotes as prettier does). The e2e failures: known
+  CI-only flakes (buildDrag towering and bridging #30, spawn reopen #51, never drawn after a join #49, touch), and two
+  not on the known list (`characters.spec` "another client sees your body walk…", `play.spec` "local mode streams
+  terrain"). Owner: "One quick GPU check": run those two once locally on the GPU; passing, they join the known CI-only
+  list in CLAUDE.md; failing, they are bugs to fix. No more time on the rest.
 
 ## Owner's list, 2026-11-23, grouped into sections
 
