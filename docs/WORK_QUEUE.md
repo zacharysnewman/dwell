@@ -41,6 +41,13 @@ item). The sections' order is a proposal for the owner to confirm. The hold is l
   water drawn in a hull's dry inside, at any turn of the hull. Reconciled: CANNONS.md §12 H3 part one (0.75.14) hides the
   lake inside each hull's dry-air box, turned with the hull (not by columns), only the four nearest hulls; the owner
   still sees water there, so it falls short: check from underneath and at angles. BUGS.md #221.
+- Owner, 2026-11-23: "Is this covered: the general water plane that a dynamic object with air inside of it, shouldn't
+  affect the player, buoyancy, walking/swimming etc within that air (obviously if it's flooded it should affect them
+  still)." Not covered: the controller's water (`submerged_fraction`) reads the world's water cells alone, so a player in
+  an open hull below the waterline swims and floats there. One rule with #221: a hull's dry air overrides the world's
+  water, for the drawing, the player (swimming, buoyancy, walking), the underwater view and sound, and anything else in
+  it; its own water once it floods. Owner should see: standing and walking in a boat's dry inside below the waterline as
+  on land (no swimming, no underwater look or sound); in a flooded hull, swimming as in water. BUGS.md #227.
 - "Pre-Existing dynamic objects should be synced across the network." Owner should see: a player joining a world with
   rafts, boats or felled logs already moving or at rest sees them where the host does. BUGS.md #222.
 - "Ladders and Doors should work normally on dynamic objects." Owner should see: a ladder placed on a ship climbs as on

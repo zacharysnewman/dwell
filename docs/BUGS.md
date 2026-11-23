@@ -6,6 +6,14 @@ pins it.
 
 ## Open
 
+### 227. A player in a hull's dry air below the waterline swims as if in the sea
+
+Owner, 2026-11-23: "the general water plane that a dynamic object with air inside of it, shouldn't affect the player,
+buoyancy, walking/swimming etc within that air (obviously if it's flooded it should affect them still)." The
+controller's water reads the world's water cells alone. Owner should see: walking in a boat's dry inside below the
+waterline as on land, no underwater look or sound; swimming once it floods. With #221 (one rule: a hull's dry air
+overrides the world's water). WORK_QUEUE "Owner's list, 2026-11-23" §1.
+
 ### 226. Builders lay a blueprint's slopes facing their own way, not the blueprint's
 
 Owner, 2026-11-23: "When placing blocks from blueprints like slopes, should face the direction in the blueprint,
