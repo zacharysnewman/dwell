@@ -159,6 +159,17 @@ First in this section (owner, 2026-11-23, to share a ship "in a generic way"): c
   what is missing. Owner should see (if missing): standing on the moon or the sun, the other body lights the scene and
   glows in the sky as it does from home.
 
+### 8. Far trees and far terrain
+
+- Owner, 2026-11-23: "#197 is not fixed still seeing all kinds of overlap with billboards and trees, likely not noticed
+  since trees grow and have many possible states and distances. We likely need better (non-visual) testing around
+  this." BUGS.md #197 reopened: first a non-visual invariant (every species, stage, variant and world day, at every
+  distance band: each tree drawn exactly once, full or impostor, both only in the fade, from the renderer's and the
+  mesher's own data) and a dev telemetry count of trees drawn both ways, then the fixes it finds. Owner should see: no
+  tree drawn as billboard and full tree at once, no trunk beside a billboard, at any distance or day.
+- BUGS.md #195, grey speckles at medium and far distances: part 1 fixed (rocks and talus no longer tint the far LOD);
+  waiting on a screenshot or spot from the owner.
+
 ### 7. Bigger features (questions first)
 
 - "Splitscreen (UI for visibility/scale and graphics settings for 60fps will need tuning)". Owner should see: two players

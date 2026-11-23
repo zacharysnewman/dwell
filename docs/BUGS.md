@@ -235,6 +235,15 @@ tree's box now covers its full-grown tree (`grown_bounds`, memoised by species a
 16 cells wider. Test: `leaf_tints` `a_full_grown_tree_lies_in_its_owners_box` (both faces; red with the generated
 boxes, green now).
 
+**Reopened 2026-11-23 (owner):** "#197 is not fixed still seeing all kinds of overlap with billboards and trees, likely
+not noticed since trees grow and have many possible states and distances. We likely need better (non-visual) testing
+around this." To do: a non-visual invariant over every species, growth stage, seed variant and world day, at every
+distance band: each tree is drawn exactly once, its full mesh (leaves and logs) or its impostor, both only within the
+fade, decided from the same data the renderer and the chunk mesher use (the hand-over distance, the tree's box, the
+far tile's stage); plus a counter in the dev telemetry of trees drawn both ways in a frame, read by a bench flight
+through a forest. Owner should see: flying over and through forests at any day, no tree drawn as billboard and full
+tree at once, no trunk beside a billboard.
+
 ### 196. Realistic's rivers don't start in the mountains
 
 Owner, 2026-11-16: "our rivers in realistic don't seem to come from the mountains, just random points in the world."
