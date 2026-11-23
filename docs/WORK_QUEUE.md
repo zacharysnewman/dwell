@@ -85,6 +85,9 @@ context) at a time with a choice to table it as well as the other options?" Answ
   not on the known list (`characters.spec` "another client sees your body walk…", `play.spec` "local mode streams
   terrain"). Owner: "One quick GPU check": run those two once locally on the GPU; passing, they join the known CI-only
   list in CLAUDE.md; failing, they are bugs to fix. No more time on the rest.
+- **Snow-line speckle (#219):** owner: "I'm not sure if it looks bad, snowy mountains seem pretty rare in our current
+  generation rules." Then: "Send me a screenshot" of the spot (seed 4065579781, Realistic, (−21950, −8850)).
+- **The 512 m underground:** "Measure first": the world's size, generation and load time at 512 m before building.
 
 ## Owner's list, 2026-11-23, grouped into sections
 
