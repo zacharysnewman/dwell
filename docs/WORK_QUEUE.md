@@ -226,6 +226,14 @@ First in this section (owner, 2026-11-23, to share a ship "in a generic way"): c
   what is missing. Owner should see (if missing): standing on the moon or the sun, the other body lights the scene and
   glows in the sky as it does from home.
 
+### 9. Inventory icons (needs discussion)
+
+- Owner, 2026-11-23: "Another item to queue is making all inventory item/block icons unique visually from other blocks,
+  and represent what they are. Possibly like a standardized 3/4's perspective for all blocks, then maybe a 2D one for 2D
+  billboard items like torches / grass. Needs more discussion." Owner should see: every hotbar and inventory icon
+  distinct from the others and reading as what it is: blocks in one standard three-quarter view, flat items (torches,
+  grass) drawn flat. Questions first (the owner's "needs more discussion").
+
 ### 8. Far trees and far terrain
 
 - Owner, 2026-11-23: "#197 is not fixed still seeing all kinds of overlap with billboards and trees, likely not noticed
