@@ -48,6 +48,15 @@ item). The sections' order is a proposal for the owner to confirm. The hold is l
   water, for the drawing, the player (swimming, buoyancy, walking), the underwater view and sound, and anything else in
   it; its own water once it floods. Owner should see: standing and walking in a boat's dry inside below the waterline as
   on land (no swimming, no underwater look or sound); in a flooded hull, swimming as in water. BUGS.md #227.
+- Owner, 2026-11-23: "I think boats might be too heavy too? I have a small ship I built, that if I could somehow copy a
+  ship dynamic objects I could share it with you for testing. It's super heavy and sits low very low in the water, but
+  I'm not sure how this works in real ships and if I'm missing stuff." Explained: a real hull is a thin shell round a lot
+  of air; a Dwell wall is a whole block (planks solid wood, 600 kg/m³, ~300 kg a cell), so a ship of block walls and
+  decks is far heavier for its size; air lifts it only where counted (CANNONS.md §12 H1). Sharing it now: in a local
+  world, `copy(await __dwell.scene('bodies', ''))` in the console copies every body's cells (its own grid). To do with
+  it: measure its mass, displacement, counted air and draft; then weigh lighter planks (boards with air, ~200–300 kg/m³),
+  hull blocks as thin shells, or the air count. Owner should see: a ship built of planks riding well up in the water,
+  heavier ships (cannons, stone ballast) lower.
 - "Pre-Existing dynamic objects should be synced across the network." Owner should see: a player joining a world with
   rafts, boats or felled logs already moving or at rest sees them where the host does. BUGS.md #222.
 - "Ladders and Doors should work normally on dynamic objects." Owner should see: a ladder placed on a ship climbs as on
