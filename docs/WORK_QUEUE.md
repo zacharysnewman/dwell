@@ -140,6 +140,10 @@ context) at a time with a choice to table it as well as the other options?" Answ
   device and shown to other players); "Face by face" (click any face of the model and fill it from the palette, with a
   fill for a whole part such as the shirt or the hair); hat on or off. Owner should see: a Character menu from the
   pause menu where any face is painted from a palette, the hat toggled, other players seeing the result.
+  Owner, 2026-11-23: "Actually, skin should be separate and change all at once. For the character painter that was what
+  I meant by skin color." So skin is its own colour, chosen once for every skin face together (not painted face by
+  face); the rest (hair, clothes, hat) painted face by face. Owner should see: a skin colour picker that recolours all
+  the character's skin at once, beside the face-by-face painting of everything else.
 - **Splitscreen:** "Up to 4 players", "Local and online" (each a full player, in a local, friend or dedicated world).
   Owner should see: two to four players on one screen, each with their own view and HUD, playing locally or joined to
   a friend's world, at 60 fps with tuned visibility and settings.
