@@ -131,6 +131,9 @@ context) at a time with a choice to table it as well as the other options?" Answ
 - **Recipes for the door and ladder:** owner: "Door 4 takes wood planks, ladder takes 4 sticks." (A door from 4 planks;
   a ladder from 4 sticks.) Dynamite stays creative-only until a gunpowder material exists. Owner should see: a door and
   a ladder craftable in adventure at those costs.
+- **Metal ore veins:** owner: "Always at the surface, and veins 1-5 blocks thick, up to 25m long." Each vein starts at
+  the surface (an outcrop to spot) and runs down at a sweeping angle; density "Common" (several per 100 m). Owner should
+  see: silvery, shiny outcrops easy to find, each a vein 1–5 blocks thick running down up to 25 m.
 
 ## Owner's list, 2026-11-23, grouped into sections
 
