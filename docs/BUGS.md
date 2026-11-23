@@ -6,6 +6,14 @@ pins it.
 
 ## Open
 
+### 228. Tall grass left floating over water when water floods under its stand
+
+Owner, 2026-11-23: "Also, tall grass should break over water and when there's no supporting stock down to a solid
+block. Currently if water floods under it breaks the lower blocks but not the tall grass above the water." A stand's
+cells each stand on the one under it (`needsSupport` below); the water's flooding takes the lower cells but not the
+cells above them. Owner should see: water flooding under a stand takes the whole stand; no grass cell stays without
+its stand running down to a solid block. WORK_QUEUE "Owner's list, 2026-11-23" §4.
+
 ### 227. A player in a hull's dry air below the waterline swims as if in the sea
 
 Owner, 2026-11-23: "the general water plane that a dynamic object with air inside of it, shouldn't affect the player,

@@ -114,6 +114,10 @@ First in this section (owner, 2026-11-23, to share a ship "in a generic way"): c
   supposed to extend or stretch up"), whose fix (stalk cells under the top cell's blades) still reads as separate
   stacked tufts. Owner should see: tall grass at most 1.5 m, a stand of any height reading as one plant, its blades
   running unbroken from the ground to the tips.
+  Owner, 2026-11-23: "Also, tall grass should break over water and when there's no supporting stock down to a solid
+  block. Currently if water floods under it breaks the lower blocks but not the tall grass above the water." Owner
+  should see: water flooding under a tall grass stand takes the whole stand, no grass left floating over the water; a
+  stand's cell stays only while the stand under it runs down to a solid block. BUGS.md #228.
 
 - "Maybe planned already, but we should iron out which blocks should show damage (dirt) and which should follow the
   shake rule (doors), and which should just break in one hit (leaves)." Owner should see: a table, every block's hit
