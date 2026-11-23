@@ -75,6 +75,7 @@ context) at a time with a choice to table it as well as the other options?" Answ
   wrong, I'm not sure. Could be for existing worlds it's longer." The ~2 s figure was a new world's; to measure: new
   and reopened worlds, local and joined, on the owner's machines. Owner should see: "Finding a place to stand" for
   about a second or less, on new and existing worlds. BUGS.md #230.
+  Then, 2026-11-23: "Actually can drop it, I'm getting <4/s spawn times." Dropped.
 
 ## Owner's list, 2026-11-23, grouped into sections
 

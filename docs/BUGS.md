@@ -12,6 +12,7 @@ Owner, 2026-11-23: "I've noticed it takes up to 20s. I think this benchmark may 
 existing worlds it's longer." Measured before: ~2 s on a new world (the spawn search for a level patch near a river).
 To measure: new and reopened worlds, local and joined, in the browser and the Mac app. Owner should see: the wait about
 a second or less, on new and existing worlds. WORK_QUEUE "Q&A with the owner, 2026-11-23".
+Dropped 2026-11-23 (owner): "Actually can drop it, I'm getting <4/s spawn times."
 
 ### 229. The shake on a hit is barely visible, one face, one cell
 
