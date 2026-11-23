@@ -128,6 +128,9 @@ context) at a time with a choice to table it as well as the other options?" Answ
   tune it; then the game). Recipes: "Wood now, iron with ore" (wooden bars from sticks; iron bars once metal ore and
   smelting exist). Owner should see: bars that show all their bars alone and only the connecting ones beside bars or
   solid blocks.
+- **Recipes for the door and ladder:** owner: "Door 4 takes wood planks, ladder takes 4 sticks." (A door from 4 planks;
+  a ladder from 4 sticks.) Dynamite stays creative-only until a gunpowder material exists. Owner should see: a door and
+  a ladder craftable in adventure at those costs.
 
 ## Owner's list, 2026-11-23, grouped into sections
 
