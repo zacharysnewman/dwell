@@ -50,6 +50,20 @@ context) at a time with a choice to table it as well as the other options?" Answ
 - **Palm fronds (cards or blocks):** tabled.
 - **Haze (item 29):** already settled 2026-11-12 ("Yeah let's go with D on haze": half distance 6 km, scale height
   1 km); the "waiting" listing was stale.
+- **Showcase recordings (item 40):** "Keep paused": only when idle or when the owner asks for a video.
+- **The two ship videos (2026-11-18):** the owner never saw them ("I didn't see these, share them again."); the files
+  were lost with the scratch folder. Owner: "We don't have good looking boats/ships yet, once I get my design shared
+  back we can revisit this." Waits on the owner's ship, shared as a file (section 1's first item).
+- **The shake (doors, ladders, dynamite; BLOCK_DAMAGE.md §17):** seen in creative only with a tool held (the hand
+  breaks in one hit there); none of them is craftable in adventure. Owner, 2026-11-23: "Look is bad, it should work like
+  the block damage does with showing blocks underneath. Do an actual good shake. The current one looks weird, only
+  affects one face, and is barely detectable. Also, I think cannons should maybe be included in this. Also the shake
+  should affect the "thing" as a whole, so not just the voxel of the door you hit, but the whole door. And yes queue
+  recipes." To do: a clear shake of the whole block (every cell of a door, a cannon's four), drawn so the blocks behind
+  and under show through as block damage does (no faces culled against it), every face moving; cannons join the shake
+  blocks (questions: their hit count); crafting recipes for the door, the ladder and dynamite (questions: costs). Owner
+  should see: hitting a door with a tool shakes the whole door visibly, nothing missing round it; the same for a ladder,
+  dynamite and a cannon; doors, ladders and dynamite craftable in adventure. BUGS.md #229.
 
 ## Owner's list, 2026-11-23, grouped into sections
 

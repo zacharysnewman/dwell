@@ -6,6 +6,15 @@ pins it.
 
 ## Open
 
+### 229. The shake on a hit is barely visible, one face, one cell
+
+Owner, 2026-11-23 (doors, ladders, dynamite: 2 hits, a shake on the first): "Look is bad, it should work like the block
+damage does with showing blocks underneath. Do an actual good shake. The current one looks weird, only affects one
+face, and is barely detectable. Also, I think cannons should maybe be included in this. Also the shake should affect
+the "thing" as a whole, so not just the voxel of the door you hit, but the whole door." Owner should see: a door hit
+with a tool shaking whole and clearly, the blocks behind and under it showing (no culled faces), the same for ladders,
+dynamite and cannons. WORK_QUEUE "Q&A with the owner, 2026-11-23".
+
 ### 228. Tall grass left floating over water when water floods under its stand
 
 Owner, 2026-11-23: "Also, tall grass should break over water and when there's no supporting stock down to a solid
