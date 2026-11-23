@@ -6,6 +6,54 @@ pins it.
 
 ## Open
 
+### 226. Builders lay a blueprint's slopes facing their own way, not the blueprint's
+
+Owner, 2026-11-23: "When placing blocks from blueprints like slopes, should face the direction in the blueprint,
+regardless of the facing player/npc facing direction. I noticed the NPCs were building roofs incorrectly because they
+were at different angles when building the roof slopes on my custom house with thatch." Owner should see: builders
+putting up a blueprint's thatch roof with every slope facing as in the blueprint. WORK_QUEUE "Owner's list, 2026-11-23" §5.
+
+### 225. A tree's leaves don't fade near the camera as a leaf block does
+
+Owner, 2026-11-23: "Leafy leaves should fade like the leaf block when you get close to it." Owner should see: a tree's
+leaves dissolve as the camera comes close. WORK_QUEUE "Owner's list, 2026-11-23" §4.
+
+### 224. The disturbed sea never settles: fountains and splashes keep moving
+
+Owner, 2026-11-23: "Ocean water not settling when affected on the surface, but creating big fountains and splashes and
+that move around constantly (until I get far enough away?)." Owner should see: the sea disturbed settles back flat in
+seconds. WORK_QUEUE "Owner's list, 2026-11-23" §3.
+
+### 223. Ladders and doors don't work on moving bodies
+
+Owner, 2026-11-23: "Ladders and Doors should work normally on dynamic objects." Owner should see: a ladder on a ship
+climbs, a door on a ship opens and closes with Use. WORK_QUEUE "Owner's list, 2026-11-23" §1.
+
+### 222. Moving bodies that already exist aren't synced to a joining player
+
+Owner, 2026-11-23: "Pre-Existing dynamic objects should be synced across the network." Owner should see: a player
+joining sees the rafts, boats and felled logs already in the world where the host does. WORK_QUEUE §1.
+
+### 221. Water shows inside a hull from below and above
+
+Owner, 2026-11-23: "Water inside of dynamic objects should not visible from underneath or above. It needs a dynamic
+clipping, not column-based, since dynamic objects don't align with columns." H3 part one (0.75.14, CANNONS.md §12)
+hides the lake in each hull's turned dry-air box (the four nearest); the owner still sees it. Owner should see: no
+water drawn in a hull's dry inside from any side, at any turn. WORK_QUEUE §1.
+
+### 220. Boats coast on and never come to rest
+
+Owner, 2026-11-23: "Floating objects need more inertia, boats essentially never stop moving." Owner should see: a
+boat let go of slows and rests within a few seconds, heavy ones coasting longer. WORK_QUEUE §1.
+
+### 219. A Realistic snow line's edge reads speckled (small patches)
+
+Found 2026-11-18 (0.76's deeper seas moved the biome-border windows `realistic_bands` samples): on seed 4065579781 face
+A at (−21950, −8850), ~1,020 m above the sea, grass, snowy grass and stone meet in patches averaging 1,178 m² (the
+speckle bar was 1,500 m², WORK_QUEUE item 15: "speckled terrain looks gross"). The bar is 1,100 m² until this is looked
+at. Owner should see: a snow line on a Realistic mountainside as broad patches of snow and grass, not speckle. Check it
+in the browser: `?worldgen=test:realistic&seed=4065579781&fresh=1&at=-21950,1120,-8850`.
+
 ### 218. The ship's wheel always faced north
 
 Found 2026-11-18 (not reported): the mesher's style kept a block's facing only for the ladder look, so the wheel look

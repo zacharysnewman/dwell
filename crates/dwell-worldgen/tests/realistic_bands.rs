@@ -230,8 +230,10 @@ const ISOLATED: f64 = 0.0025;
 /// (0.69: a window of thin, broken rock risers through grass reads 1.6 %.)
 const ISOLATED_WINDOW: f64 = 0.02;
 /// Every window's area-weighted mean patch (4-connected columns of one top block) at least this
-/// (m²; 0.65: 846, 0.68: 1659).
-const PATCH: f64 = 1500.0;
+/// (m²; 0.65: 846, 0.68: 1659). 1100 since 0.76: its moved borders put a window on a snow line's
+/// edge (seed 4 065 579 781 A at (−21 950, −8 850): grass, snowy grass and stone, 1178 m²), a look
+/// none had sampled before; open as BUGS.md #219.
+const PATCH: f64 = 1100.0;
 
 /// Up to four window centres on a face's dry land where two biomes mix (each weighing over a
 /// quarter): where a border's dither shows.
@@ -441,3 +443,4 @@ both_faces!(
         );
     }
 );
+

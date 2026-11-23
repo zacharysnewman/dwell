@@ -18,6 +18,101 @@ the owner lifts the hold. Parked at the hold: the cold desert fix for main's fai
 `claude/cold-desert-region`, unmerged: back at 220 mm the one-region check passes, biomes per 4 km² reads 2.796
 against 2.8, 2.958 before 0.73's lee floor; it raises the 0.75 line).
 
+## Owner's list, 2026-11-23, grouped into sections
+
+Owner, 2026-11-23: "These are all items to queue up into our roadmap. But we'll need to reconcile with what we have in
+there currently. Also many items may make sense to work in the same section, being related, the same feature, or
+affecting similar features, like the ocean floor depth increase going along with the underground depth increase (solid
+stone, no caves)." Each item below is quoted from that list; reconciled with what the queue already held (noted per
+item). The sections' order is a proposal for the owner to confirm; the hold (ships, cannons) still stands, so section 1
+is the only one inside it.
+
+### 1. Moving bodies: ships continued (inside the hold)
+
+- "Floating objects need more inertia, boats essentially never stop moving." Owner should see: a boat let go of at
+  the helm slows and comes to rest in the water within a few seconds, heavy boats coasting longer than light ones, none
+  drifting on forever. (Question: "more inertia" and "never stop" pull opposite ways; read as more water drag so they
+  settle, keeping their weight's momentum.) BUGS.md #220.
+- "Water inside of dynamic objects should not visible from underneath or above. It needs a dynamic clipping, not
+  column-based, since dynamic objects don't align with columns." Owner should see: from above, below or beside, no lake
+  water drawn in a hull's dry inside, at any turn of the hull. Reconciled: CANNONS.md §12 H3 part one (0.75.14) hides the
+  lake inside each hull's dry-air box, turned with the hull (not by columns), only the four nearest hulls; the owner
+  still sees water there, so it falls short: check from underneath and at angles. BUGS.md #221.
+- "Pre-Existing dynamic objects should be synced across the network." Owner should see: a player joining a world with
+  rafts, boats or felled logs already moving or at rest sees them where the host does. BUGS.md #222.
+- "Ladders and Doors should work normally on dynamic objects." Owner should see: a ladder placed on a ship climbs as on
+  land, a door on a ship opens and closes with Use, both moving with the ship. BUGS.md #223.
+- "A creative mode tool to flip dynamic objects upright, possibly in Adventure too." Owner should see: a capsized boat
+  turned upright by a tool. (Questions first: which tool, and in adventure.)
+- "A creative mode tool to drain/clear water filling a dynamic object (this doesn't mean removing the water in the
+  columns, but removing it from "filled" inside of it, if that even works right now)." Owner should see: a flooded hull
+  emptied by the tool, floating high again. (Flooding is built: CANNONS.md §12 H2, the hull's water volume.)
+- "Creative mode (and theoretically adventure mode, since pasting in adventure should be placing a blueprint) feature to
+  select a dynamic object and copy/save it as a blueprint (in its original, not current rotation)." Owner should see: a
+  boat selected and saved as a structure, which pastes upright as it was built. Reconciled: the owner's 2026-11-18 answer
+  that body tools "should ultimately use the same tooling (updated perhaps) that is used to copy paste sections" (above,
+  under ships); and blueprints (docs/BLUEPRINTS.md).
+
+### 2. The world's depth: deep seas, a deep underground, ores (one worldgen line)
+
+- "Increase underground size up from 10m to 512m. This will give us lots of room for metal ore veins and future
+  dungeons." With the owner's note: "the ocean floor depth increase going along with the underground depth increase
+  (solid stone, no caves)." Owner should see: digging down from anywhere goes through solid stone for about half a
+  kilometre before the bedrock. Reconciled: the deep seas (sea level +40 m, CANNONS.md §18, the 0.76 line, draft PR #1109
+  unmerged) change the same constants (`seaLevel`, `coreLayers`); proposed: one line for both, the core 512 m with the
+  sea and the land over it. (Questions first: the cost of half a kilometre of stone a face in chunks, saves and streaming;
+  whether the sea level rides up with it.)
+- "Add in metal ore veins silvery/shiny they should run into the ground at a random, but sweeping angle." Owner should
+  see: silvery, shiny veins in the stone, running down into the ground at sweeping angles, seen in cliffs and when
+  digging. (Prototype content, ARCHITECTURE.md §6.1: a data-driven vein system; questions first.)
+- "Remove boulders (if not already removed)." Already done: the 0.74 line (2026-11-17, `boulders` out of every biome).
+
+### 3. Water
+
+- "Ocean water not settling when affected on the surface, but creating big fountains and splashes and that move around
+  constantly (until I get far enough away?)." Owner should see: the sea disturbed (a block placed or broken at the
+  surface, a ship) settles back flat in seconds, no fountains or splashes moving about. BUGS.md #224.
+- "Water blocked/affected by blocks just above the surface of the water." Owner should see: a block sitting just above
+  the water's surface shapes it (no water drawn through it, the flow going round it). (Questions first.)
+- "A creative mode tool to create and remove water source blocks. (Maybe a way to see what's source?)" Owner should see:
+  a creative tool that adds or removes a water source, and a view that marks the sources.
+
+### 4. Blocks: damage, particles, new blocks
+
+- "Maybe planned already, but we should iron out which blocks should show damage (dirt) and which should follow the
+  shake rule (doors), and which should just break in one hit (leaves)." Owner should see: a table, every block's hit
+  rule (damage look, shake, one hit), for the owner to settle, then the game following it. Reconciled: block damage
+  data per block (docs/BLOCK_DAMAGE.md, `damage` in shared/blocks: `hit: "shake"` on doors and ladders, `fixedHits`).
+- "Scaled quantity of particles based on how much damage you're doing to a block, smaller particles on hits." and
+  "Particles on breaking a block (already exist, need bigger?)." Owner should see: a light hit throws a few small
+  particles, a heavy one more; breaking a block throws a bigger burst. Reconciled: the 2026-11-17 hit particles item
+  (halved, wood-inside coloured shards), above.
+- "Bars block" / "Add in wooden and iron bars". Owner should see: wooden bars and iron bars as placeable blocks (thin
+  bars, see-through, joining their neighbours like a fence). (Questions first: joining, collision, recipes.)
+- "Leafy leaves should fade like the leaf block when you get close to it." Owner should see: a tree's leaves dissolve
+  as the camera comes close, as a leaf block's do. BUGS.md #225.
+
+### 5. Builders
+
+- "When placing blocks from blueprints like slopes, should face the direction in the blueprint, regardless of the
+  facing player/npc facing direction. I noticed the NPCs were building roofs incorrectly because they were at different
+  angles when building the roof slopes on my custom house with thatch." Owner should see: builders putting up a
+  blueprint's thatch roof with every slope facing as in the blueprint. BUGS.md #226.
+
+### 6. Sky
+
+- "Is there moonlight and glow from a moon while on the moon and the sun?" A question: answer from the code, then queue
+  what is missing. Owner should see (if missing): standing on the moon or the sun, the other body lights the scene and
+  glows in the sky as it does from home.
+
+### 7. Bigger features (questions first)
+
+- "Splitscreen (UI for visibility/scale and graphics settings for 60fps will need tuning)". Owner should see: two players
+  on one screen, each with their own view and HUD, at 60 fps.
+- "In game menu to customize (paint faces on your character, given a solid set of colors) your character's look, hat
+  off or on. Can paint all vertices, including hair." Owner should see: an in-game menu to paint the character's faces
+  from a palette, hair included, and take the hat off or put it on, saved with the player. (docs/CHARACTERS.md.)
+
 Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
