@@ -17,6 +17,20 @@ cannons only hold rules." The 2026-11-18 hold ("Put a hold on everything except 
 failures, the queued items and the owner's list of 2026-11-23 are all workable again. (The parked cold desert fix rides
 the deep-seas line, PR #1109.)
 
+## Indefinite hold (owner, 2026-11-23)
+
+Owner, 2026-11-23: "Let's setup an indefinite hold area and put realistic at scale, older open PRs (I'd like to know
+what these are though), low shrub seed, water darkened by SSAO." Not worked until the owner takes an item out.
+
+- **Realistic worlds at real-world scale** (PR #976, the 0.71 line; closed 2026-11-17 after the comparison: 0.73 took
+  only sea moderation and the lee floor, the moisture recovery recorded in docs/FUTURE.md).
+- **Older open PRs:** none open (2026-11-23, only #1109, the deep seas). Closed unmerged on 2026-11-17: #976 above, and
+  three experiments marked "do not merge": #1051 (no worker prewarm), #1052 (rocks tint the far LOD again), #1053 (no
+  town jobs).
+- **The low_shrub seed** and **water darkened by SSAO underwater:** dropped 2026-11-17 (owner: "I don't know what
+  either of the unclear queue items are, drop them"; from the check-in list, never recorded in the owner's words); held
+  here.
+
 ## Owner's list, 2026-11-23, grouped into sections
 
 Owner, 2026-11-23: "These are all items to queue up into our roadmap. But we'll need to reconcile with what we have in
