@@ -120,6 +120,14 @@ context) at a time with a choice to table it as well as the other options?" Answ
   spyglass moves from X to the right stick click ("Right stick click"). Data: shared/input/gamepad.json and the keyboard
   bindings; Settings' rebinding keeps working. Owner should see: Q opens the inventory, E uses and (held) flips or
   bails; X likewise on a controller, the spyglass on the right stick click.
+- **Bars (wooden and iron):** owner: "Join neighbors like a fence. Should be 3 bars in each direction (flat) left/right,
+  (flat) forward/back, and (vertical) three bars each direction, but we only want to show the bars as needed when they
+  connect, so maybe show all when initially placing, but when connected to another solid block or bars, hide the other
+  bar angles. I'm sure this isn't a clear description so perhaps we could prototype the dynamic connecting." Then:
+  "Prototype page first" (a docs/prototypes page: place bars and solid blocks on a small grid, see the connecting rule,
+  tune it; then the game). Recipes: "Wood now, iron with ore" (wooden bars from sticks; iron bars once metal ore and
+  smelting exist). Owner should see: bars that show all their bars alone and only the connecting ones beside bars or
+  solid blocks.
 
 ## Owner's list, 2026-11-23, grouped into sections
 
