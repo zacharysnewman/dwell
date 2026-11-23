@@ -27,6 +27,8 @@ item). The sections' order is a proposal for the owner to confirm. The hold is l
 
 ### 1. Moving bodies: ships continued
 
+First in this section (owner, 2026-11-23, to share a ship "in a generic way"): copying a body as a blueprint.
+
 - "Floating objects need more inertia, boats essentially never stop moving." Owner, 2026-11-23 (clarified): "I think I
   may have used the wrong terms. The idea is that in real water boats don't often come to a stop, they keep moving in
   the same direction for a while even without wind or a motor before the tide/currents exert enough force to move in
@@ -58,7 +60,11 @@ item). The sections' order is a proposal for the owner to confirm. The hold is l
   hull blocks as thin shells, or the air count. Owner should see: a ship built of planks riding well up in the water,
   heavier ships (cannons, stone ballast) lower. Owner, 2026-11-23: "I'm not sure if it's the weight or the air pressure/buoyancy
   that's causing it." So the measure separates the two: the ship's weight against the lift its counted air and its
-  blocks give (whether the air inside is counted at all, and whether the buoyancy rule weighs it right), before any fix.
+  blocks give (whether the air inside is counted at all, and whether the buoyancy rule weighs it right), before any fix. Owner,
+  2026-11-23: "I don't have the ship on this computer, so it would need to be copyable in a generic way." So the copy
+  and save of a body as a blueprint (below in this section) comes first: copied into the region tools' clipboard in its
+  original rotation, saved and exported as a file by the Structures panel (its save, export and import are built),
+  imported on any computer. Owner should see: a ship copied in game, exported as a file, and pasted as a ship elsewhere.
 - "Pre-Existing dynamic objects should be synced across the network." Owner should see: a player joining a world with
   rafts, boats or felled logs already moving or at rest sees them where the host does. BUGS.md #222.
 - "Ladders and Doors should work normally on dynamic objects." Owner should see: a ladder placed on a ship climbs as on
