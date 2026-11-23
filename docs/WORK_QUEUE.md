@@ -31,6 +31,26 @@ what these are though), low shrub seed, water darkened by SSAO." Not worked unti
   either of the unclear queue items are, drop them"; from the check-in list, never recorded in the owner's words); held
   here.
 
+## Q&A with the owner, 2026-11-23 (one question at a time)
+
+Owner, 2026-11-23: "Honestly there's too much to answer here. Can you do some Q & A with me, one question (with
+context) at a time with a choice to table it as well as the other options?" Answers:
+
+- **Rivers from the mountains (#196, Follow-ups):** fold into the 0.76 line with the deep seas and the underground
+  ("Fold into 0.76"). Owner should see: on a new world, each river traced back up to the ridge as a thin stream, more
+  and longer rivers, the small ones narrow.
+- **Blocks against a build platform's side:** "Join the raft": anything placed against a build platform (top or side)
+  becomes part of the body being built, so the whole build launches together. Owner should see: a raft built off a
+  platform's sides launches whole when the platform is broken.
+- **Hit counts for blocks not on the owner's sheet:** "Accept all": obsidian 20 base hits; build platform as planks;
+  snowy grass as grass; red sand and the moon dusts as sand; red dirt as dirt; red sandstone and basalt as stone; snowy
+  leaves as leaves; brush and saplings 1 hit (docs/BLOCK_DAMAGE.md, the proposals now confirmed).
+- **Boat glide (#220):** "Yes, as proposed": the speed-squared drag kept, the linear drag 0.15 → ~0.02/s, tuned by feel.
+- **Land vehicles:** "Wheeled carts later": a design pass for carts and wagons with wheels, a future feature.
+- **Palm fronds (cards or blocks):** tabled.
+- **Haze (item 29):** already settled 2026-11-12 ("Yeah let's go with D on haze": half distance 6 km, scale height
+  1 km); the "waiting" listing was stale.
+
 ## Owner's list, 2026-11-23, grouped into sections
 
 Owner, 2026-11-23: "These are all items to queue up into our roadmap. But we'll need to reconcile with what we have in
