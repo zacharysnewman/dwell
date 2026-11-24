@@ -130,8 +130,17 @@ dwell_world::both_faces!(
                                     assert_eq!(v.at(x, f.row(h), z), f.state(p.rim), "rim");
                                 }
                                 assert_eq!(v.at(x, f.row(top + rows + 1), z), M.air);
-                                // The shaft's wall keeps its bedrock.
+                                // The shaft's wall keeps its bedrock, and is lined with the portals'
+                                // `lining` from the midplane up to the rim (owner, 2026-11-23:
+                                // "Portals should be made of bedrock").
                                 assert_eq!(v.at(x, f.row(MIDPLANE_Y), z), bedrock);
+                                for h in MIDPLANE_Y..=top {
+                                    assert_eq!(
+                                        v.at(x, f.row(h), z),
+                                        p.lining,
+                                        "{portal:?} wall at {h}"
+                                    );
+                                }
                                 checked.1 += 1;
                             }
                             Part::Clear if under.contains(&(x, z)) => {}

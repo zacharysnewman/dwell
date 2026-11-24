@@ -494,7 +494,10 @@ fn portal_drop(
         }
     }
     let c = server.players.controller(server.h);
-    assert!(c.ground.grounded, "still in the air after 30 s (0.76: ~1.2 km shafts)");
+    assert!(
+        c.ground.grounded,
+        "still in the air after 30 s (0.76: ~1.2 km shafts)"
+    );
     (*p.stats(), c.face)
 }
 

@@ -72,6 +72,9 @@ impl Shaft {
 pub struct PortalShafts {
     pub shafts: Arc<Vec<Shaft>>,
     pub exit: PortalExit,
+    /// No block is placed with its column's centre within this far (m) of an axis, at any height
+    /// on either face (owner, 2026-11-23: "With a no build zone"); 0: none.
+    pub no_build: f64,
 }
 
 impl PortalShafts {
@@ -79,7 +82,28 @@ impl PortalShafts {
         Self {
             shafts: Arc::new(shafts),
             exit,
+            no_build: 0.0,
         }
+    }
+
+    /// With a no-build zone of `radius` m round each axis.
+    pub fn with_no_build(mut self, radius: f64) -> Self {
+        self.no_build = radius;
+        self
+    }
+
+    /// Whether placing a block in world cell `c` is refused: its column's centre within the
+    /// no-build zone of a portal's axis (any row: the shaft runs through both faces).
+    pub fn forbids(&self, c: [i32; 3]) -> bool {
+        let r = self.no_build;
+        r > 0.0
+            && self.shafts.iter().any(|s| {
+                let (dx, dz) = (
+                    f64::from(c[0]) + 0.5 - s.axis[0],
+                    f64::from(c[2]) + 0.5 - s.axis[1],
+                );
+                dx * dx + dz * dz <= r * r
+            })
     }
 
     /// The shaft whose footprint holds world column point (`x`, `z`).
@@ -155,6 +179,19 @@ mod tests {
 
     // face-a-only: the lift reads a face's opening by `Shaft::top`; face B's is tested alike below.
     #[test]
+    fn no_block_is_placed_in_a_portals_no_build_zone() {
+        // both-faces: the zone is a column's distance from an axis, at every row of both faces.
+        let p = shafts().with_no_build(7.5);
+        // The axis at (10.5, -4.5): its own column, 7 m out, and 8 m out.
+        for y in [-3000, -5, 0, 5, 1500] {
+            assert!(p.forbids([10, y, -5]), "the axis's column at row {y}");
+            assert!(p.forbids([17, y, -5]), "7 m out at row {y}");
+            assert!(!p.forbids([18, y, -5]), "8 m out at row {y}");
+        }
+        assert!(!shafts().forbids([10, 0, -5]), "no zone without the rule");
+    }
+
+    #[test]
     fn the_lift_tops_a_rising_body_out_three_metres_over_the_opening() {
         let p = shafts();
         let g = 20.0f32;
@@ -164,7 +201,10 @@ mod tests {
             for (feet, rise) in [(top - 500.0, 3.0), (top - 500.0, 300.0), (top - 1.0, 40.0)] {
                 let v = f64::from(p.lift(face, [10.5, feet, -4.5], rise, g).expect("lifted"));
                 let apex = feet + v * v / (2.0 * f64::from(g));
-                assert!((apex - (top + 3.0)).abs() < 1e-3, "{face:?} from {feet}: apex {apex}");
+                assert!(
+                    (apex - (top + 3.0)).abs() < 1e-3,
+                    "{face:?} from {feet}: apex {apex}"
+                );
             }
             // Never falling, over the opening (a jump from the rim), or outside the footprint.
             assert_eq!(p.lift(face, [10.5, top - 10.0, -4.5], -5.0, g), None);

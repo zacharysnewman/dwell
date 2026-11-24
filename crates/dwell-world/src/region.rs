@@ -217,6 +217,12 @@ fn check_region_edit_with(
                     out.unbreakable += 1;
                     continue;
                 }
+                // Nothing built in a portal's no-build zone (clearing it is still allowed); counted
+                // with the cells no edit may change.
+                if wanted != M.air && world.portals.forbids(cell) {
+                    out.unbreakable += 1;
+                    continue;
+                }
                 if overlaps_player(wanted, cell, players) {
                     out.into_player += 1;
                     continue;

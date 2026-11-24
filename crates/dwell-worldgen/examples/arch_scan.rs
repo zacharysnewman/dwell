@@ -24,7 +24,13 @@ fn main() {
             let sites = g.arches_near((cx - r, cz - r), (cx + r, cz + r));
             let arches = sites.iter().filter(|s| s.through).count();
             if arches > 0 {
-                rows.push((arches as i64 - (sites.len() - arches) as i64, arches, sites.len() - arches, cx, cz));
+                rows.push((
+                    arches as i64 - (sites.len() - arches) as i64,
+                    arches,
+                    sites.len() - arches,
+                    cx,
+                    cz,
+                ));
             }
         }
     }

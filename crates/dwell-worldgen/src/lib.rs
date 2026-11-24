@@ -198,6 +198,7 @@ pub fn portal_shafts_for_sized(
         })
         .collect();
     dwell_world::portal_shafts::PortalShafts::new(shafts, p.rules.exit)
+        .with_no_build(f64::from(p.rules.no_build))
 }
 
 /// A dev spawn by a portal (`?spawn=portal`, BIFACIAL_WORLD.md §6): on face `face`'s rim over the

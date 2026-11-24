@@ -714,7 +714,12 @@ mod tests {
         for q in &c {
             let r = ((q.x - end.x).powi(2) + (q.z - end.z).powi(2)).sqrt();
             if r <= reach {
-                assert_eq!(q.s, 5.0, "a point {r:.2} m from the junction at {:?}", (q.x, q.z));
+                assert_eq!(
+                    q.s,
+                    5.0,
+                    "a point {r:.2} m from the junction at {:?}",
+                    (q.x, q.z)
+                );
             }
         }
         // The stretch begins where the course leaves the junction's reach; upstream unchanged.
@@ -733,7 +738,10 @@ mod tests {
         let bank = meet_at_bank(&mut c, 5.0, reach);
         assert!(c[bank..].iter().all(|q| q.s == 5.0), "{c:?}");
         assert_eq!(c[0].s, 10.0);
-        assert!(c.iter().any(|q| (q.x, q.z) == (-4.0, 0.0) && q.s == 5.0), "{c:?}");
+        assert!(
+            c.iter().any(|q| (q.x, q.z) == (-4.0, 0.0) && q.s == 5.0),
+            "{c:?}"
+        );
     }
 
     #[test]

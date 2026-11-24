@@ -4471,6 +4471,19 @@ impl TerrainGenerator {
                         *v = running_water();
                     }
                 }
+                // A portal's rim columns are its shaft's wall: lined with the portals' `lining`
+                // (bedrock) from the midplane up to the rim, so no edit digs into the shaft
+                // (owner, 2026-11-23: "Portals should be made of bedrock").
+                if let (Some(_), Some((portals, _))) = (rim, near.as_ref()) {
+                    for ly in 0..S {
+                        let y = y0 + ly;
+                        let v = &mut voxels[local_index(x, ly, z)];
+                        if y <= top && in_volume(y) && *v != M.air && !dwell_blocks::info(*v).liquid
+                        {
+                            *v = portals.lining;
+                        }
+                    }
+                }
                 // A decoration in the air cell over the ground, if this chunk holds that cell
                 // (none near a portal).
                 let above = top + 1;

@@ -234,7 +234,12 @@ fn the_core_is_stone_nothing_below_the_face_or_over_the_build_volume() {
             for y in (0..S).take_while(|&y| cy * S + y < CORE_LAYERS) {
                 for z in 0..S {
                     for x in 0..S {
-                        assert_eq!(floor.get(x, y, z), core_at(cy * S + y), "{column:?} row {}", cy * S + y);
+                        assert_eq!(
+                            floor.get(x, y, z),
+                            core_at(cy * S + y),
+                            "{column:?} row {}",
+                            cy * S + y
+                        );
                     }
                 }
             }

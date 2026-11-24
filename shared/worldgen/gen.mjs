@@ -1763,6 +1763,7 @@ const MIDPLANE = {
     maxHeight: [0, 10_000],
     radius: [1, 16],
     clear: [0, 64],
+    noBuild: [0, 128],
   },
   rim: { width: [0, 8], height: [0, 8] },
   exit: {
@@ -1832,10 +1833,18 @@ export function validateMidplane(
     "count",
     "rim",
     "ladder",
+    "lining",
     "motes",
     "monument",
     "exit",
   ]);
+  // The shaft's lining (owner, 2026-11-23: "Portals should be made of bedrock. With a no build
+  // zone."): a full block no edit may change, and the no-build zone over the shaft and its rim.
+  const lining = block("portals.lining", p.lining);
+  if (lining.shape !== "full" || !lining.indestructible)
+    fail(`portals.lining ${p.lining} must be a full, indestructible block`);
+  if (p.noBuild < p.radius + p.rim.width)
+    fail(`portals.noBuild must reach past the rim (radius + rim.width = ${p.radius + p.rim.width} m)`);
   if (!moteNames(loadMotes()).includes(p.motes))
     fail(
       `portals.motes ${JSON.stringify(p.motes)} is not a look in shared/look/motes.json`,
@@ -2260,6 +2269,8 @@ export function midplaneRust(data) {
     ["rim_block", JSON.stringify(p.rim.block)],
     ["rim_width", rf(p.rim.width)],
     ["rim_rows", `${p.rim.height / cell}`],
+    ["lining", JSON.stringify(p.lining)],
+    ["no_build", rf(p.noBuild)],
     ["ladder", JSON.stringify(state)],
     [
       "wall",
