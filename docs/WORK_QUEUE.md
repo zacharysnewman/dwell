@@ -92,12 +92,20 @@ context) at a time with a choice to table it as well as the other options?" Answ
   touch), and the two unknown specs only if the GPU check passes them; run locally before a merge touching their area;
   CLAUDE.md's "Known CI failures" kept in step with the tag. Owner should see: CI green but for real failures, the
   tagged tests still run on a GPU locally.
+- **Worldgen tests share one Realistic map (owner, 2026-11-23):** "That's a long running tasks why does it take 15+
+  minutes?" Measured: `cargo test -p dwell-worldgen` 16+ min serially and 16.7 min (1000 s) four binaries at a time;
+  each `realistic_*` binary (about 15) builds the whole Realistic world map itself, 95–281 s each
+  (`realistic_snowy_leaves` 281 s, `realistic_shrubs` 214 s, `realistic_talus` 197 s). Proposed: build the map once
+  per seed and data and share it (cached on disk, keyed by the seed and a hash of the worldgen data, rebuilt when
+  either changes), so the suite runs in ~2 min. Owner: "Queue that." Owner should see: the full worldgen suite done in
+  about 2 minutes, its results unchanged.
 - **Snow-line speckle (#219):** owner: "I'm not sure if it looks bad, snowy mountains seem pretty rare in our current
   generation rules." Then: "Send me a screenshot" of the spot (seed 4065579781, Realistic, (−21950, −8850)).
 - **The 512 m underground:** "Measure first": the world's size, generation and load time at 512 m before building.
 - **Order (owner, 2026-11-23, by the Q&A):**
   0. 0.76 in flight: deep seas; the 512 m underground (measured first); rivers from the mountains. With it: the quick
-     GPU check of the two unknown e2e specs and the `@gpu` tag for CI-only flaky tests.
+     GPU check of the two unknown e2e specs and the `@gpu` tag for CI-only flaky tests. Then the worldgen tests sharing
+     one Realistic map (queued 2026-11-23, after 0.76 merges).
   1. Builders, a quick fix (#226: blueprint slopes facing the blueprint's way) ("Early, as a quick fix").
   2. Section 1, Moving bodies.
   3. Section 8, Far trees and far terrain.
@@ -240,6 +248,12 @@ First in this section (owner, 2026-11-23, to share a ship "in a generic way"): c
   see: silvery, shiny veins in the stone, running down into the ground at sweeping angles, seen in cliffs and when
   digging. (Prototype content, ARCHITECTURE.md §6.1: a data-driven vein system; questions first.)
 - "Remove boulders (if not already removed)." Already done: the 0.74 line (2026-11-17, `boulders` out of every biome).
+  **Fell short (owner, 2026-11-23):** "There shouldn't be boulders. These were supposed to be removed. But I've seen
+  them in game still." The loose `boulders` placement is in no biome, but the 2026-11-17 change kept talus, and
+  talus (every Realistic biome, `worlds/realistic.json`) still places `dwell:proto_rock`, the same boulder (weight 2
+  of 10, with 1 m stones and 2 m blocks), under cliffs and steep rock. BUGS.md #232. Owner should see: no boulders
+  anywhere on a new 0.76 world, cliffs included. Folded into 0.76 (a worldgen change on that line). Asked how far:
+  "Drop the boulder piece": talus keeps its 1 m stones and 2 m blocks under cliffs; `proto_rock` leaves its mix.
 
 ### 3. Water
 

@@ -6,6 +6,14 @@ pins it.
 
 ## Open
 
+### 232. Boulders still appear in game after their removal
+
+Owner, 2026-11-23: "There shouldn't be boulders. These were supposed to be removed. But I've seen them in game
+still." The 0.74 line took the `boulders` placement out of every biome, but kept talus (rocks at cliff bases), whose
+`structures` include `dwell:proto_rock` (2 of 10) beside `talus_stone` and `talus_block`; talus is listed by every
+Realistic biome (`shared/worldgen/worlds/realistic.json`). Fix on the 0.76 line, with a test that no placement a
+world lists stands a boulder.
+
 ### 230. "Finding a place to stand" takes up to 20 s
 
 Owner, 2026-11-23: "I've noticed it takes up to 20s. I think this benchmark may be wrong, I'm not sure. Could be for
