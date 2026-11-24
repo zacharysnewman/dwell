@@ -7741,6 +7741,10 @@
             "gpu.frame.p95": 16.7
           },
           "reportOnly": true
+        },
+        {
+          "do": "shot",
+          "name": "after-the-crossing"
         }
       ]
     },
