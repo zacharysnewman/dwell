@@ -80,6 +80,8 @@ impl Jobs for InlineJobs {
 pub enum Purpose {
     Chunk(Coord, u64),
     ChunkMesh(Coord, u64),
+    /// A portal shaft's stand-in chunk drawn from the portals' data (BUGS.md #236).
+    StandIn(Coord),
     Bounds(i32, i32, i32),
     Section(u64),
     SectionMesh(u64),
@@ -124,6 +126,7 @@ impl Purpose {
         match self {
             Purpose::Chunk(..) => ("job.chunk.wait", "job.chunk.run"),
             Purpose::ChunkMesh(..) => ("job.chunk_mesh.wait", "job.chunk_mesh.run"),
+            Purpose::StandIn(..) => ("job.stand_in.wait", "job.stand_in.run"),
             Purpose::Bounds(..) => ("job.bounds.wait", "job.bounds.run"),
             Purpose::Section(..) => ("job.section.wait", "job.section.run"),
             Purpose::SectionMesh(..) => ("job.section_mesh.wait", "job.section_mesh.run"),

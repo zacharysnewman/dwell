@@ -165,6 +165,8 @@ struct Slot {
     /// `(dx + 1) + 3(dy + 1) + 9(dz + 1)`): a vertex reads the cells around it, so a change on a
     /// border changes the neighbour's mesh too.
     changed: u32,
+    /// Its cells that see the sky down a portal's shaft ([`ShaftSky`]), sorted.
+    shaft: Vec<u16>,
 }
 
 impl Slot {
@@ -188,6 +190,12 @@ struct P {
 /// falling down a portal's 1.2 km shaft read as open sky and lit the shaft behind them.
 pub type SkyTest = std::sync::Arc<dyn Fn(ChunkCoord) -> bool + Send + Sync>;
 
+/// The cells of a chunk that see the sky by the portals' data (chunk-local `x | y << 5 | z << 10`):
+/// a portal's shaft, open from one face's opening to the other's, is lit down its whole length
+/// whatever stands over its opening (the arch) or isn't held over it (owner, 2026-11-24: "the
+/// structure arches will mostly block the sky/light for the tube"). BUGS.md #236.
+pub type ShaftSky = std::sync::Arc<dyn Fn(ChunkCoord) -> Vec<u16> + Send + Sync>;
+
 /// The flood light of the chunks the client holds.
 pub struct LightMap {
     slots: Vec<Slot>,
@@ -206,6 +214,8 @@ pub struct LightMap {
     pending: Option<Box<Pending>>,
     /// Which chunks not held let the sky through ([`SkyTest`]; none: all of them).
     sky_test: Option<SkyTest>,
+    /// The cells that see the sky down a portal's shaft ([`ShaftSky`]; none: no such cells).
+    shaft_sky: Option<ShaftSky>,
 }
 
 /// A chunk's load in progress (docs/BUGS.md #72): its passes, each a channel's removal then
@@ -263,7 +273,14 @@ impl LightMap {
             writes: 0,
             pending: None,
             sky_test: None,
+            shaft_sky: None,
         }
+    }
+
+    /// Sets the cells that see the sky down the portals' shafts ([`ShaftSky`]), for the chunks
+    /// held from then on.
+    pub fn set_shaft_sky(&mut self, shaft_sky: Option<ShaftSky>) {
+        self.shaft_sky = shaft_sky;
     }
 
     /// Sets which chunks not held let the sky through ([`SkyTest`]). Light already spread stays
@@ -501,6 +518,13 @@ impl LightMap {
                 }
             }
         }
+        // A portal's shaft sees the sky down its length (`ShaftSky`): its cells light it.
+        add.extend(
+            self.slots[s as usize]
+                .shaft
+                .iter()
+                .map(|&i| P { slot: s, i }),
+        );
         // Both channels from these cells, then the cells below (see `resume`).
         self.pending = Some(Box::new(Pending {
             coord,
@@ -835,12 +859,15 @@ impl LightMap {
     }
 
     fn alloc(&mut self, coord: ChunkCoord) -> u32 {
+        let mut shaft = self.shaft_sky.as_ref().map_or_else(Vec::new, |f| f(coord));
+        shaft.sort_unstable();
         let slot = Slot {
             coord,
             cells: None,
             uniform: 0,
             near: [NONE; 6],
             changed: 0,
+            shaft,
         };
         let s = match self.free.pop() {
             Some(s) => {
@@ -1009,6 +1036,14 @@ impl LightMap {
         match ch {
             Channel::Block => e,
             Channel::Sky => {
+                if f < LIGHT_MAX
+                    && self.slots[p.slot as usize]
+                        .shaft
+                        .binary_search(&p.i)
+                        .is_ok()
+                {
+                    return LIGHT_MAX;
+                }
                 if f >= LIGHT_MAX || self.above_slot(p).is_some() {
                     return 0;
                 }

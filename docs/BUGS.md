@@ -15,7 +15,17 @@ view is the server's sphere of 3 chunks (48 m) round the player, and the far vie
 metres wide through the 1.15 km core, so past ~48 m nothing is drawn and the far face's sky shows; and the light
 treats a chunk not held above a cell as open sky (`light.rs` `kind_of`: `open_above` when the chunk above is
 `NONE`; `unload` lets "cells below it take the open sky again"), so chunks dropped above a falling player relight
-the shaft as open sky. Open; solutions asked for (WORK_QUEUE).
+the shaft as open sky. The owner picked "The tube mesh, plus #2 for lights?", then: "The possible problem I'm
+wanting to correct with #2 is the structure arches will mostly block the sky/light for the tube." **Fixed on the
+0.76 branch (2026-11-24):** (1) stand-in chunks down each shaft within `standInM` (96 m) of the eye, meshed from the
+portals' data where the chunks aren't drawable (`portals.rs` `a_shafts_stand_ins_are_open_where_its_chunks_are_and_
+solid_elsewhere`: every stand-in's open cells are the generated chunk's, the shaft's whole length); (2) the light's
+sky test: a chunk not held lets the sky in only where the generator knows it open (`light_tests.rs`
+`chunks_known_not_open_let_no_sky_into_a_shaft_under_them`, the old open sky its first assertion); (3) the shaft's
+cells see the sky by the portals' data, under the arch (`a_shaft_sees_the_sky_by_the_portals_data_under_a_roof`,
+dim under the roof before; natively seed 0's shaft at 482 m reads sky 15 with it, 0 without:
+`examples/shaft_light.rs`). Seen in the browser: from the rim, bedrock walls down to the far face's sky. Open until
+the owner's look.
 
 
 ### 232. Boulders still appear in game after their removal

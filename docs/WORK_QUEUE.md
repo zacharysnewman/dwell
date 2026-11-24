@@ -175,7 +175,9 @@ context) at a time with a choice to table it as well as the other options?" Answ
 - **Portal shaft drawing and light (owner, 2026-11-24, BUGS.md #236):** "It looks like the chunks aren't loading very
   far down for the portal, so I can just see the other world face's sky. And it seems like they might unload behind
   as I fall, allowing light to shine down into the hole as well. What are possible solutions." Options given; the
-  owner picks. Owner should see: looking or falling down a portal, bedrock walls all the way down to a small disc of
+  owner picks. Then (2026-11-24): "The possible problem I'm wanting to correct with #2 is the structure arches will
+  mostly block the sky/light for the tube.": the shaft's open cells see the sky by the portal data, from one opening
+  to the other, whatever stands over the opening (the arch) or isn't held over them; the stand-in walls lit alike. Owner should see: looking or falling down a portal, bedrock walls all the way down to a small disc of
   the far face's sky at the far end, and no light pouring in behind as they fall. Part of 0.76 (portals through the
   512 m core are new on this line).
 - **Respawn hand-over on a mountainside (found 2026-11-24, 0.76):** with the LOD, a preloaded respawn on seed 1's new

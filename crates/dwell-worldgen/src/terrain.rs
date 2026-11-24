@@ -2819,8 +2819,7 @@ impl TerrainGenerator {
                     if r.level <= CELL_H {
                         return 0.0;
                     }
-                    let levee =
-                        r.level + S.river_bank - (edge - 1.0).max(0.0) * S.river_levee_fall;
+                    let levee = r.level + S.river_bank - (edge - 1.0).max(0.0) * S.river_levee_fall;
                     let reach = r.valley.max(1e-6);
                     let keep = 1.0 - smooth01((edge - 0.75 * reach) / (0.25 * reach));
                     (levee - ground).max(0.0) * keep

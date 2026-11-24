@@ -21,6 +21,7 @@ pub const MIDPLANE: Midplane = Midplane {
         rim_rows: 1,
         lining: "dwell:bedrock",
         no_build: 7.5,
+        stand_in: 96.0,
         ladder: None,
         wall: [0, 1],
         clear: 4.0,

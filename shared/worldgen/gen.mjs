@@ -1764,6 +1764,7 @@ const MIDPLANE = {
     radius: [1, 16],
     clear: [0, 64],
     noBuild: [0, 128],
+    standInM: [0, 1024],
   },
   rim: { width: [0, 8], height: [0, 8] },
   exit: {
@@ -2278,6 +2279,7 @@ export function midplaneRust(data) {
     ["rim_rows", `${p.rim.height / cell}`],
     ["lining", JSON.stringify(p.lining)],
     ["no_build", rf(p.noBuild)],
+    ["stand_in", rf(p.standInM)],
     ["ladder", state === null ? "None" : `Some(${JSON.stringify(state)})`],
     [
       "wall",

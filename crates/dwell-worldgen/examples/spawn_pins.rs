@@ -5,6 +5,9 @@ fn main() {
         let t = dwell_worldgen::BifacialTerrain::new(seed);
         let a = t.local(dwell_world::Face::A).spawn_search_point();
         let [x, y, z] = t.local(dwell_world::Face::B).spawn_search_point();
-        println!("({seed}, {a:?}, {:?}),", [x, dwell_world::FaceFrame::B.y(y), z]);
+        println!(
+            "({seed}, {a:?}, {:?}),",
+            [x, dwell_world::FaceFrame::B.y(y), z]
+        );
     }
 }

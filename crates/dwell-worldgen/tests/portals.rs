@@ -506,3 +506,55 @@ fn a_portal_monument_is_named_by_data_alone() {
     assert!(none.local(Face::A).monument(p, p.sites[0]).is_none());
     assert!(p.monument_feet(p.sites[0]).is_empty());
 }
+
+#[test]
+fn a_shafts_stand_ins_are_open_where_its_chunks_are_and_solid_elsewhere() {
+    // both-faces: a shaft's stand-ins run from face B's opening to face A's.
+    // BUGS.md #236 (owner's pick, 2026-11-24: "The tube mesh"): a client draws a shaft's walls from
+    // the portals' data where its chunks aren't loaded. Each stand-in chunk is open exactly where
+    // the generated chunk is (its walls are the shaft's), and they run the shaft's length but a
+    // chunk under either opening; none for a shaft out of reach.
+    let shafts = dwell_worldgen::portal_shafts_for_sized(
+        GENERATOR_TERRAIN,
+        0,
+        dwell_protocol::world_size::WorldSize::DEFAULT,
+    );
+    assert!(shafts.stand_in > 0.0 && shafts.lining != 0);
+    let g = BifacialTerrain::new(0);
+    let s = shafts.shafts[0];
+    let eye = [s.axis[0], MIDPLANE_M + s.top(Face::A) + 1.6, s.axis[1]];
+    let coords = shafts.stand_ins(eye);
+    let rows: Vec<i32> = coords.iter().map(|c| c.y).collect();
+    let (lo, hi) = (*rows.iter().min().unwrap(), *rows.iter().max().unwrap());
+    // ~1.2 km: about 72 chunk rows, all inside the rock.
+    assert!(hi - lo > 60, "rows {lo}..={hi}");
+    assert!(hi * S + S <= row_of_m(MIDPLANE_M + s.top(Face::A)) - S + 1);
+    assert!(lo * S >= row_of_m(MIDPLANE_M - s.top(Face::B)) + S);
+    for &c in &coords {
+        let mut chunk = Chunk::default();
+        g.generate(c, &mut chunk);
+        let block = shafts.stand_in_block(c);
+        let pad = S + 2;
+        for y in 0..S {
+            for z in 0..S {
+                for x in 0..S {
+                    let generated = chunk.get(x, y, z);
+                    let stand_in = block[((x + 1) + pad * ((z + 1) + pad * (y + 1))) as usize];
+                    assert_eq!(
+                        generated == M.air,
+                        stand_in == 0,
+                        "{c:?} cell {x},{y},{z}: generated {generated}, stand-in {stand_in}"
+                    );
+                }
+            }
+        }
+    }
+    let far = [s.axis[0] + shafts.stand_in + 1.0, eye[1], s.axis[1]];
+    assert!(
+        shafts
+            .stand_ins(far)
+            .iter()
+            .all(|c| !coords.contains(c) || shafts.shafts.len() > 1),
+        "out of reach: none of this shaft's"
+    );
+}

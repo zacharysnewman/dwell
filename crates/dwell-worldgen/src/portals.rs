@@ -66,6 +66,9 @@ pub struct PortalRules {
     /// No block is placed within this far of a portal's axis (m), at any height on either face:
     /// the shaft, its rim and the ground the exit lands on ("With a no build zone").
     pub no_build: f32,
+    /// A client within this far of a shaft's axis (m, across) draws its walls from this data where
+    /// its chunks aren't loaded (BUGS.md #236; a client look, not terrain).
+    pub stand_in: f32,
     /// No tree or decoration stands within this far of the rim (m).
     pub clear: f32,
     /// The landmark standing round every opening, by structure name (`shared/structures`), its

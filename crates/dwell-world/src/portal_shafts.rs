@@ -10,7 +10,9 @@
 
 use std::sync::Arc;
 
-use crate::Face;
+use dwell_blocks::StateId;
+
+use crate::{CHUNK_SIZE, ChunkCoord, Face, MIDPLANE_M, row_of_m};
 
 /// The exit push (`midplane.json` `portals.exit`): in a shaft's footprint, a body rising at least
 /// `min_rise` m/s with its feet within `depth` m over the opening is pushed along its facing at
@@ -75,6 +77,11 @@ pub struct PortalShafts {
     /// No block is placed with its column's centre within this far (m) of an axis, at any height
     /// on either face (owner, 2026-11-23: "With a no build zone"); 0: none.
     pub no_build: f64,
+    /// A client within this far (m, across) of an axis draws the shaft's walls from this data
+    /// where its chunks aren't loaded ([`Self::stand_ins`]); 0: none.
+    pub stand_in: f64,
+    /// The shafts' lining (`midplane.json` `portals.lining`): what a stand-in's walls are.
+    pub lining: StateId,
 }
 
 impl PortalShafts {
@@ -83,7 +90,116 @@ impl PortalShafts {
             shafts: Arc::new(shafts),
             exit,
             no_build: 0.0,
+            stand_in: 0.0,
+            lining: 0,
         }
+    }
+
+    /// Drawn from this data within `reach` m of an axis where the chunks aren't loaded, its walls
+    /// `lining` (BUGS.md #236).
+    pub fn with_stand_ins(mut self, reach: f64, lining: StateId) -> Self {
+        self.stand_in = reach;
+        self.lining = lining;
+        self
+    }
+
+    /// The chunks a client with its eye at world point `eye` draws from the portals' data where it
+    /// doesn't hold them (BUGS.md #236, the owner's pick: "The tube mesh"): of each shaft within
+    /// [`Self::stand_in`] m across, every chunk its open columns pass through that lies wholly
+    /// inside the rock, a chunk's height under either face's opening. The full-detail view reaches
+    /// 48 m; a shaft through the 512 m core is ~1.2 km long, and the far view can't draw a hole a
+    /// few metres wide, so down a shaft past the view the far face's sky showed.
+    pub fn stand_ins(&self, eye: [f64; 3]) -> Vec<ChunkCoord> {
+        let mut out = Vec::new();
+        if self.stand_in <= 0.0 || self.lining == 0 {
+            return out;
+        }
+        let n = CHUNK_SIZE;
+        for s in self.shafts.iter() {
+            let (dx, dz) = (eye[0] - s.axis[0], eye[2] - s.axis[1]);
+            if dx * dx + dz * dz > self.stand_in * self.stand_in {
+                continue;
+            }
+            // The rows between the two openings, a chunk's height in from each.
+            let lo = row_of_m(MIDPLANE_M - s.top(Face::B)) + n;
+            let hi = row_of_m(MIDPLANE_M + s.top(Face::A)) - n;
+            let (cy0, cy1) = ((lo + n - 1).div_euclid(n), (hi + 1).div_euclid(n) - 1);
+            let reach = s.radius.ceil() as i32;
+            let [cx, cz] = s.axis.map(|v| v.floor() as i32);
+            for x in (cx - reach).div_euclid(n)..=(cx + reach).div_euclid(n) {
+                for z in (cz - reach).div_euclid(n)..=(cz + reach).div_euclid(n) {
+                    for y in cy0..=cy1 {
+                        let c = ChunkCoord::new(x, y, z);
+                        if !out.contains(&c) {
+                            out.push(c);
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Whether world column (`x`, `z`) is one of a shaft's open columns (as the generator opens
+    /// them: its centre within the radius of the axis column's centre).
+    pub fn open_column(&self, x: i32, z: i32) -> bool {
+        self.shafts.iter().any(|s| {
+            let [cx, cz] = s.axis.map(|v| v.floor() as i32);
+            let (dx, dz) = (f64::from(x - cx), f64::from(z - cz));
+            dx * dx + dz * dz <= s.radius * s.radius
+        })
+    }
+
+    /// The cells of chunk `c` that see the sky down a shaft (chunk-local `x | y << 5 | z << 10`,
+    /// [`crate::light::ShaftSky`]): its open columns' cells from face B's opening to face A's
+    /// (owner, 2026-11-24: "the structure arches will mostly block the sky/light for the tube").
+    pub fn sky_cells(&self, c: ChunkCoord) -> Vec<u16> {
+        let n = CHUNK_SIZE;
+        let mut out = Vec::new();
+        for s in self.shafts.iter() {
+            let lo = row_of_m(MIDPLANE_M - s.top(Face::B)) + 1;
+            let hi = row_of_m(MIDPLANE_M + s.top(Face::A)) - 1;
+            let (y0, y1) = (lo.max(c.y * n), hi.min(c.y * n + n - 1));
+            if y0 > y1 {
+                continue;
+            }
+            let reach = s.radius.ceil() as i32;
+            let [cx, cz] = s.axis.map(|v| v.floor() as i32);
+            for z in (cz - reach).max(c.z * n)..=(cz + reach).min(c.z * n + n - 1) {
+                for x in (cx - reach).max(c.x * n)..=(cx + reach).min(c.x * n + n - 1) {
+                    let (dx, dz) = (f64::from(x - cx), f64::from(z - cz));
+                    if dx * dx + dz * dz > s.radius * s.radius {
+                        continue;
+                    }
+                    for y in y0..=y1 {
+                        let (lx, ly, lz) = (x - c.x * n, y - c.y * n, z - c.z * n);
+                        out.push((lx | (ly << 5) | (lz << 10)) as u16);
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// A stand-in chunk's voxels with their one-cell apron, the mesher's padded layout (x fastest,
+    /// then z, then y, each −1..=CHUNK_SIZE): the shafts' open columns air, every other cell the
+    /// lining. Only a [`Self::stand_ins`] chunk, wholly inside the rock: only the shaft's walls
+    /// show, as the chunk itself would draw them.
+    pub fn stand_in_block(&self, c: ChunkCoord) -> Vec<StateId> {
+        let n = CHUNK_SIZE;
+        let pad = n + 2;
+        let mut out = vec![self.lining; (pad * pad * pad) as usize];
+        for z in -1..=n {
+            for x in -1..=n {
+                if !self.open_column(c.x * n + x, c.z * n + z) {
+                    continue;
+                }
+                for y in -1..=n {
+                    out[((x + 1) + pad * ((z + 1) + pad * (y + 1))) as usize] = 0;
+                }
+            }
+        }
+        out
     }
 
     /// With a no-build zone of `radius` m round each axis.

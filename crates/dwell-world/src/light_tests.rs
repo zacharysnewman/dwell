@@ -865,3 +865,69 @@ crate::both_faces!(
         );
     }
 );
+
+crate::both_faces!(
+    /// Owner, 2026-11-24: "the structure arches will mostly block the sky/light for the tube". A
+    /// roof over a shaft's opening (the portal's arch) left it dark under it; the cells the portals'
+    /// data says see the sky down it ([`ShaftSky`]) are lit full the whole way, held from the
+    /// start or loaded again after their top was dropped, and the light agrees with lighting from
+    /// nothing.
+    fn a_shaft_sees_the_sky_by_the_portals_data_under_a_roof(f: FaceFrame) {
+        let (mut fx, test) = shaft(f);
+        // The arch: a slab over the opening.
+        fx.fill([-2, GROUND + 4, -2], [4, GROUND + 5, 4], rock());
+        let all = fx.chunks(-1..=1, -3..=1, -1..=1);
+        let cell = [0, BASE - 2 * NC + 4, 0];
+        let plain = fx.lit(&all);
+        assert!(fx.at(&plain, cell).0 < LIGHT_MAX - 4, "under the roof: dim");
+        // The shaft's cells (face-local x, z in 0..2, from the bottom up to the ground).
+        let sky: ShaftSky = std::sync::Arc::new(move |c: ChunkCoord| {
+            let mut out = Vec::new();
+            for i in 0..CHUNK_VOLUME as u16 {
+                let [x, y, z] = coords(i);
+                let l = f.cell([c.x * NC + x, c.y * NC + y, c.z * NC + z]);
+                if (0..2).contains(&l[0])
+                    && (0..2).contains(&l[2])
+                    && (BASE - 3 * NC..GROUND).contains(&l[1])
+                {
+                    out.push(i);
+                }
+            }
+            out
+        });
+        let lit = |fx: &mut Fixture, order: &[ChunkCoord]| {
+            let mut w = VoxelWorld::streamed();
+            w.enable_light();
+            let l = w.light_mut().expect("lit");
+            l.set_sky_test(Some(test.clone()));
+            l.set_shaft_sky(Some(sky.clone()));
+            for &c in order {
+                fx.load(&mut w, c);
+            }
+            w
+        };
+        let mut w = lit(&mut fx, &all);
+        for dy in [0, NC, 2 * NC] {
+            let c = [1, BASE - 3 * NC + 2 + dy, 1];
+            assert_eq!(fx.at(&w, c).0, LIGHT_MAX, "down the shaft at {c:?}");
+        }
+        // Its wall's face (the cell beside it) takes the light a step down.
+        assert!(fx.at(&w, cell).0 == LIGHT_MAX);
+        // Only the deep part held (fallen in): still lit.
+        let deep = fx.chunks(-1..=1, -3..=-2, -1..=1);
+        let w2 = lit(&mut fx, &deep);
+        assert_eq!(fx.at(&w2, cell).0, LIGHT_MAX, "deep, its top not held");
+        // Its top dropped and loaded again: as lit from nothing.
+        let top = fx.chunks(-1..=1, -1..=1, -1..=1);
+        for &c in &top {
+            w.remove(c);
+        }
+        w.light_unload_many(&top);
+        assert_eq!(fx.at(&w, cell).0, LIGHT_MAX, "its top dropped");
+        for &c in &top {
+            fx.load(&mut w, c);
+        }
+        let fresh = lit(&mut fx, &all);
+        assert_eq!(snapshot(&w, &all), snapshot(&fresh, &all), "loaded again");
+    }
+);
