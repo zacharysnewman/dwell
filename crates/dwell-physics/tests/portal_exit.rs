@@ -101,11 +101,12 @@ dwell_world::both_faces!(
         let rules = dwell_worldgen::BifacialTerrain::new(SEED).portals().rules;
         let mut w = world(portals);
         // Facing between the monument's pillars (north, east, south, west of the axis).
-        let landing = drop_in(&mut w, shaft, f, 45.0, 8.0)
-            .expect("still in the air after 8 s: swinging between the faces");
+        let landing = drop_in(&mut w, shaft, f, 45.0, 30.0)
+            .expect("still in the air after 30 s: swinging between the faces");
         assert_eq!(landing.face, f.other(), "{landing:?}");
         assert_eq!(landing.crossings, 1, "{landing:?}");
-        assert!(landing.seconds < 7.0, "{landing:?}");
+        // ~16 s since 0.76 (~1.2 km shafts through the 512 m core; 7 before).
+        assert!(landing.seconds < 20.0, "{landing:?}");
         // On the ground beside the opening: past the rim, 2–4 m out (within the clear ground),
         // at the ground's height (the rim's top is ½ m over it), not down the shaft.
         let rim = f64::from(rules.radius + rules.rim_width);
@@ -129,8 +130,8 @@ dwell_world::both_faces!(
         let shaft = portals.shafts[0];
         let rules = dwell_worldgen::BifacialTerrain::new(SEED).portals().rules;
         let mut w = world(portals);
-        let landing = drop_in_at(&mut w, shaft, [1.29, 1.29], f, 45.0, 8.0)
-            .expect("still in the air after 8 s: swinging between the faces");
+        let landing = drop_in_at(&mut w, shaft, [1.29, 1.29], f, 45.0, 30.0)
+            .expect("still in the air after 30 s: swinging between the faces");
         assert_eq!(landing.face, f.other(), "{landing:?}");
         assert_eq!(landing.crossings, 1, "{landing:?}");
         let rim = f64::from(rules.radius + rules.rim_width);
@@ -150,7 +151,7 @@ fn without_the_exit_push_a_dropped_player_swings_between_the_faces() {
         Default::default(),
     ));
     assert!(
-        drop_in(&mut w, shaft, FaceFrame::A, 45.0, 8.0).is_none(),
+        drop_in(&mut w, shaft, FaceFrame::A, 45.0, 30.0).is_none(),
         "landed without the push"
     );
 }
@@ -158,10 +159,9 @@ fn without_the_exit_push_a_dropped_player_swings_between_the_faces() {
 #[test]
 fn every_portal_lets_a_dropped_player_out_beside_an_opening() {
     // both-faces: drops from each face's opening of every portal of a world.
-    // Most come out of the far opening on the first swing and land 2–4 m past its rim. A far
-    // opening higher than the swing reaches, or a rise so tall it meets the monument's arches
-    // (~23 m over the opening), falls back; the band speeds every pass (BIFACIAL_WORLD.md §3), so
-    // a later swing comes out. None swings forever.
+    // Since 0.76 the portal's lift (`exit.crest`) tops every rise out 3 m over the far opening,
+    // however long either shaft (~1.2 km through the 512 m core, ~8 s down and ~8 s up): every
+    // drop comes out of the far opening on the first swing and lands 2–4 m past its rim.
     let portals = shafts();
     let rules = dwell_worldgen::BifacialTerrain::new(SEED).portals().rules;
     let mut first_swing = 0;
@@ -169,10 +169,10 @@ fn every_portal_lets_a_dropped_player_out_beside_an_opening() {
     for &shaft in portals.shafts.iter() {
         for f in [FaceFrame::A, FaceFrame::B] {
             let mut w = world(portals.clone());
-            let landing = drop_in(&mut w, shaft, f, 45.0, 25.0)
-                .unwrap_or_else(|| panic!("{shaft:?} from {f:?}: still swinging after 25 s"));
+            let landing = drop_in(&mut w, shaft, f, 45.0, 30.0)
+                .unwrap_or_else(|| panic!("{shaft:?} from {f:?}: still swinging after 30 s"));
             drops += 1;
-            assert!(landing.crossings <= 3, "{shaft:?} from {f:?}: {landing:?}");
+            assert!(landing.crossings == 1, "{shaft:?} from {f:?}: {landing:?}");
             // Out of the hole: on the rim or the ground round it, not down the shaft.
             assert!(
                 landing.from_axis > f64::from(rules.radius) + 0.5,

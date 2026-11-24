@@ -54,7 +54,8 @@ fn a_player_climbs_down_a_portal_from_face_a_and_up_to_face_b() {
     let goal = m_of_row(top_b) - 1.5;
     let mut reached = false;
     let mut took = 0;
-    for t in 0..ticks(150.0) {
+    // 0.76: ~1.2 km of ladder through the 512 m core on each side (~300 s at the climb's speed).
+    for t in 0..ticks(400.0) {
         took = t;
         if w.c(h).face != face {
             face = w.c(h).face;

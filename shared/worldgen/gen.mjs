@@ -1769,6 +1769,7 @@ const MIDPLANE = {
     push: [0, 1000],
     depth: [0, 64],
     minRise: [0, 1000],
+    crest: [0, 20],
   },
 };
 
@@ -2275,7 +2276,7 @@ export function midplaneRust(data) {
     ["motes", JSON.stringify(p.motes)],
     [
       "exit",
-      `PortalExit { push: ${rf(p.exit.push)}, depth: ${rf(p.exit.depth)}, min_rise: ${rf(p.exit.minRise)} }`,
+      `PortalExit { push: ${rf(p.exit.push)}, depth: ${rf(p.exit.depth)}, min_rise: ${rf(p.exit.minRise)}, crest: ${rf(p.exit.crest)} }`,
     ],
   ];
   for (const [k, v] of fields) rs.push(`        ${k}: ${v},`);

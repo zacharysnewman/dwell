@@ -25,6 +25,6 @@ pub const MIDPLANE: Midplane = Midplane {
         monument: Some("dwell:portal_arch"),
         monument_lod_cell: 16,
         motes: "dwell:portal",
-        exit: PortalExit { push: 30.0, depth: 2.0, min_rise: 10.0 },
+        exit: PortalExit { push: 25.0, depth: 2.0, min_rise: 10.0, crest: 3.0 },
     },
 };

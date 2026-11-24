@@ -139,7 +139,16 @@ context) at a time with a choice to table it as well as the other options?" Answ
      columns, the starter's mesa square moved to (21 000, 9 000)); tuned bars moved by the new rivers, each with a
      note (tall peaks' margin over the undetailed ring 100 → 40 m, the crests and the map margin kept; arid floors
      sampled ≥ 20; cliff edges per 100 up to 53; the boulder fixture's check allows its bleed); pins, goldens and
-     spawns re-pinned. **Open:** BUGS.md #233, a 1.16 m step in the base ground at a face B confluence, the one red
+     spawns re-pinned. **Portals through the deep core (owner, 2026-11-23):** asked, since each portal's shaft
+     now runs ~1.2 km through the core (a 150 s climb; a dropped player swings between the faces): "Portals should
+     be made of bedrock. With a no build zone. Then the force from the portal should always provide enough for you
+     to just clear the edge, so the world horizon instead of just accelerating you, it should provide just enough to
+     clear the other side by 3m under your feet." Read as: the shaft's walls bedrock (unbreakable), a no-build zone
+     round it; crossing the midplane, the portal sets the player's speed so they rise out of the far face's hole and
+     top out with their feet 3 m over its rim, whatever the shaft's length (not a fall that accelerates and swings).
+     Owner should see: dropping into a portal carries you through and out of the far hole, cresting 3 m over its
+     edge, then landing beside it; the shaft's walls can't be broken or built in. Also: sea level and the flat
+     worlds' top moved to row 1152 (576 m), a whole chunk, as on main. **Open:** BUGS.md #233, a 1.16 m step in the base ground at a face B confluence, the one red
      test; then the browser check and your look (deep sea, a coast, rivers off a mountain). With it: the quick
      GPU check of the two unknown e2e specs and the `@gpu` tag for CI-only flaky tests. First (owner, 2026-11-23, "good to
      prioritize"): the worldgen tests share one Realistic map, cached on disk by seed and data.

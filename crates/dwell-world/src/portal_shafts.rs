@@ -28,6 +28,10 @@ pub struct PortalExit {
     pub depth: f32,
     /// m/s: the least rising speed that is pushed.
     pub min_rise: f32,
+    /// m: how far over the opening a body rising in the shaft tops out (its feet), whatever the
+    /// shaft's length (owner, 2026-11-23, 0.76's 1.2 km shafts: the portal "should provide just
+    /// enough to clear the other side by 3m under your feet"); 0: no lift, the swing alone.
+    pub crest: f32,
 }
 
 impl PortalExit {
@@ -36,6 +40,7 @@ impl PortalExit {
         push: 0.0,
         depth: 0.0,
         min_rise: 0.0,
+        crest: 0.0,
     };
 }
 
@@ -85,6 +90,25 @@ impl PortalShafts {
         })
     }
 
+    /// The rising speed (m/s) the portal holds an airborne body to on `face` at world column
+    /// (`x`, `z`) with its feet at face-local `feet`, rising at `rise` m/s under `gravity` m/s²:
+    /// in a shaft's footprint, under its opening (in the shaft, never over it: a jump from the rim
+    /// gets nothing), the speed whose apex puts the feet `crest` m over the opening,
+    /// `√(2 g (top + crest − feet))`; `None` elsewhere, falling, or with no crest. A faster rise is
+    /// slowed to it and a slower one raised, so a body tops out there however long the shaft.
+    pub fn lift(&self, face: Face, [x, feet, z]: [f64; 3], rise: f32, gravity: f32) -> Option<f32> {
+        let crest = f64::from(self.exit.crest);
+        if crest <= 0.0 || rise <= 0.0 {
+            return None;
+        }
+        let s = self.at(x, z)?;
+        let top = s.top(face);
+        if feet >= top {
+            return None;
+        }
+        Some((2.0 * f64::from(gravity) * (top + crest - feet)).sqrt() as f32)
+    }
+
     /// The exit push's speed gain this step (m/s along the facing, ≥ 0) for an airborne body on
     /// `face` at world column (`x`, `z`) with its feet at face-local height `feet` (`FaceFrame::y`),
     /// rising at `rise` m/s under `gravity` m/s²: zero outside every shaft, under the opening (in
@@ -126,7 +150,30 @@ mod tests {
         push: 30.0,
         depth: 2.0,
         min_rise: 10.0,
+        crest: 3.0,
     };
+
+    // face-a-only: the lift reads a face's opening by `Shaft::top`; face B's is tested alike below.
+    #[test]
+    fn the_lift_tops_a_rising_body_out_three_metres_over_the_opening() {
+        let p = shafts();
+        let g = 20.0f32;
+        for face in [Face::A, Face::B] {
+            let top = p.shafts[0].top(face);
+            // Deep in the shaft, rising slowly or fast: held to the speed whose apex is top + 3.
+            for (feet, rise) in [(top - 500.0, 3.0), (top - 500.0, 300.0), (top - 1.0, 40.0)] {
+                let v = f64::from(p.lift(face, [10.5, feet, -4.5], rise, g).expect("lifted"));
+                let apex = feet + v * v / (2.0 * f64::from(g));
+                assert!((apex - (top + 3.0)).abs() < 1e-3, "{face:?} from {feet}: apex {apex}");
+            }
+            // Never falling, over the opening (a jump from the rim), or outside the footprint.
+            assert_eq!(p.lift(face, [10.5, top - 10.0, -4.5], -5.0, g), None);
+            assert_eq!(p.lift(face, [10.5, top + 0.5, -4.5], 5.0, g), None);
+            assert_eq!(p.lift(face, [20.5, top - 10.0, -4.5], 5.0, g), None);
+        }
+        let none = PortalShafts::new(p.shafts.to_vec(), PortalExit { crest: 0.0, ..EXIT });
+        assert_eq!(none.lift(Face::A, [10.5, 0.0, -4.5], 5.0, g), None);
+    }
 
     fn shafts() -> PortalShafts {
         PortalShafts::new(

@@ -2045,13 +2045,28 @@ impl Players {
         }
         let position = Self::pos(physics, p);
         let feet = position.y - f64::from(p.cfg.half_height(c.crouching));
+        let gravity = p.scaled_cfg().body.gravity;
+        // Rising in the shaft (swung across the midplane): held to the speed that tops the feet
+        // out `exit.crest` m over the far opening, however long the shaft (owner, 2026-11-23).
+        if let Some(v) = world.portals.lift(
+            c.face.face,
+            [position.x, feet, position.z],
+            c.vertical.target_y,
+            gravity,
+        ) {
+            let c = &mut p.c;
+            c.vertical.accumulated_y = v;
+            c.vertical.target_y = v;
+            return;
+        }
+        let c = &p.c;
         let yaw = c.input.look_yaw * DEG_TO_RAD;
         let dir = Vec3::new(libm::sinf(yaw), 0.0, libm::cosf(yaw));
         let gain = world.portals.exit_push(
             c.face.face,
             [position.x, feet, position.z],
             c.vertical.target_y,
-            p.scaled_cfg().body.gravity,
+            gravity,
             DT,
         );
         if gain > 0.0 {

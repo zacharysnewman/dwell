@@ -436,9 +436,9 @@ test('portal rules changed by data alone are emitted', () => {
   m.portals.ladder.wall = 'east';
   m.portals.rim = { block: 'dwell:sand', width: 2, height: 1 };
   m.bedrock.thickness = 2.5;
-  m.portals.exit = { push: 12.5, depth: 3, minRise: 9 };
+  m.portals.exit = { push: 12.5, depth: 3, minRise: 9, crest: 4 };
   const rs = midplaneRust(validateMidplane(m, blocks));
-  assert.match(rs, /exit: PortalExit \{ push: 12\.5, depth: 3\.0, min_rise: 9\.0 \},/);
+  assert.match(rs, /exit: PortalExit \{ push: 12\.5, depth: 3\.0, min_rise: 9\.0, crest: 4\.0 \},/);
   assert.match(rs, /count_min: 2,/);
   assert.match(rs, /radius: 4\.0,/);
   assert.match(rs, /ladder: "dwell:ladder\[facing=west\]",/);
