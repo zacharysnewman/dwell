@@ -204,7 +204,8 @@ fn hillsides_are_v2_steps_and_ramps() {
     );
     println!("{at}");
     assert!(t.cols > 50_000.0, "{at}");
-    assert!((38.0..50.0).contains(&per_100), "{at}");
+    // Up to 53 since 0.76's rivers from the mountains (more small channels cut the hillsides: 50.0).
+    assert!((38.0..53.0).contains(&per_100), "{at}");
     assert!((40.0..55.0).contains(&flat), "{at}");
     assert!((20.0..32.0).contains(&gentle), "{at}");
     assert!((18.0..28.0).contains(&vertical), "{at}");

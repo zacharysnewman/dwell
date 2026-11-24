@@ -315,8 +315,9 @@ dwell_world::both_faces!(
         // floor the forests' lee is wetter and covers nearly all of them (0-3 a face, on 5 seeds
         // too): no minimum; any that is sampled must still not be red sand (the check above).
         assert!(
-            // 25 arid since 0.76 (the cold desert back under 220 mm: 29 on face A).
-            arid >= 25 && humid >= 50,
+            // 25 arid since 0.76 (the cold desert back under 220 mm: 29 on face A); 20 with 0.76's
+            // rivers from the mountains (more rivers wet more floors: 23 on face A).
+            arid >= 20 && humid >= 50,
             "arid {arid}, humid {humid}, forest {forests} floors sampled"
         );
     }

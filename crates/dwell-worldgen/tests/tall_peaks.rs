@@ -422,7 +422,10 @@ dwell_world::both_faces!(
         let (s, sm, sp) = (span(&ring), span(&map_ring), span(&plain));
         assert!(s > 400.0, "the columns' ring spans {s:.0} m");
         assert!(s >= sm + 100.0, "columns {s:.0} m, the map {sm:.0} m");
-        assert!(s >= sp + 100.0, "columns {s:.0} m, undetailed {sp:.0} m");
+        // 100 m until 0.76, whose headwaters carry rivers up the mountain: a channel notching
+        // the undetailed ring deepens its low (1045 -> 1128 m on face A, the columns' 1172 ->
+        // 1175 m); the crests and the margin over the map's cone are the cleavers' own check.
+        assert!(s >= sp + 40.0, "columns {s:.0} m, undetailed {sp:.0} m");
         let crests = peaks_round(&ring, 6, 40.0);
         assert!(crests >= 10, "{crests} crests round the ring");
         let step = 3000.0 * 1f64.to_radians();

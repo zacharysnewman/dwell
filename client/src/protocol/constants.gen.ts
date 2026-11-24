@@ -25,10 +25,10 @@ export const Players = {
 
 export const World = {
   midplaneY: 0,
-  coreLayers: 20,
+  coreLayers: 1024,
   coreAnchorLayers: 8,
   flipBand: 4,
-  seaLevel: 144,
+  seaLevel: 1148,
   islandRadius: 25000,
   flatTopY: 64,
   worldRadius: 50000,

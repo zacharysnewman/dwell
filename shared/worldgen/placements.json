@@ -144,9 +144,9 @@
       "tops": 0.12
     },
     {
-      "$comment": "Talus (0.69; owner, 2026-11-14: \"Stone cliff regions should get rocks and boulders at the base of cliffs. Including in the water.\"): fallen stones and blocks under rock walls and steep rock, densest at a wall's foot and none `cliffReach` m out, single 1 m stones to multi-block boulders (`structures`), on the bed under water too (`wet`). A red ground's talus is red sandstone (`variants` `on`). Listed by the Realistic world's biomes (worlds/realistic.json).",
+      "$comment": "Talus (0.69; owner, 2026-11-14: \"Stone cliff regions should get rocks and boulders at the base of cliffs. Including in the water.\"): fallen stones and blocks under rock walls and steep rock, densest at a wall's foot and none `cliffReach` m out, single 1 m stones and 2 m blocks (`structures`; its boulder, `dwell:proto_rock`, dropped in 0.76: owner, 2026-11-23, \"There shouldn't be boulders\", BUGS.md #232), on the bed under water too (`wet`). A red ground's talus is red sandstone (`variants` `on`). Listed by the Realistic world's biomes (worlds/realistic.json).",
       "name": "talus",
-      "structures": { "dwell:talus_stone": 5, "dwell:talus_block": 3, "dwell:proto_rock": 2 },
+      "structures": { "dwell:talus_stone": 5, "dwell:talus_block": 3 },
       "on": ["dwell:stone", "dwell:dirt", "dwell:grass", "dwell:sand", "dwell:red_dirt", "dwell:red_sand", "dwell:red_sandstone", "dwell:snowy_grass", "dwell:basalt"],
       "footprint": "anchor",
       "grid": 4,

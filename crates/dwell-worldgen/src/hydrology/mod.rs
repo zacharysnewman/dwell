@@ -161,6 +161,15 @@ pub enum SmallPits {
 }
 
 /// One profile's tunables (hydrology.json; units there).
+/// A river's headwater (hydrology.json `rivers.headwaters`): upstream of a source while the flow is
+/// at least `min_discharge` (m³/s), a stream `width` × `depth` m.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Headwaters {
+    pub min_discharge: f64,
+    pub width: f64,
+    pub depth: f64,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HydrologyParams {
     pub name: &'static str,
@@ -200,6 +209,10 @@ pub struct HydrologyParams {
     pub max_breach_depth: f64,
     /// m³/s.
     pub river_threshold: f64,
+    /// Each river's headwater (BUGS.md #196: "rivers ... don't seem to come from the mountains"):
+    /// its source traced up its largest feeder to the ridge, a thin stream; none: rivers start where
+    /// the discharge reaches `river_threshold`.
+    pub river_headwaters: Option<Headwaters>,
     pub river_geometry: &'static [RiverPoint],
     pub mouth_min_discharge: f64,
     /// How a mouth's slope is measured, and over how far (m).

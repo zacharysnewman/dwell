@@ -226,13 +226,16 @@ fn point_queries_agree_with_the_chunk_path() {
 fn the_core_is_stone_nothing_below_the_face_or_over_the_build_volume() {
     let g = TerrainGenerator::new(5);
     let bottom = MIDPLANE_Y / S;
-    // The 10-layer core (ADR 0025 D1) under land, the coast and the open sea.
+    // The core (ADR 0025 D1; 512 m since 0.76) under land, the coast and the open sea: every
+    // chunk it fills, row by row.
     for column in [(0, 0), (780, 0), (0, -1400), (1200, 300)] {
-        let floor = gen_chunk(&g, ChunkCoord::new(column.0, bottom, column.1));
-        for z in 0..S {
-            for x in 0..S {
-                for y in 0..CORE_LAYERS {
-                    assert_eq!(floor.get(x, y, z), core_at(y), "{column:?}");
+        for cy in 0..(CORE_LAYERS + S - 1) / S {
+            let floor = gen_chunk(&g, ChunkCoord::new(column.0, bottom + cy, column.1));
+            for y in (0..S).take_while(|&y| cy * S + y < CORE_LAYERS) {
+                for z in 0..S {
+                    for x in 0..S {
+                        assert_eq!(floor.get(x, y, z), core_at(cy * S + y), "{column:?} row {}", cy * S + y);
+                    }
                 }
             }
         }
@@ -993,17 +996,24 @@ fn a_decorations_height_band_is_metres_above_sea_level() {
             for dz in -2..=2 {
                 for dx in -2..=2 {
                     let (cx, cz) = (floor_div(x, S) + dx, floor_div(z, S) + dz);
-                    let cy = floor_div(SEA_LEVEL + 3, S);
-                    let chunk = gen_chunk(&g, ChunkCoord::new(cx, cy, cz));
+                    // The chunks the low ground's tops stand in (the sea level need not sit low in
+                    // one: 0.76's lies 4 rows under a chunk's top).
+                    let cy0 = floor_div(SEA_LEVEL, S);
+                    let cy1 = floor_div(SEA_LEVEL + rows_for_m(rule.min_height.into()), S);
+                    let chunks: Vec<_> = (cy0..=cy1)
+                        .map(|cy| gen_chunk(&g, ChunkCoord::new(cx, cy, cz)))
+                        .collect();
                     for lz in 0..S {
                         for lx in 0..S {
                             let top = g.ground_y(cx * S + lx, cz * S + lz).expect("inside");
+                            let cy = floor_div(top + 1, S);
                             if top - SEA_LEVEL >= rows_for_m(rule.min_height.into())
                                 || g.state_at(cx * S + lx, top, cz * S + lz) != M.grass
-                                || !(cy * S..cy * S + S).contains(&(top + 1))
+                                || !(cy0..=cy1).contains(&cy)
                             {
                                 continue;
                             }
+                            let chunk = &chunks[(cy - cy0) as usize];
                             low += 1;
                             planted += usize::from(chunk.get(lx, top + 1 - cy * S, lz) == tall);
                         }

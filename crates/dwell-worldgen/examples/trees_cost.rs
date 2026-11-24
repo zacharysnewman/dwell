@@ -12,7 +12,11 @@ fn main() {
     let name = "test:realistic";
     let e = world_config(name).unwrap().expect("the Realistic world");
     let seed = 7;
-    let map = Arc::new(WorldMap::for_height(seed, e.height.unwrap()).with_worldgen(name).unwrap());
+    let map = Arc::new(
+        WorldMap::for_height(seed, e.height.unwrap())
+            .with_worldgen(name)
+            .unwrap(),
+    );
     let g = TerrainGenerator::with_map(seed, map)
         .with_biomes_and_geology(&e.biomes, e.map, e.geology)
         .with_vegetation(e.vegetation)
@@ -28,8 +32,11 @@ fn main() {
         for t in g.trees_in((x, z), (x + 63, z + 63)) {
             trees += 1;
             hash = hash.wrapping_mul(31).wrapping_add(
-                (t.anchor[0] as u64) ^ ((t.anchor[1] as u64) << 20) ^ ((t.anchor[2] as u64) << 40)
-                    ^ u64::from(t.planter) << 7 ^ u64::from(t.variant) << 3,
+                (t.anchor[0] as u64)
+                    ^ ((t.anchor[1] as u64) << 20)
+                    ^ ((t.anchor[2] as u64) << 40)
+                    ^ u64::from(t.planter) << 7
+                    ^ u64::from(t.variant) << 3,
             );
         }
     }

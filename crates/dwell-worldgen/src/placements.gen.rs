@@ -206,7 +206,7 @@ pub static PLACEMENTS: [Placement; 12] = [
     },
     Placement {
         name: "talus",
-        structures: &[("dwell:talus_stone", 5), ("dwell:talus_block", 3), ("dwell:proto_rock", 2)],
+        structures: &[("dwell:talus_stone", 5), ("dwell:talus_block", 3)],
         on: &["dwell:stone", "dwell:dirt", "dwell:grass", "dwell:sand", "dwell:red_dirt", "dwell:red_sand", "dwell:red_sandstone", "dwell:snowy_grass", "dwell:basalt"],
         footprint_on: false,
         pad_trunk: false,

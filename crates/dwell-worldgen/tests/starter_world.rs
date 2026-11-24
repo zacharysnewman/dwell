@@ -729,6 +729,10 @@ dwell_world::both_faces!(
     }
 );
 
+/// The 12 km square of the starter's mesa (face A, seed 0): (14 500, 400) until 0.76, whose
+/// deep seas and 512 m core moved the mesa (`examples/arch_scan`: 23 arches, 9 overhangs here).
+const MESA: (i32, i32) = (21_000, 9_000);
+
 /// The mesa's arches stand on fins (0.52.66): with its `arches.fins` (the erosion's fin rule, sites
 /// sliding to a fin nearby) and `arches.rock` (sandstone only), arches outnumber overhangs on the
 /// 12 km square around the tour's mesa spot (before: 1 arch, 15 overhangs; after: 10 and 6).
@@ -736,7 +740,7 @@ dwell_world::both_faces!(
 fn the_mesas_fins_make_arches() {
     // face-a-only: the measured square is face A's mesa (face B's mesa lies elsewhere).
     let (g, _) = generator(FaceFrame::A, 0);
-    let (cx, cz, r) = (14_500, 400, 6_000);
+    let (cx, cz, r) = (MESA.0, MESA.1, 6_000);
     let sites = g.arches_near((cx - r, cz - r), (cx + r, cz + r));
     let arches = sites.iter().filter(|s| s.through).count();
     let overhangs = sites.len() - arches;
@@ -756,7 +760,7 @@ fn feature_spots() {
     // face-a-only: the links are face A's.
     let (g, names) = generator(FaceFrame::A, 0);
     let ground = |x: f64, z: f64| f64::from(g.column_at(x as i32, z as i32).height);
-    let (cx, cz, r) = (14_500, 400, 6_000);
+    let (cx, cz, r) = (MESA.0, MESA.1, 6_000);
     for s in g
         .arches_near((cx - r, cz - r), (cx + r, cz + r))
         .iter()

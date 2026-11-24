@@ -1325,6 +1325,11 @@ const HYDROLOGY = {
     maxBreachDepth: [0, 1000],
   },
   rivers: { threshold: [{ above: 0 }, 1_000_000] },
+  headwaters: {
+    minDischarge: [0, 1_000_000],
+    width: [{ above: 0 }, 50],
+    depth: [{ above: 0 }, 10],
+  },
   mouths: {
     minDischarge: [0, 1_000_000],
     deltaMaxSlope: [0, 10],
@@ -1522,7 +1527,16 @@ export function validateHydrology(data) {
     checkGroup(`${at}: rivers`, p.rivers, HYDROLOGY.rivers, [
       "geometry",
       "mouths",
+      "headwaters",
     ]);
+    // A river's headwater (owner, 2026-11-17, BUGS.md #196: "rivers ... don't seem to come from the
+    // mountains"): each source traced up its largest feeder while the flow is at least
+    // `minDischarge`, a stream `width` × `depth` m. Optional: none, no headwaters.
+    if (p.rivers.headwaters !== undefined) {
+      checkGroup(`${at}: rivers.headwaters`, p.rivers.headwaters, HYDROLOGY.headwaters);
+      if (!(p.rivers.headwaters.minDischarge < p.rivers.threshold))
+        fail(`${at}: rivers.headwaters.minDischarge must be under rivers.threshold`);
+    }
     checkGroup(`${at}: rivers.mouths`, p.rivers.mouths, HYDROLOGY.mouths, [
       "rule",
     ]);
@@ -1621,7 +1635,8 @@ export function hydrologyRust(data) {
     "",
     "#[allow(unused_imports)]",
     "use super::{",
-    "    Highlands, HydrologyParams, MouthRule, Orographic, Plates, Rain, Ranges, RiverPoint, RockBands, SmallPits,",
+    "    Headwaters, Highlands, HydrologyParams, MouthRule, Orographic, Plates, Rain, Ranges, RiverPoint, RockBands,",
+    "    SmallPits,",
     "    Tectonics,",
     "};",
     "",
@@ -1703,6 +1718,10 @@ export function hydrologyRust(data) {
     rs.push(`        small_pits: SmallPits::${pascal(p.lakes.smallPits)},`);
     rs.push(`        max_breach_depth: ${rf(p.lakes.maxBreachDepth)},`);
     rs.push(`        river_threshold: ${rf(p.rivers.threshold)},`);
+    const hw = p.rivers.headwaters;
+    rs.push(
+      `        river_headwaters: ${hw ? `Some(Headwaters { min_discharge: ${rf(hw.minDischarge)}, width: ${rf(hw.width)}, depth: ${rf(hw.depth)} })` : "None"},`,
+    );
     rs.push("        river_geometry: &[");
     for (const g of p.rivers.geometry) {
       rs.push(

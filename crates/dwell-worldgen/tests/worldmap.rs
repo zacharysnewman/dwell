@@ -16,8 +16,8 @@ use dwell_worldgen::{BifacialTerrain, TerrainGenerator};
 /// Seed 7's maps, pinned (`WorldMap::digest`): a change to the hydrology, the uplift layer, the base
 /// field or `hydrology.json`'s default changes them. Look at the terrain (`--example
 /// terrain_view`), then update.
-const DIGEST_7_A: u64 = 0x2fac_7898_2879_516c;
-const DIGEST_7_B: u64 = 0x8c68_d65d_9e49_dd06;
+const DIGEST_7_A: u64 = 0x61a3_912f_f79d_51c6;
+const DIGEST_7_B: u64 = 0x860e_975a_8eee_4856;
 
 fn face_map(seed: u64, f: FaceFrame) -> Arc<WorldMap> {
     worldmap::for_seed(face_seed(seed, f.face))

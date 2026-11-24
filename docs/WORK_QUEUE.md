@@ -131,7 +131,16 @@ context) at a time with a choice to table it as well as the other options?" Answ
   generation rules." Then: "Send me a screenshot" of the spot (seed 4065579781, Realistic, (−21950, −8850)).
 - **The 512 m underground:** "Measure first": the world's size, generation and load time at 512 m before building.
 - **Order (owner, 2026-11-23, by the Q&A):**
-  0. 0.76 in flight: deep seas; the 512 m underground (measured first); rivers from the mountains. With it: the quick
+  0. 0.76 in flight: deep seas; the 512 m underground (measured first); rivers from the mountains.
+     **State (2026-11-23):** all three built on `claude/deep-sea`; the boulder dropped from talus (#232); a river
+     doubling back to its junction now meets at one level (a red→green unit test; it walled the water at a
+     confluence on seed 7); the tests written for the 10 m core or the old sea level updated (the core test walks
+     every core chunk, the low-grass test reads the chunk each top stands in, the LOD's coarse-cells test skips sea
+     columns, the starter's mesa square moved to (21 000, 9 000)); tuned bars moved by the new rivers, each with a
+     note (tall peaks' margin over the undetailed ring 100 → 40 m, the crests and the map margin kept; arid floors
+     sampled ≥ 20; cliff edges per 100 up to 53; the boulder fixture's check allows its bleed); pins, goldens and
+     spawns re-pinned. **Open:** BUGS.md #233, a 1.16 m step in the base ground at a face B confluence, the one red
+     test; then the browser check and your look (deep sea, a coast, rivers off a mountain). With it: the quick
      GPU check of the two unknown e2e specs and the `@gpu` tag for CI-only flaky tests. First (owner, 2026-11-23, "good to
      prioritize"): the worldgen tests share one Realistic map, cached on disk by seed and data.
   1. Builders, a quick fix (#226: blueprint slopes facing the blueprint's way) ("Early, as a quick fix").

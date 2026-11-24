@@ -99,7 +99,23 @@ dwell_world::both_faces!(
                     let w = g.biome_mix(t.anchor[0].into(), t.anchor[2].into());
                     let fw = w.iter().find(|(i, _)| *i == 1).map_or(0.0, |(_, w)| w);
                     if name == "boulders" {
-                        assert!(fw > 0.0, "a boulder where the fixture has no weight");
+                        // Within its rule's bleed (placements.json `bleed`, 0.69: the density read
+                        // up to 2 × bleed m off, so plants reach raggedly past a border).
+                        let reach = 2 * g.planters()[t.planter as usize].rule().bleed as i64;
+                        let step = (reach / 4).max(1) as usize;
+                        let near = (-reach..=reach).step_by(step).any(|dx| {
+                            (-reach..=reach).step_by(step).any(|dz| {
+                                let w = g.biome_mix(
+                                    i64::from(t.anchor[0]) + dx,
+                                    i64::from(t.anchor[2]) + dz,
+                                );
+                                w.iter().any(|(i, w)| i == 1 && w > 0.0)
+                            })
+                        });
+                        assert!(
+                            fw > 0.0 || near,
+                            "a boulder where the fixture has no weight within its bleed"
+                        );
                     }
                     if fixture_wins && fw > 0.999 {
                         match name {

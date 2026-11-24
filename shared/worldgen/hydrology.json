@@ -26,8 +26,10 @@
       "rain": { "model": "uniform", "amount": 1.0 },
       "lakes": { "minArea": 0.3, "minDepth": 2, "smallPits": "breach", "maxBreachDepth": 8 },
       "rivers": {
-        "threshold": 0.4,
+        "threshold": 0.15,
+        "headwaters": { "minDischarge": 0.01, "width": 1, "depth": 0.4 },
         "geometry": [
+          { "discharge": 0.15, "width": 1.5, "depth": 0.5 },
           { "discharge": 0.4, "width": 3, "depth": 0.8 },
           { "discharge": 5, "width": 12, "depth": 2 },
           { "discharge": 50, "width": 40, "depth": 4.5 },
@@ -53,8 +55,10 @@
       "rain": { "model": "uniform", "amount": 1.0 },
       "lakes": { "minArea": 0.3, "minDepth": 2, "smallPits": "breach", "maxBreachDepth": 8 },
       "rivers": {
-        "threshold": 0.4,
+        "threshold": 0.15,
+        "headwaters": { "minDischarge": 0.01, "width": 1, "depth": 0.4 },
         "geometry": [
+          { "discharge": 0.15, "width": 1.5, "depth": 0.5 },
           { "discharge": 0.4, "width": 3, "depth": 0.8 },
           { "discharge": 5, "width": 12, "depth": 2 },
           { "discharge": 50, "width": 40, "depth": 4.5 },
@@ -80,8 +84,10 @@
       "rain": { "model": "uniform", "amount": 1.0 },
       "lakes": { "minArea": 0.3, "minDepth": 2, "smallPits": "breach", "maxBreachDepth": 8 },
       "rivers": {
-        "threshold": 0.4,
+        "threshold": 0.15,
+        "headwaters": { "minDischarge": 0.01, "width": 1, "depth": 0.4 },
         "geometry": [
+          { "discharge": 0.15, "width": 1.5, "depth": 0.5 },
           { "discharge": 0.4, "width": 3, "depth": 0.8 },
           { "discharge": 5, "width": 12, "depth": 2 },
           { "discharge": 50, "width": 40, "depth": 4.5 },
@@ -107,8 +113,10 @@
       "rain": { "model": "uniform", "amount": 1 },
       "lakes": { "minArea": 0.3, "minDepth": 2, "smallPits": "breach", "maxBreachDepth": 8 },
       "rivers": {
-        "threshold": 0.4,
+        "threshold": 0.15,
+        "headwaters": { "minDischarge": 0.01, "width": 1, "depth": 0.4 },
         "geometry": [
+          { "discharge": 0.15, "width": 1.5, "depth": 0.5 },
           { "discharge": 0.4, "width": 3, "depth": 0.8 },
           { "discharge": 5, "width": 12, "depth": 2 },
           { "discharge": 50, "width": 40, "depth": 4.5 },
@@ -155,8 +163,10 @@
       "rain": { "model": "uniform", "amount": 1 },
       "lakes": { "minArea": 0.3, "minDepth": 2, "smallPits": "breach", "maxBreachDepth": 8 },
       "rivers": {
-        "threshold": 0.4,
+        "threshold": 0.15,
+        "headwaters": { "minDischarge": 0.01, "width": 1, "depth": 0.4 },
         "geometry": [
+          { "discharge": 0.15, "width": 1.5, "depth": 0.5 },
           { "discharge": 0.4, "width": 3, "depth": 0.8 },
           { "discharge": 5, "width": 12, "depth": 2 },
           { "discharge": 50, "width": 40, "depth": 4.5 },
@@ -210,8 +220,10 @@
       },
       "lakes": { "minArea": 0.3, "minDepth": 2, "smallPits": "breach", "maxBreachDepth": 8 },
       "rivers": {
-        "threshold": 0.4,
+        "threshold": 0.15,
+        "headwaters": { "minDischarge": 0.01, "width": 1, "depth": 0.4 },
         "geometry": [
+          { "discharge": 0.15, "width": 1.5, "depth": 0.5 },
           { "discharge": 0.4, "width": 3, "depth": 0.8 },
           { "discharge": 5, "width": 12, "depth": 2 },
           { "discharge": 50, "width": 40, "depth": 4.5 },

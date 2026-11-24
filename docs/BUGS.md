@@ -6,13 +6,26 @@ pins it.
 
 ## Open
 
+### 233. A 1.16 m step in the ground near a confluence (0.76's river data, seed 7 face B)
+
+Found 2026-11-23 by `no_seam_where_river_valleys_meet::b` (terrain.rs) once 0.76's rivers from the mountains (river
+threshold 0.15 and headwaters, `shared/worldgen/hydrology.json`) were in: two dry columns at (13106, −8864) and
+(13107, −8864) step 1.05 m and 1.14 m against the slope either side (590.77 → 589.61 m, then flat 589.51 m). Not
+the river carve: the column's `base` equals its height, and every channel's hit (distance, half-width, level,
+valley) changes smoothly across the step (`examples/seam_probe.rs 7 13102 13110 -8864`). The step is in the base
+ground before the rivers cut it; the old river data has none there. Suspect: the map's height field round the new
+small rivers (the map's own carving on its 100 m grid) or a shaping pass over it. Open; blocks 0.76's merge (a red
+test) unless the owner says otherwise.
+
 ### 232. Boulders still appear in game after their removal
 
 Owner, 2026-11-23: "There shouldn't be boulders. These were supposed to be removed. But I've seen them in game
 still." The 0.74 line took the `boulders` placement out of every biome, but kept talus (rocks at cliff bases), whose
 `structures` include `dwell:proto_rock` (2 of 10) beside `talus_stone` and `talus_block`; talus is listed by every
 Realistic biome (`shared/worldgen/worlds/realistic.json`). Fix on the 0.76 line, with a test that no placement a
-world lists stands a boulder.
+world lists stands a boulder. **Fixed on the 0.76 branch (2026-11-23):** `dwell:proto_rock` out of talus's
+`structures` (talus keeps its 1 m stones and 2 m blocks, the owner's answer); `gen.test.mjs` "no placement a biome or
+world lists stands a boulder" failed before (talus) and passes after.
 
 ### 230. "Finding a place to stand" takes up to 20 s
 

@@ -88,6 +88,20 @@ pub fn trace(inp: &Inputs, p: &HydrologyParams) -> (Vec<River>, Vec<Mouth>) {
             depth,
         }
     };
+    // Each cell's largest feeder (the donor of most discharge), for the headwaters.
+    let mut feeder = vec![NONE; len];
+    if p.river_headwaters.is_some() {
+        for i in 0..len {
+            let r = inp.receiver[i];
+            if r == NONE || inp.sea[i] || inp.lake_of[i] != NONE {
+                continue;
+            }
+            let f = &mut feeder[r as usize];
+            if *f == NONE || inp.discharge[i] > inp.discharge[*f as usize] {
+                *f = i as u32;
+            }
+        }
+    }
     let mut visited = vec![false; len];
     let mut rivers = Vec::new();
     let mut mouths = Vec::new();
@@ -98,6 +112,24 @@ pub fn trace(inp: &Inputs, p: &HydrologyParams) -> (Vec<River>, Vec<Mouth>) {
         }
         let mut path = Vec::new();
         let mut cells = Vec::new();
+        // A source no lake feeds: its headwater first, traced up the largest feeder while the flow
+        // holds, ridge first, a thin stream (BUGS.md #196).
+        if let (Some(h), None) = (p.river_headwaters, from_lake) {
+            let mut up = Vec::new();
+            let mut u = feeder[c];
+            while u != NONE && !visited[u as usize] && inp.discharge[u as usize] >= h.min_discharge
+            {
+                up.push(u as usize);
+                u = feeder[u as usize];
+            }
+            for &k in up.iter().rev() {
+                visited[k] = true;
+                let mut v = vertex(k, inp.surface[k]);
+                (v.width, v.depth) = (h.width, h.depth);
+                path.push(v);
+                cells.push(k as u32);
+            }
+        }
         let end;
         loop {
             visited[c] = true;

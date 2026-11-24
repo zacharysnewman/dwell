@@ -520,10 +520,13 @@ fn coarse_cells_show_the_grounds_surface_not_the_floor() {
         let (mut tops, mut stone, mut grassy) = (0, 0, 0);
         for z in 0..N {
             for x in 0..N {
+                // The column's top as seen from above: a sea's surface hides its bed (since 0.76's
+                // 512 m core the bed lies in the cell under the water's, the core's stone).
                 if let Some(m) = (0..N)
                     .rev()
                     .map(|y| cells[cell_index(x, y, z)])
-                    .find(|&m| m != M.air && m != M.water)
+                    .find(|&m| m != M.air)
+                    .filter(|&m| m != M.water)
                 {
                     tops += 1;
                     stone += i32::from(m == M.stone);
