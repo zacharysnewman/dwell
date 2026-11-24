@@ -6,6 +6,18 @@ pins it.
 
 ## Open
 
+### 236. Down a portal's shaft: the far face's sky shows through, and light comes in behind a falling player
+
+Owner, 2026-11-24 (the 0.76 branch's local build, a portal on seed 0): "It looks like the chunks aren't loading very
+far down for the portal, so I can just see the other world face's sky. And it seems like they might unload behind
+as I fall, allowing light to shine down into the hole as well. What are possible solutions." Suspects: the full-detail
+view is the server's sphere of 3 chunks (48 m) round the player, and the far view (LOD) can't draw a shaft a few
+metres wide through the 1.15 km core, so past ~48 m nothing is drawn and the far face's sky shows; and the light
+treats a chunk not held above a cell as open sky (`light.rs` `kind_of`: `open_above` when the chunk above is
+`NONE`; `unload` lets "cells below it take the open sky again"), so chunks dropped above a falling player relight
+the shaft as open sky. Open; solutions asked for (WORK_QUEUE).
+
+
 ### 232. Boulders still appear in game after their removal
 
 Owner, 2026-11-23: "There shouldn't be boulders. These were supposed to be removed. But I've seen them in game

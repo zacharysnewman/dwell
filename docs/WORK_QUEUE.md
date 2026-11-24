@@ -172,6 +172,12 @@ context) at a time with a choice to table it as well as the other options?" Answ
      whether players get the same rule (today `lift_buried_players` lifts a player inside the ground at once).
      Owner should see: a block or log trapped inside rock floats straight up out of it, then lands and settles,
      instead of shaking in place.
+- **Portal shaft drawing and light (owner, 2026-11-24, BUGS.md #236):** "It looks like the chunks aren't loading very
+  far down for the portal, so I can just see the other world face's sky. And it seems like they might unload behind
+  as I fall, allowing light to shine down into the hole as well. What are possible solutions." Options given; the
+  owner picks. Owner should see: looking or falling down a portal, bedrock walls all the way down to a small disc of
+  the far face's sky at the far end, and no light pouring in behind as they fall. Part of 0.76 (portals through the
+  512 m core are new on this line).
 - **Respawn hand-over on a mountainside (found 2026-11-24, 0.76):** with the LOD, a preloaded respawn on seed 1's new
   mountainside spawn keeps the loading screen 10 frames (0.15 s; 130 without the preload): its ring is drawable,
   but 9 of 81 chunks count ready until the LOD hands its sections over, all at once on the 10th frame. In the old
