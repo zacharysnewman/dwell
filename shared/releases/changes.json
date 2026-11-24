@@ -13,6 +13,13 @@
       ]
     },
     {
+      "version": "0.75.20",
+      "changes": [
+        "Damaging a block next to a slope no longer leaves holes in the slope",
+        "A wall torch's flame sits on the top of its stick"
+      ]
+    },
+    {
       "version": "0.75.19",
       "changes": [
         "Torches hang on walls: place one against a block's side and it leans out from the wall",
