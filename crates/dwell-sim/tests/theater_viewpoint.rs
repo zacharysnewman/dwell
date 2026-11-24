@@ -70,9 +70,11 @@ fn far_eye(f: FaceFrame) -> [f64; 3] {
 
 fn chunk_of_point(p: [f64; 3]) -> ChunkCoord {
     let s = f64::from(CHUNK_SIZE);
+    // A chunk is `CHUNK_SIZE` cells, each `CELL_H` m tall (until 0.76 this divided metres by the
+    // rows, which the old 32 m surface happened to forgive).
     ChunkCoord::new(
         (p[0] / s).floor() as i32,
-        (p[1] / s).floor() as i32,
+        (p[1] / (s * dwell_world::CELL_H)).floor() as i32,
         (p[2] / s).floor() as i32,
     )
 }

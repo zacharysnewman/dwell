@@ -471,8 +471,12 @@ fn a_large_build_is_in_the_sections_drawn_from_50_km_away_and_from_altitude() {
     // A wall 512 m wide, 512 m tall and 1 m thick floating 512 m over the flat ground (x = 1000,
     // z 0..511): coarse cells near the ground hold the ground too (Phase 16: it lies at 0..32).
     const X: i32 = 1000;
+    // From the first 512-row line over the flat ground's top (row FLAT_TOP_Y: 64 until 0.76, so
+    // row 512 as before; 1152 since, so 1536), aligned with the coarse cells as it was.
+    const WALL0: i32 = (dwell_world::FLAT_TOP_Y / 512 + 1) * 512;
+    const MID: i64 = WALL0 as i64 + 256;
     let mut built: BTreeMap<ChunkCoord, Chunk> = BTreeMap::new();
-    for cy in 16..32 {
+    for cy in WALL0 / 32..WALL0 / 32 + 16 {
         for cz in 0..16 {
             let coord = ChunkCoord::new(X / 32, cy, cz);
             let mut chunk = Chunk::default();
@@ -498,7 +502,7 @@ fn a_large_build_is_in_the_sections_drawn_from_50_km_away_and_from_altitude() {
         let c = LodCoord::new(
             level,
             ((i64::from(X) - ORIGIN_X) / s) as i32,
-            ((768 - ORIGIN_Y) / s) as i32,
+            ((MID - ORIGIN_Y) / s) as i32,
             ((256 - ORIGIN_Z) / s) as i32,
         );
         let cells = lod.cells_for_client(c);
@@ -513,9 +517,9 @@ fn a_large_build_is_in_the_sections_drawn_from_50_km_away_and_from_altitude() {
             )
         };
         let x = i64::from(X);
-        assert_eq!(generated[at(x, 768, 256)], M.air, "level {level}");
-        assert_eq!(cells[at(x, 768, 256)], M.stone, "level {level}"); // the wall, in mid air above ground
-        assert_eq!(cells[at(x + 4 * cell, 768, 256)], M.air, "level {level}");
+        assert_eq!(generated[at(x, MID, 256)], M.air, "level {level}");
+        assert_eq!(cells[at(x, MID, 256)], M.stone, "level {level}"); // the wall, in mid air above ground
+        assert_eq!(cells[at(x + 4 * cell, MID, 256)], M.air, "level {level}");
     }
 }
 

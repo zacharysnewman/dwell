@@ -241,14 +241,14 @@ fn rate_limited_by_cells_a_burst_then_cells_per_second() {
     assert!((1..=region_edit::MAX_QUEUED).contains(&burst));
     // Clearing the air above the ground: valid and cheap to apply, but each costs its volume.
     for _ in 0..burst {
-        f.send(1, fill([-16, 1, -16], [side; 3], M.air));
+        f.send(1, fill([-16, G + 1, -16], [side; 3], M.air));
     }
     f.server.step();
     assert_eq!(
         f.server.stats_of(1).unwrap().region_edits_applied,
         burst as u32
     );
-    f.send(1, fill([-16, 1, -16], [side; 3], M.air));
+    f.send(1, fill([-16, G + 1, -16], [side; 3], M.air));
     f.server.step();
     assert_eq!(f.server.stats_of(1).unwrap().region_edits_rejected, 1);
     // One box's worth of cells later, one more.
@@ -256,7 +256,7 @@ fn rate_limited_by_cells_a_burst_then_cells_per_second() {
     for _ in 0..ticks {
         f.server.step();
     }
-    f.send(1, fill([-16, 1, -16], [side; 3], M.air));
+    f.send(1, fill([-16, G + 1, -16], [side; 3], M.air));
     f.server.step();
     assert_eq!(
         f.server.stats_of(1).unwrap().region_edits_applied,
