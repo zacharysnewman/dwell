@@ -186,6 +186,10 @@ context) at a time with a choice to table it as well as the other options?" Answ
   tube mesh texture seems like it might be tiled too tightly vertically, hard to tell at that angle though":
   checked face-on, a bedrock side repeats once a metre both ways (a tile over two ½ m rows), as every block's; the
   tightness is the grazing angle down the shaft. Open if the owner still sees it.
+- **Grass growth off (owner, 2026-11-24):** "Grass is a bit out of control, can we just disable grass growing for
+  now". Done on the 0.76 branch: `shared/worldgen/grass.json` `grows: false` stops every world's grass growing and
+  spreading (each world's own switch kept for when it's on again; tests and tools can still turn it on). Owner should
+  see: meadows stay as generated; no tall grass creeping over the ground over the days.
 - **Game instances tool (owner, 2026-11-24):** "Make a script/tool/skill (whatever is most appropriate and still
   discoverable) for yourself to quickly check for running game instances in order to clean them up easily, when not
   using them." Done: the `instances` project skill (`.claude/skills/instances/scripts/instances.sh`: list; `stop`

@@ -77,6 +77,8 @@ fn stage_at(fx: &mut Fixture, f: FaceFrame, p: [i32; 3]) -> Option<usize> {
 fn scene(f: FaceFrame, cfg: ServerConfig, ticks: u32) -> Fixture {
     let mut fx = Fixture::new(cfg);
     fx.server.set_grass_envelope(Some(lush()));
+    // Growth turned on as a tool does: it grows even while the build's `grows` is off.
+    fx.server.set_grass_enabled(true);
     let tall = f.state(dwell_blocks::require("dwell:tall_grass"));
     let [x, y, z] = f.cell([4, FLAT_TOP_Y, 4]);
     fx.server.world().set_voxel(x, y, z, tall);
@@ -110,6 +112,27 @@ dwell_world::both_faces!(
         // Grown up to today: nothing more until tomorrow.
         grow_all(&mut fx);
         assert_eq!(tufts(&mut fx, f), after);
+    }
+);
+
+dwell_world::both_faces!(
+    fn no_world_grows_grass_while_the_builds_growth_is_off(f: FaceFrame) {
+        // Owner, 2026-11-24: "Grass is a bit out of control, can we just disable grass growing for
+        // now" (grass.json `grows` false): a new world's grass, on by its own switch, doesn't grow
+        // or spread; a tool that turns growth on still grows it (the other tests).
+        assert!(!dwell_worldgen::grass::GRASS.grows, "growth off in this build");
+        let mut fx = Fixture::new(config(f));
+        fx.server.set_grass_envelope(Some(lush()));
+        let tall = f.state(dwell_blocks::require("dwell:tall_grass"));
+        let [x, y, z] = f.cell([4, FLAT_TOP_Y, 4]);
+        fx.server.world().set_voxel(x, y, z, tall);
+        for _ in 0..12 {
+            fx.server.step();
+        }
+        assert!(fx.server.grass().enabled, "the world's own switch is kept");
+        let before = tufts(&mut fx, f);
+        grow_all(&mut fx);
+        assert_eq!(tufts(&mut fx, f), before, "nothing grew");
     }
 );
 
@@ -322,6 +345,7 @@ dwell_world::both_faces!(
             ..config(f)
         });
         fx.server.set_grass_envelope(Some(lush()));
+        fx.server.set_grass_enabled(true);
         let mut floors = Vec::new();
         for dx in -2..2 {
             for dz in -2..2 {

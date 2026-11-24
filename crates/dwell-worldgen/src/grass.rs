@@ -78,6 +78,10 @@ pub struct GrassData {
     pub on_ramps: bool,
     /// The decoration whose per-cell roll and climate envelope set the cap.
     pub decoration: &'static str,
+    /// Whether grass grows at all in this build (`grows`, default true; owner, 2026-11-24: "Grass
+    /// is a bit out of control, can we just disable grass growing for now"): off, no world's
+    /// grass grows or spreads, whatever its own switch; its meadows stay as generated.
+    pub grows: bool,
     /// The most share of a stretch's open grass cells holding it, at the climate's best.
     pub max_density: f64,
     /// The chance a day a fertile empty cell next to tall grass takes it.

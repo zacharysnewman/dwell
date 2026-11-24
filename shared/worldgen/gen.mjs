@@ -2591,9 +2591,10 @@ export function validateGrass(data, blocks, decorations) {
     throw new Error(`grass.json: ${m}`);
   };
   if (typeof data !== "object" || data === null) fail("must be an object");
-  const keys = ["$comment", "block", "on", "onRamps", "decoration", "stages", "height", ...Object.keys(GRASS)];
+  const keys = ["$comment", "grows", "block", "on", "onRamps", "decoration", "stages", "height", ...Object.keys(GRASS)];
   const extra = Object.keys(data).filter((k) => !keys.includes(k));
   if (extra.length) fail(`unknown ${extra.join(", ")}`);
+  if (data.grows !== undefined && typeof data.grows !== "boolean") fail("grows must be true or false");
   if (typeof data.block !== "string" || !blocks.has(data.block))
     fail(`block ${JSON.stringify(data.block)} is not a block of the registry`);
   if (!Array.isArray(data.on) || data.on.length === 0)
@@ -2708,6 +2709,7 @@ export function grassRust(g) {
     "",
     "/// The build's tall grass growth (ADR 0075 T3c).",
     "pub const GRASS: GrassData = GrassData {",
+    `    grows: ${g.grows !== false},`,
     `    block: ${JSON.stringify(g.block)},`,
     `    on: &[${g.on.map((o) => JSON.stringify(o)).join(", ")}],`,
     `    on_ramps: ${g.onRamps === true},`,

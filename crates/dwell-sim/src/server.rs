@@ -1248,6 +1248,9 @@ pub struct Server {
     grass: grass::Grass,
     /// The saved record is a newer build's: kept, not written over.
     grass_unread: bool,
+    /// A test or tool turned growth on (`set_grass_enabled`): it grows even while the build's
+    /// `grows` is off.
+    grass_forced: bool,
     grass_rule: dwell_worldgen::grass::Rule,
     /// Tests: an envelope in place of the terrain's.
     grass_envelope: Option<grass::GrassEnvelope>,
@@ -1529,6 +1532,7 @@ impl Server {
                 days: Default::default(),
             },
             grass_unread: false,
+            grass_forced: false,
             grass_rule: dwell_worldgen::grass::Rule::build(config.world_seed),
             grass_envelope: None,
             grass_terrain: Default::default(),

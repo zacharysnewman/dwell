@@ -2,6 +2,7 @@
 
 /// The build's tall grass growth (ADR 0075 T3c).
 pub const GRASS: GrassData = GrassData {
+    grows: false,
     block: "dwell:tall_grass",
     on: &["dwell:grass"],
     on_ramps: true,

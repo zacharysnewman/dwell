@@ -111,6 +111,8 @@ fn the_starter_meadow_grows_tall_over_a_few_days() {
         growth_speed: 400.0,
         ..flat()
     });
+    // Growth turned on as a tool does (grass.json `grows` is off in this build).
+    fx.server.set_grass_enabled(true);
     fx.join(1, &Client::new(1));
     let stalk = dwell_blocks::parse_state("dwell:tall_grass[stage=stalk]").unwrap();
     let stalks = |fx: &mut Fixture| -> usize {
