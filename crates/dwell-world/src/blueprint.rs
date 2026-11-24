@@ -1105,6 +1105,39 @@ mod tests {
     }
 
     both_faces!(
+        fn a_blueprints_thatch_slopes_face_as_the_blueprint_turned(f: FaceFrame) {
+            // BUGS.md #226 (owner, 2026-11-23): builders laid a custom house's thatch roof slopes at
+            // other angles. Each ramp of a blueprint is wanted facing as the blueprint has it,
+            // turned with the blueprint, whatever the builder's facing.
+            let facings = ["north", "east", "south", "west"];
+            for (k, facing) in facings.iter().enumerate() {
+                let ramp =
+                    dwell_blocks::parse_state(&format!("dwell:thatch_ramp[facing={facing}]"))
+                        .expect("a thatch ramp");
+                let s = crate::structure::Structure::from_cells(
+                    "roof",
+                    0,
+                    [1, 1, 1],
+                    [0, 0, 0],
+                    &[Some(ramp)],
+                );
+                for turn in 0..4u8 {
+                    let g = Ghost::of(&record_of(&s, f, [0, 64, 0], turn).unwrap());
+                    let cell = g.cells[0];
+                    let local = f.state(cell.state);
+                    let want = facings[(k + usize::from(turn)) % 4];
+                    assert_eq!(
+                        dwell_blocks::state_property(local, "facing"),
+                        Some(want),
+                        "{facing} turned {turn}: {}",
+                        dwell_blocks::block_of(local).name
+                    );
+                }
+            }
+        }
+    );
+
+    both_faces!(
         fn a_ghost_s_cells_are_the_structure_s_turned_through_the_face(f: FaceFrame) {
             let s = hut();
             let at = [10, 64, -5];

@@ -221,7 +221,18 @@ const FACINGS: [&str; 4] = ["north", "east", "south", "west"];
 /// the one whose values are all facings and which holds the state's facing).
 fn facing_property(state: StateId) -> Option<&'static str> {
     let now = match info(state).facing {
-        Facing::None => return None,
+        // Not a facing block, but one with a compass property (a ramp's `facing`, which way it
+        // slopes): that turns with the placement too (BUGS.md #226: a blueprint's thatch roof
+        // slopes kept the facings they were drawn with however the blueprint was turned).
+        Facing::None => {
+            return block_of(state)
+                .properties
+                .iter()
+                .find(|p| {
+                    p.values.len() == FACINGS.len() && p.values.iter().all(|v| FACINGS.contains(v))
+                })
+                .map(|p| p.name);
+        }
         Facing::North => "north",
         Facing::East => "east",
         Facing::South => "south",

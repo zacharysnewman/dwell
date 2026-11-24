@@ -158,7 +158,8 @@ context) at a time with a choice to table it as well as the other options?" Answ
      test; then the browser check and your look (deep sea, a coast, rivers off a mountain). With it: the quick
      GPU check of the two unknown e2e specs and the `@gpu` tag for CI-only flaky tests. First (owner, 2026-11-23, "good to
      prioritize"): the worldgen tests share one Realistic map, cached on disk by seed and data.
-  1. Builders, a quick fix (#226: blueprint slopes facing the blueprint's way) ("Early, as a quick fix").
+  1. Builders, a quick fix (#226: blueprint slopes facing the blueprint's way) ("Early, as a quick fix"). Fixed
+     2026-11-24: a turned blueprint now turns its ramps' facing (BUGS.md #226).
   2. Section 1, Moving bodies.
   3. Section 8, Far trees and far terrain.
   4. Section 4, Blocks.
