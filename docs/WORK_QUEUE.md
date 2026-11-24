@@ -112,7 +112,12 @@ context) at a time with a choice to table it as well as the other options?" Answ
   cliffs', tops' and volcanoes' factors are each at most 1), and talus's cliff search stops after a ring once the
   rings left can't pass it; plate boundaries' distance skips runs of segments by box. What's left is the column
   itself (95 % of placement time): the plate provinces ~40 %, the biome mix ~38 %; candidates' ground and slope
-  ~55 % of column reads, talus's cliff search ~37 %. Owner should see: the full worldgen suite done in
+  ~55 % of column reads, talus's cliff search ~37 %.
+  **The map cache, when built (owner, 2026-11-23):** "Just ensuring the stored data gets cleared when it's outdated
+  and never going to be used again." Planned: one folder per worldgen version (a hash of the worldgen code and data)
+  under the build's `target/`; a run that opens the cache deletes every other version's folder first, so only the
+  live version's maps are ever on disk (a few MB a seed); `cargo clean` removes it all. Owner should see: the cache
+  never growing past the current version's maps. Owner should see: the full worldgen suite done in
   about 2 minutes, its results unchanged.
 - **Snow-line speckle (#219):** owner: "I'm not sure if it looks bad, snowy mountains seem pretty rare in our current
   generation rules." Then: "Send me a screenshot" of the spot (seed 4065579781, Realistic, (−21950, −8850)).
