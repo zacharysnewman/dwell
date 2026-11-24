@@ -544,8 +544,8 @@ several metres out of the far opening, fell straight back in and swung between t
 - **Tests:** `dwell-physics` `tests/portal_exit.rs`
   (`a_player_dropped_into_a_portal_lands_on_the_far_face_beside_the_hole`, both faces; red with the
   pass removed, as on main; `without_the_exit_push_a_dropped_player_swings_between_the_faces`;
-  `every_portal_lets_a_dropped_player_out_beside_an_opening`), (`tests/portal_crossing.rs`, the ladder's climbs, removed with the ladder in 0.76; the
-  ladder climbs, the push live), `tests/predictor.rs`
+  `every_portal_lets_a_dropped_player_out_beside_an_opening`; `tests/portal_crossing.rs`, the ladder's
+  climbs, was removed with the ladder in 0.76), `tests/predictor.rs`
   (`the_prediction_agrees_with_the_server_through_a_portal_and_out_of_it`: no replays, and replays
   for a client without the shafts), `portal_shafts.rs`'s unit test, `gen.test.mjs`.
 
