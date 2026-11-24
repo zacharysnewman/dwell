@@ -21,7 +21,7 @@ pub const MIDPLANE: Midplane = Midplane {
         rim_rows: 1,
         lining: "dwell:bedrock",
         no_build: 7.5,
-        ladder: "dwell:ladder[facing=north]",
+        ladder: None,
         wall: [0, 1],
         clear: 4.0,
         monument: Some("dwell:portal_arch"),

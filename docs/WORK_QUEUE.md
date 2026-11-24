@@ -149,7 +149,8 @@ context) at a time with a choice to table it as well as the other options?" Answ
      Owner should see: dropping into a portal carries you through and out of the far hole, cresting 3 m over its
      edge, then landing beside it; the shaft's walls can't be broken or built in. Then: "So a velocity setting when falling, not
      on the ladder." Built so: only an airborne body (dropped in) is lifted; climbing the ladder never is. Asked whether the fall down should be set too: "Only on the way up": a free fall to the
-     midplane, the rise set on the far side (~16 s through). Also: sea level and the flat
+     midplane, the rise set on the far side (~16 s through). Then (owner, 2026-11-23): "Lets get rid of the ladders on
+     the portals." Owner should see: no ladder in any portal's shaft; a drop is the only way through. Also: sea level and the flat
      worlds' top moved to row 1152 (576 m), a whole chunk, as on main. **Open:** BUGS.md #233, a 1.16 m step in the base ground at a face B confluence, the one red
      test; then the browser check and your look (deep sea, a coast, rivers off a mountain). With it: the quick
      GPU check of the two unknown e2e specs and the `@gpu` tag for CI-only flaky tests. First (owner, 2026-11-23, "good to

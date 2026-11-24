@@ -1874,20 +1874,24 @@ export function validateMidplane(
     (k) => !["$comment", "block", "wall"].includes(k),
   );
   if (le.length) fail(`portals.ladder: unknown ${le.join(", ")}`);
-  const ladder = block("portals.ladder.block", p.ladder.block);
-  if (ladder.climbable !== true)
-    fail(`portals.ladder.block ${p.ladder.block} must be climbable`);
   if (!(p.ladder.wall in LADDER_WALLS))
     fail(
       `portals.ladder.wall must be one of ${Object.keys(LADDER_WALLS).join(", ")}`,
     );
-  const facing = ladder.facingProperty;
-  if (!(
-    facing && ladder.properties?.[facing]?.includes(LADDER_WALLS[p.ladder.wall])
-  )) {
-    fail(
-      `portals.ladder.block ${p.ladder.block} has no ${facing ?? "facing"}=${LADDER_WALLS[p.ladder.wall]} state`,
-    );
+  // `block` null: no ladder (owner, 2026-11-23: "Lets get rid of the ladders on the portals");
+  // the wall still names the column the opening's height is taken from.
+  if (p.ladder.block !== null) {
+    const ladder = block("portals.ladder.block", p.ladder.block);
+    if (ladder.climbable !== true)
+      fail(`portals.ladder.block ${p.ladder.block} must be climbable`);
+    const facing = ladder.facingProperty;
+    if (!(
+      facing && ladder.properties?.[facing]?.includes(LADDER_WALLS[p.ladder.wall])
+    )) {
+      fail(
+        `portals.ladder.block ${p.ladder.block} has no ${facing ?? "facing"}=${LADDER_WALLS[p.ladder.wall]} state`,
+      );
+    }
   }
   const mo = p.monument;
   if (typeof mo !== "object" || mo === null || Array.isArray(mo))
@@ -2243,8 +2247,11 @@ export function midplaneRust(data) {
     readFileSync(join(here, "../protocol/constants.json"), "utf8"),
   ).cellHeight;
   const p = data.portals;
-  const ladder = registryBlocks().get(p.ladder.block);
-  const state = `${p.ladder.block}[${ladder.facingProperty}=${LADDER_WALLS[p.ladder.wall]}]`;
+  const ladder = p.ladder.block === null ? null : registryBlocks().get(p.ladder.block);
+  const state =
+    ladder === null
+      ? null
+      : `${p.ladder.block}[${ladder.facingProperty}=${LADDER_WALLS[p.ladder.wall]}]`;
   const rs = [
     `// ${midplaneHeader}`,
     "",
@@ -2271,7 +2278,7 @@ export function midplaneRust(data) {
     ["rim_rows", `${p.rim.height / cell}`],
     ["lining", JSON.stringify(p.lining)],
     ["no_build", rf(p.noBuild)],
-    ["ladder", JSON.stringify(state)],
+    ["ladder", state === null ? "None" : `Some(${JSON.stringify(state)})`],
     [
       "wall",
       `[${{ north: "0, -1", east: "1, 0", south: "0, 1", west: "-1, 0" }[p.ladder.wall]}]`,

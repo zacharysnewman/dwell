@@ -12,7 +12,7 @@
     "rim": { "block": "dwell:bedrock", "width": 1, "height": 0.5 },
     "lining": "dwell:bedrock",
     "noBuild": 7.5,
-    "ladder": { "block": "dwell:ladder", "wall": "south" },
+    "ladder": { "block": null, "wall": "south" },
     "clear": 4,
     "monument": { "structure": "dwell:portal_arch", "lodCellM": 16 },
     "motes": "dwell:portal",

@@ -116,8 +116,9 @@ dwell_world::both_faces!(
                             Part::Shaft { ladder } => {
                                 for h in MIDPLANE_Y..=top.max(ladder_top) + 2 {
                                     let m = v.at(x, f.row(h), z);
-                                    if ladder && h <= ladder_top {
-                                        assert_eq!(m, f.state(p.ladder), "{portal:?} ladder {h}");
+                                    if let Some(l) = p.ladder.filter(|_| ladder && h <= ladder_top)
+                                    {
+                                        assert_eq!(m, f.state(l), "{portal:?} ladder {h}");
                                     } else {
                                         assert_eq!(m, M.air, "{portal:?} ({dx}, {dz}) at {h}");
                                     }
@@ -169,8 +170,12 @@ dwell_world::both_faces!(
 );
 
 #[test]
-fn the_ladder_runs_unbroken_from_face_a_to_face_b_across_the_midplane() {
-    // both-faces: the ladder crosses between them.
+fn no_ladder_stands_in_a_portals_shaft() {
+    // both-faces: the old ladder's column runs between them.
+    // Owner, 2026-11-23: "Lets get rid of the ladders on the portals" (midplane.json `ladder.block`
+    // null): the column the ladder ran up is open from face B's opening to face A's, and the wall
+    // it was fixed to is still solid the whole way (the opening's height is that wall's top).
+    assert!(MIDPLANE.portals.ladder.is_none());
     for seed in [0u64, 3] {
         let g = BifacialTerrain::new(seed);
         let p = g.portals();
@@ -179,16 +184,13 @@ fn the_ladder_runs_unbroken_from_face_a_to_face_b_across_the_midplane() {
             let (lx, lz) = p.ladder_column(portal);
             let top_a = FaceFrame::A.row(g.local(Face::A).ladder_top(p, portal));
             let top_b = FaceFrame::B.row(g.local(Face::B).ladder_top(p, portal));
-            assert!(FaceFrame::at_row(top_b).is_b() && !FaceFrame::at_row(top_a).is_b());
             for y in top_b..=top_a {
+                let m = v.at(lx, y, lz);
                 assert!(
-                    info(v.at(lx, y, lz)).climbable,
+                    !info(m).climbable && m == M.air,
                     "seed {seed} {portal:?} row {y}"
                 );
             }
-            assert!(!info(v.at(lx, top_a + 1, lz)).climbable);
-            assert!(!info(v.at(lx, top_b - 1, lz)).climbable);
-            // Its wall is solid the whole way: the ladder is fixed to it.
             let (wx, wz) = p.wall_column(portal);
             for y in top_b..=top_a {
                 assert!(
@@ -286,7 +288,7 @@ fn portal_rules_added_by_data_alone_shape_the_world() {
         rim_block: "dwell:sand",
         rim_width: 2.0,
         rim_rows: 2,
-        ladder: "dwell:ladder[facing=west]",
+        ladder: Some("dwell:ladder[facing=west]"),
         wall: [1, 0],
         ..MIDPLANE.portals
     };

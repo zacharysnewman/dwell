@@ -442,10 +442,10 @@ client predicts it with the server's rules). On face B it is all mirrored, as ev
 **Getting through.** Gravity points toward the midplane on both sides and nothing brakes a body in
 the flip band (§10), so a player who falls into a shaft swings across the midplane and rises out of
 the other opening, where the shaft's exit push carries it out sideways onto the ground beside the
-hole (§12.3; before it, the player fell back in and swung between the faces forever). The
-ladder is the other way through: step off the rim over the ladder (it takes hold), look down and hold
-forward; across the midplane the look continues (§6) and forward climbs up the far side to face B's
-rim.
+hole (§12.3; before it, the player fell back in and swung between the faces forever). Until 0.76 a
+ladder was the other way through; owner, 2026-11-23: "Lets get rid of the ladders on the portals"
+(`midplane.json` `ladder.block` null: no ladder; `ladder.wall` still names the wall whose top is the
+opening's height). A drop is the only way through.
 
 **Integration.** The sky test leaves room for the rims; the LOD cuts the shafts at levels whose
 cells are no wider than the radius (levels 0–1) and draws the ground over them coarser; the
@@ -544,7 +544,7 @@ several metres out of the far opening, fell straight back in and swung between t
 - **Tests:** `dwell-physics` `tests/portal_exit.rs`
   (`a_player_dropped_into_a_portal_lands_on_the_far_face_beside_the_hole`, both faces; red with the
   pass removed, as on main; `without_the_exit_push_a_dropped_player_swings_between_the_faces`;
-  `every_portal_lets_a_dropped_player_out_beside_an_opening`), `tests/portal_crossing.rs` (the
+  `every_portal_lets_a_dropped_player_out_beside_an_opening`), (`tests/portal_crossing.rs`, the ladder's climbs, removed with the ladder in 0.76; the
   ladder climbs, the push live), `tests/predictor.rs`
   (`the_prediction_agrees_with_the_server_through_a_portal_and_out_of_it`: no replays, and replays
   for a client without the shafts), `portal_shafts.rs`'s unit test, `gen.test.mjs`.

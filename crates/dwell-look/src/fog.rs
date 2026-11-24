@@ -135,6 +135,11 @@ mod tests {
     use super::*;
 
     const EYE: f64 = 1.6;
+    /// A test's height (m, face-local) as written for the sea at 32 m: moved with the sea (576 m
+    /// since 0.76), the haze reading heights from the sea level, so every value is as pinned.
+    fn at(h: f64) -> f64 {
+        h + world::SEA_LEVEL_M - 32.0
+    }
     const THIN: FogSettings = FogSettings {
         distance_m: 100_000.0,
         density: 0.6,
@@ -147,9 +152,9 @@ mod tests {
 
     #[test]
     fn hazes_the_horizon_lightly_never_past_the_density() {
-        assert!(haze_amount(&THIN, EYE, 0.0, 1000.0) < 0.01);
-        assert!(haze_amount(&THIN, EYE, 0.0, 400_000.0) > 0.5);
-        assert!(haze_amount(&THIN, EYE, 0.0, 2.0 * RADIUS) <= THIN.density);
+        assert!(haze_amount(&THIN, at(EYE), at(0.0), 1000.0) < 0.01);
+        assert!(haze_amount(&THIN, at(EYE), at(0.0), 400_000.0) > 0.5);
+        assert!(haze_amount(&THIN, at(EYE), at(0.0), 2.0 * RADIUS) <= THIN.density);
     }
 
     #[test]
@@ -166,13 +171,13 @@ mod tests {
     fn thins_with_altitude_and_leaves_mountain_tops_clearer() {
         let mut previous = f64::INFINITY;
         for height in [0.0, 1000.0, 5000.0, 20_000.0, 200_000.0, 2_000_000.0] {
-            let haze = haze_amount(&THIN, height, 0.0, 300_000f64.hypot(height));
+            let haze = haze_amount(&THIN, at(height), at(0.0), 300_000f64.hypot(height));
             assert!(haze < previous);
             previous = haze;
         }
         assert!(
-            haze_amount(&THIN, 4000.0, 4000.0, 100_000.0)
-                < haze_amount(&THIN, 0.0, 0.0, 100_000.0) / 10.0
+            haze_amount(&THIN, at(4000.0), at(4000.0), 100_000.0)
+                < haze_amount(&THIN, at(0.0), at(0.0), 100_000.0) / 10.0
         );
     }
 
@@ -194,13 +199,13 @@ mod tests {
         // picks a preset); the composite then draws the plain fade, unchanged.
         assert!(!FOG.aerial());
         // A hill 1 km off stays crisp; one 4 km off is softened; the far coast is mostly haze.
-        assert!(haze_amount(&FOG, EYE, 0.0, 1000.0) < 0.15);
-        assert!(haze_amount(&FOG, EYE, 0.0, 4000.0) > 0.3);
-        assert!(haze_amount(&FOG, EYE, 0.0, 25_000.0) > 0.85);
-        assert!(haze_amount(&FOG, EYE, 0.0, 64_000.0) > 0.9);
+        assert!(haze_amount(&FOG, at(EYE), at(0.0), 1000.0) < 0.15);
+        assert!(haze_amount(&FOG, at(EYE), at(0.0), 4000.0) > 0.3);
+        assert!(haze_amount(&FOG, at(EYE), at(0.0), 25_000.0) > 0.85);
+        assert!(haze_amount(&FOG, at(EYE), at(0.0), 64_000.0) > 0.9);
         for r in [0.0, RADIUS / 2.0, RADIUS] {
-            assert!(haze_amount(&FOG, TOP, 0.0, r.hypot(TOP)) < FOG.density / 3.0);
-            assert!(haze_amount(&THIN, TOP, 0.0, r.hypot(TOP)) < 0.05);
+            assert!(haze_amount(&FOG, at(TOP), at(0.0), r.hypot(TOP)) < FOG.density / 3.0);
+            assert!(haze_amount(&THIN, at(TOP), at(0.0), r.hypot(TOP)) < 0.05);
         }
     }
 
@@ -214,7 +219,7 @@ mod tests {
             (16_000.0, 0.808_897),
             (64_000.0, 0.949_538),
         ] {
-            let got = haze_amount(&FOG, EYE, 0.0, d);
+            let got = haze_amount(&FOG, at(EYE), at(0.0), d);
             assert!((got - want).abs() < 1e-5, "{d} m: {got}");
         }
         // With today's zeros the air is the horizon's and the veil leaves colours alone.
@@ -280,7 +285,7 @@ mod tests {
                     ..FOG
                 };
                 for (cam, point) in [(TOP, mid), (mid, mid), (mid, TOP)] {
-                    let haze = haze_amount(&fog, cam, point, 2.0 * RADIUS);
+                    let haze = haze_amount(&fog, at(cam), at(point), 2.0 * RADIUS);
                     assert!(haze.is_finite() && (0.0..=1.0).contains(&haze));
                 }
             }

@@ -55,8 +55,10 @@ pub struct PortalRules {
     pub rim_block: &'static str,
     pub rim_width: f32,
     pub rim_rows: i32,
-    /// The ladder's state (the block turned away from its wall) and the wall's direction (x, z).
-    pub ladder: &'static str,
+    /// The ladder's state (the block turned away from its wall), `None` for no ladder (owner,
+    /// 2026-11-23: "Lets get rid of the ladders on the portals"), and the wall's direction (x, z):
+    /// its column's ground is the opening's height.
+    pub ladder: Option<&'static str>,
     pub wall: [i32; 2],
     /// The shaft's lining (owner, 2026-11-23: "Portals should be made of bedrock"): every solid
     /// cell of the rim's columns under the rim, from the midplane up, so its wall can't be dug.
@@ -110,7 +112,7 @@ pub struct Portals {
     pub rules: PortalRules,
     pub sites: Arc<Vec<Portal>>,
     pub rim: StateId,
-    pub ladder: StateId,
+    pub ladder: Option<StateId>,
     pub lining: StateId,
     /// The landmark round each opening (`rules.monument`), loaded.
     pub monument: Option<Arc<Structure>>,
@@ -155,7 +157,7 @@ impl Portals {
             rules,
             sites,
             rim: dwell_blocks::require(rules.rim_block),
-            ladder: dwell_blocks::require(rules.ladder),
+            ladder: rules.ladder.map(dwell_blocks::require),
             lining: dwell_blocks::require(rules.lining),
             monument: rules.monument.map(|name| {
                 Arc::new(dwell_world::structure::load(name).unwrap_or_else(|e| panic!("{e}")))

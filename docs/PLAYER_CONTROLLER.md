@@ -494,7 +494,7 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
   (`rise² + 2g·(feet − top)` under the player's gravity; over the opening, clear of the shaft's
   wall a player who walked in rises against, BUGS.md #107); then it adds `exit.push` × dt along the
   face-local facing to the horizontal `external` (kept in the air as momentum, like a fall's push).
-  A jump and a ladder climb are never pushed (`tests/portal_exit.rs`, `tests/portal_crossing.rs`,
+  A jump and a ladder climb are never pushed (`tests/portal_exit.rs`; the portals have no ladder since 0.76,
   `tests/predictor.rs`).
 - **Waterfalls** (Phase 53 G6, WATER_SURFACE_GRID.md §2e; owner 2026-11-06: a fall pushes what is in
   it down and out by how much flows, and can't be swum up): `step_fall`, after the vertical layer and
