@@ -6,6 +6,19 @@ pins it.
 
 ## Open
 
+### 234. Blasts and water behave differently with the ground at 576 m (0.76's sea level)
+
+Found 2026-11-23: with the sea level and the flat worlds' top at row 1152 (576 m) instead of row 64 (32 m), on the
+same flat-world fixtures: one loosened piece directly under a buried blast moves up at 1.05 m/s instead of resting
+(`explosives.rs` `the_loosen_shell_past_the_radius_becomes_pieces_given_no_impulse`; it rests with the old constants,
+and with the 20-row core and the new sea level it moves: the height, not the core); a flush charge's debris doesn't
+settle in 20 s and a blast's heap keeps one body moving after 12 s (`explosives.rs`, `collapse.rs`); a lake cut open
+leaves water at its far corner (`water.rs` `a_lake_cut_open_drains_on_after_its_player_leaves`). Ruled out: Rapier's
+precision (f64), the water's levels as f32, the build volume (50 000 cells). Suspect: something that reads a height
+or row against a fixed number (a chunk or section index, a level offset) in the blast or the water. Also two water
+tests need new sites: seed 0's dam site at (2349–2380, 7452) no longer backs up (its river changed with 0.76's
+rivers). Open; blocks 0.76's merge (red tests).
+
 ### 233. A 1.16 m step in the ground near a confluence (0.76's river data, seed 7 face B)
 
 Found 2026-11-23 by `no_seam_where_river_valleys_meet::b` (terrain.rs) once 0.76's rivers from the mountains (river
