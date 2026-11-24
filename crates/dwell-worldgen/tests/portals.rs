@@ -508,53 +508,59 @@ fn a_portal_monument_is_named_by_data_alone() {
 }
 
 #[test]
-fn a_shafts_stand_ins_are_open_where_its_chunks_are_and_solid_elsewhere() {
-    // both-faces: a shaft's stand-ins run from face B's opening to face A's.
-    // BUGS.md #236 (owner's pick, 2026-11-24: "The tube mesh"): a client draws a shaft's walls from
-    // the portals' data where its chunks aren't loaded. Each stand-in chunk is open exactly where
-    // the generated chunk is (its walls are the shaft's), and they run the shaft's length but a
-    // chunk under either opening; none for a shaft out of reach.
+fn a_shafts_stand_ins_run_down_it_and_out_of_the_far_opening_over_its_arch() {
+    // both-faces: from face A's rim, the stand-ins run to face B's arch.
+    // BUGS.md #236 (owner, 2026-11-24: "The tube mesh", then "the arched exit on the other side,
+    // would show stone not sky, until you get closer"; "don't special case it"): a client draws
+    // a shaft's chunks as generated where they aren't loaded: from a chunk under its own face's
+    // opening (that ground is the far view's) down the shaft and out of the far opening, the
+    // far face's arch whole; none for a shaft out of reach.
     let shafts = dwell_worldgen::portal_shafts_for_sized(
         GENERATOR_TERRAIN,
         0,
         dwell_protocol::world_size::WorldSize::DEFAULT,
     );
-    assert!(shafts.stand_in > 0.0 && shafts.lining != 0);
+    assert!(shafts.stand_in > 0.0 && shafts.stand_in_over > 25.0);
     let g = BifacialTerrain::new(0);
     let s = shafts.shafts[0];
-    let eye = [s.axis[0], MIDPLANE_M + s.top(Face::A) + 1.6, s.axis[1]];
+    let top_a = MIDPLANE_M + s.top(Face::A);
+    let eye = [s.axis[0], top_a + 1.6, s.axis[1]];
     let coords = shafts.stand_ins(eye);
-    let rows: Vec<i32> = coords.iter().map(|c| c.y).collect();
-    let (lo, hi) = (*rows.iter().min().unwrap(), *rows.iter().max().unwrap());
-    // ~1.2 km: about 72 chunk rows, all inside the rock.
-    assert!(hi - lo > 60, "rows {lo}..={hi}");
-    assert!(hi * S + S <= row_of_m(MIDPLANE_M + s.top(Face::A)) - S + 1);
-    assert!(lo * S >= row_of_m(MIDPLANE_M - s.top(Face::B)) + S);
-    for &c in &coords {
-        let mut chunk = Chunk::default();
-        g.generate(c, &mut chunk);
-        let block = shafts.stand_in_block(c);
-        let pad = S + 2;
-        for y in 0..S {
-            for z in 0..S {
-                for x in 0..S {
-                    let generated = chunk.get(x, y, z);
-                    let stand_in = block[((x + 1) + pad * ((z + 1) + pad * (y + 1))) as usize];
-                    assert_eq!(
-                        generated == M.air,
-                        stand_in == 0,
-                        "{c:?} cell {x},{y},{z}: generated {generated}, stand-in {stand_in}"
-                    );
+    let held: std::collections::HashSet<ChunkCoord> = coords.iter().copied().collect();
+    // Never over the eye's own face's opening: its ground is drawn by the far view.
+    let hi = coords.iter().map(|c| c.y * S + S - 1).max().unwrap();
+    assert!(hi < row_of_m(top_a) - S + 1, "own face: {hi}");
+    // Every cell of the far face's arch (stone over its opening) lies in a stand-in.
+    let top_b = MIDPLANE_M - s.top(Face::B);
+    let stone = require("dwell:stone");
+    let [ax, az] = s.axis.map(|v| v.floor() as i32);
+    let mut arch = 0;
+    for y in row_of_m(top_b - 40.0)..row_of_m(top_b) {
+        for z in az - 8..=az + 8 {
+            for x in ax - 8..=ax + 8 {
+                let c = ChunkCoord::new(x.div_euclid(S), y.div_euclid(S), z.div_euclid(S));
+                let mut chunk = Chunk::default();
+                g.generate(c, &mut chunk);
+                if chunk.get(x.rem_euclid(S), y.rem_euclid(S), z.rem_euclid(S)) == stone
+                    && (x - ax).abs() <= 1
+                    && (z - az).abs() <= 1
+                {
+                    arch += 1;
+                    assert!(held.contains(&c), "arch cell {x},{y},{z} not drawn");
                 }
             }
         }
     }
+    assert!(arch > 0, "the far arch crosses over the opening");
+    // Down the shaft: ~1.2 km of rows.
+    let rows: Vec<i32> = coords.iter().map(|c| c.y).collect();
+    assert!(rows.iter().max().unwrap() - rows.iter().min().unwrap() > 60);
     let far = [s.axis[0] + shafts.stand_in + 1.0, eye[1], s.axis[1]];
     assert!(
         shafts
             .stand_ins(far)
             .iter()
-            .all(|c| !coords.contains(c) || shafts.shafts.len() > 1),
+            .all(|c| !held.contains(c) || shafts.shafts.len() > 1),
         "out of reach: none of this shaft's"
     );
 }

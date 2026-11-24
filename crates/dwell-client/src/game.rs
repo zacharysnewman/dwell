@@ -358,6 +358,8 @@ struct StandIns {
     asked: std::collections::HashSet<Coord>,
     /// Drawn in the scene now.
     shown: std::collections::HashSet<Coord>,
+    /// Wanted chunks drawn by their own mesh, whatever the LOD draws there.
+    forced: std::collections::HashSet<Coord>,
 }
 
 /// Stand-in chunks sent to be meshed in a frame at most (a shaft is ~72 of them).
@@ -2109,6 +2111,13 @@ impl<S: Scene> Game<S> {
                 .grid_lod
                 .as_ref()
                 .map_or(Some(Fade::Full), |g| g.lod.chunk_fade(c));
+        }
+        // A portal shaft's stand-in is drawn whatever the LOD draws there: on the viewer's face
+        // it lies inside the rock (the LOD shows nothing there), and the other face's LOD isn't
+        // drawn at all (BUGS.md #236: hidden, the far half of the shaft and its arch showed sky).
+        let k = c.to_array();
+        if self.stand_ins.shown.contains(&k) || self.stand_ins.forced.contains(&k) {
+            return Some(Fade::Full);
         }
         self.lod
             .as_ref()
@@ -4031,8 +4040,9 @@ impl<S: Scene> Game<S> {
     }
 
     /// Draws the portals' shafts within reach of `eye` from their data where the chunks aren't
-    /// drawn (BUGS.md #236, the owner's pick: "The tube mesh"): each stand-in chunk is meshed once
-    /// (its open columns in the lining, lit by the sky down the shaft) and shown while its chunk
+    /// drawn (BUGS.md #236, the owner's pick: "The tube mesh", then "don't special case it"): each
+    /// stand-in chunk is generated and meshed once in a worker (`Job::StandIn`: as the world has
+    /// it, the far opening's arch included, lit as open sky in its air) and shown while its chunk
     /// isn't drawable; the
     /// chunk's own mesh replaces it, and it shows again once that chunk is dropped.
     fn update_stand_ins(&mut self, eye: [f64; 3]) {
@@ -4045,6 +4055,7 @@ impl<S: Scene> Game<S> {
             .map(|c| c.to_array())
             .collect();
         let si = &mut self.stand_ins;
+        si.forced.retain(|c| wanted.contains(c));
         let gone: Vec<Coord> = si
             .shown
             .iter()
@@ -4062,10 +4073,14 @@ impl<S: Scene> Game<S> {
         si.meshes.retain(|c, _| wanted.contains(c));
         let mut submitted = 0;
         for &c in &wanted {
+            // The chunk's own mesh replaces it, drawn even where the LOD would draw its section
+            // instead (loaded past the LOD's chunks, a section can't show the shaft: a gap of sky).
             if self.streamer.drawable(c) {
                 si.shown.remove(&c);
+                si.forced.insert(c);
                 continue;
             }
+            si.forced.remove(&c);
             if let Some(m) = si.meshes.get(&c) {
                 if si.shown.insert(c) {
                     self.scene
@@ -4073,27 +4088,14 @@ impl<S: Scene> Game<S> {
                         .set_chunk(ChunkCoord::from_array(c), Some(m));
                 }
             } else if !si.asked.contains(&c) && submitted < STAND_INS_PER_FRAME {
-                let portals = &self.streamer.store().portals;
-                let padded = portals.stand_in_block(ChunkCoord::from_array(c));
-                // Lit as the chunk is: its shaft's air sees the sky (`ShaftSky`), the rock dark.
-                let light: Vec<u8> = padded
-                    .iter()
-                    .map(|&m| if m == 0 { dwell_world::light::OPEN } else { 0 })
-                    .collect();
                 let (water_tops, cards, plants) = {
                     let p = self.pool.borrow();
                     (p.water_tops, p.cards, p.plants)
                 };
                 self.pool.borrow_mut().submit(
                     Purpose::StandIn(c),
-                    crate::jobs::Job::MeshChunk {
-                        padded,
-                        light,
-                        mirror: dwell_world::face_of_chunk_y(c[1]) == dwell_world::Face::B,
-                        origin: c.map(|v| v * dwell_world::CHUNK_SIZE),
-                        cuts: Vec::new(),
-                        damage: Vec::new(),
-                        ground: None,
+                    crate::jobs::Job::StandIn {
+                        coord: ChunkCoord::from_array(c),
                         water_tops,
                         cards,
                         plants,

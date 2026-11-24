@@ -10,8 +10,6 @@
 
 use std::sync::Arc;
 
-use dwell_blocks::StateId;
-
 use crate::{CHUNK_SIZE, ChunkCoord, Face, MIDPLANE_M, row_of_m};
 
 /// The exit push (`midplane.json` `portals.exit`): in a shaft's footprint, a body rising at least
@@ -80,8 +78,10 @@ pub struct PortalShafts {
     /// A client within this far (m, across) of an axis draws the shaft's walls from this data
     /// where its chunks aren't loaded ([`Self::stand_ins`]); 0: none.
     pub stand_in: f64,
-    /// The shafts' lining (`midplane.json` `portals.lining`): what a stand-in's walls are.
-    pub lining: StateId,
+    /// How far over an opening (m) the far end's stand-ins reach: the monument over it (its arch).
+    pub stand_in_over: f64,
+    /// How far across from an axis (m) the stand-ins reach: the shaft, or the monument if wider.
+    pub stand_in_across: f64,
 }
 
 impl PortalShafts {
@@ -91,40 +91,54 @@ impl PortalShafts {
             exit,
             no_build: 0.0,
             stand_in: 0.0,
-            lining: 0,
+            stand_in_over: 0.0,
+            stand_in_across: 0.0,
         }
     }
 
-    /// Drawn from this data within `reach` m of an axis where the chunks aren't loaded, its walls
-    /// `lining` (BUGS.md #236).
-    pub fn with_stand_ins(mut self, reach: f64, lining: StateId) -> Self {
+    /// Drawn as generated within `reach` m of an axis where the chunks aren't loaded, out to
+    /// `over` m above the far opening and `across` m from the axis (the monument's height and
+    /// half-width; BUGS.md #236).
+    pub fn with_stand_ins(mut self, reach: f64, over: f64, across: f64) -> Self {
         self.stand_in = reach;
-        self.lining = lining;
+        self.stand_in_over = over;
+        self.stand_in_across = across;
         self
     }
 
-    /// The chunks a client with its eye at world point `eye` draws from the portals' data where it
-    /// doesn't hold them (BUGS.md #236, the owner's pick: "The tube mesh"): of each shaft within
-    /// [`Self::stand_in`] m across, every chunk its open columns pass through that lies wholly
-    /// inside the rock, a chunk's height under either face's opening. The full-detail view reaches
-    /// 48 m; a shaft through the 512 m core is ~1.2 km long, and the far view can't draw a hole a
-    /// few metres wide, so down a shaft past the view the far face's sky showed.
+    /// The chunks a client with its eye at world point `eye` draws as generated where it doesn't
+    /// hold them (BUGS.md #236, the owner's pick: "The tube mesh"; then "don't special case it"):
+    /// of each shaft within [`Self::stand_in`] m across, the chunks from a chunk's height under the
+    /// eye's face's opening down the shaft and out of the far face's opening, up to
+    /// [`Self::stand_in_over`] m over it (its arch), within [`Self::stand_in_across`] m of the axis.
+    /// The full-detail view reaches 48 m of a ~1.2 km shaft, and the far view draws neither a hole
+    /// a few metres wide nor the far face; the eye's own face's ground is the far view's, so its
+    /// stand-ins stop inside the rock.
     pub fn stand_ins(&self, eye: [f64; 3]) -> Vec<ChunkCoord> {
         let mut out = Vec::new();
-        if self.stand_in <= 0.0 || self.lining == 0 {
+        if self.stand_in <= 0.0 {
             return out;
         }
         let n = CHUNK_SIZE;
+        let near_b = crate::FaceFrame::at_height(eye[1]).is_b();
         for s in self.shafts.iter() {
             let (dx, dz) = (eye[0] - s.axis[0], eye[2] - s.axis[1]);
             if dx * dx + dz * dz > self.stand_in * self.stand_in {
                 continue;
             }
-            // The rows between the two openings, a chunk's height in from each.
-            let lo = row_of_m(MIDPLANE_M - s.top(Face::B)) + n;
-            let hi = row_of_m(MIDPLANE_M + s.top(Face::A)) - n;
-            let (cy0, cy1) = ((lo + n - 1).div_euclid(n), (hi + 1).div_euclid(n) - 1);
-            let reach = s.radius.ceil() as i32;
+            let (top_a, top_b) = (MIDPLANE_M + s.top(Face::A), MIDPLANE_M - s.top(Face::B));
+            let over = self.stand_in_over;
+            let (lo, hi) = if near_b {
+                (row_of_m(top_b) + n, row_of_m(top_a + over))
+            } else {
+                (row_of_m(top_b - over), row_of_m(top_a) - n)
+            };
+            let (cy0, cy1) = if near_b {
+                ((lo + n - 1).div_euclid(n), hi.div_euclid(n))
+            } else {
+                (lo.div_euclid(n), (hi + 1).div_euclid(n) - 1)
+            };
+            let reach = s.radius.max(self.stand_in_across).ceil() as i32;
             let [cx, cz] = s.axis.map(|v| v.floor() as i32);
             for x in (cx - reach).div_euclid(n)..=(cx + reach).div_euclid(n) {
                 for z in (cz - reach).div_euclid(n)..=(cz + reach).div_euclid(n) {
@@ -137,6 +151,16 @@ impl PortalShafts {
                 }
             }
         }
+        // Nearest the eye first: the shaft below it is drawn before its far end.
+        let at = [eye[0], eye[1] / crate::CELL_H, eye[2]];
+        out.sort_by_key(|c| {
+            let d = [
+                f64::from(c.x * n + n / 2) - at[0],
+                f64::from(c.y * n + n / 2) - at[1],
+                f64::from(c.z * n + n / 2) - at[2],
+            ];
+            (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]) as i64
+        });
         out
     }
 
@@ -175,27 +199,6 @@ impl PortalShafts {
                         let (lx, ly, lz) = (x - c.x * n, y - c.y * n, z - c.z * n);
                         out.push((lx | (ly << 5) | (lz << 10)) as u16);
                     }
-                }
-            }
-        }
-        out
-    }
-
-    /// A stand-in chunk's voxels with their one-cell apron, the mesher's padded layout (x fastest,
-    /// then z, then y, each −1..=CHUNK_SIZE): the shafts' open columns air, every other cell the
-    /// lining. Only a [`Self::stand_ins`] chunk, wholly inside the rock: only the shaft's walls
-    /// show, as the chunk itself would draw them.
-    pub fn stand_in_block(&self, c: ChunkCoord) -> Vec<StateId> {
-        let n = CHUNK_SIZE;
-        let pad = n + 2;
-        let mut out = vec![self.lining; (pad * pad * pad) as usize];
-        for z in -1..=n {
-            for x in -1..=n {
-                if !self.open_column(c.x * n + x, c.z * n + z) {
-                    continue;
-                }
-                for y in -1..=n {
-                    out[((x + 1) + pad * ((z + 1) + pad * (y + 1))) as usize] = 0;
                 }
             }
         }

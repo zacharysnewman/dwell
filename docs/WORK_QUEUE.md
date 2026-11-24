@@ -177,7 +177,20 @@ context) at a time with a choice to table it as well as the other options?" Answ
   as I fall, allowing light to shine down into the hole as well. What are possible solutions." Options given; the
   owner picks. Then (2026-11-24): "The possible problem I'm wanting to correct with #2 is the structure arches will
   mostly block the sky/light for the tube.": the shaft's open cells see the sky by the portal data, from one opening
-  to the other, whatever stands over the opening (the arch) or isn't held over them; the stand-in walls lit alike. Owner should see: looking or falling down a portal, bedrock walls all the way down to a small disc of
+  to the other, whatever stands over the opening (the arch) or isn't held over them; the stand-in walls lit alike. Then (owner, 2026-11-24, after the tube): "The tube looks right, but the arched exit
+  on the other side, would show stone not sky, until you get closer, to where you could see the edges of the arches,
+  thoughts?" (the far face's arch, its two arms crossing 27–30 m over the opening, isn't drawn: the far face's LOD
+  isn't, and the stand-ins stop a chunk short of the opening). Owner should see: down a shaft, the far arch's stone
+  cross over the far opening with slivers of sky beside it, opening up as you near it. Built ("Yeah don't special
+  case it, go ahead."): the stand-ins are the generated chunks, out of the far opening over its arch. Then: "the
+  tube mesh texture seems like it might be tiled too tightly vertically, hard to tell at that angle though":
+  checked face-on, a bedrock side repeats once a metre both ways (a tile over two ½ m rows), as every block's; the
+  tightness is the grazing angle down the shaft. Open if the owner still sees it.
+- **Game instances tool (owner, 2026-11-24):** "Make a script/tool/skill (whatever is most appropriate and still
+  discoverable) for yourself to quickly check for running game instances in order to clean them up easily, when not
+  using them." Done: the `instances` project skill (`.claude/skills/instances/scripts/instances.sh`: list; `stop`
+  by kind or pid; never the owner's own Chrome). Owner should see: no leftover servers or browsers after Claude's
+  checks. Owner should see: looking or falling down a portal, bedrock walls all the way down to a small disc of
   the far face's sky at the far end, and no light pouring in behind as they fall. Part of 0.76 (portals through the
   512 m core are new on this line).
 - **Respawn hand-over on a mountainside (found 2026-11-24, 0.76):** with the LOD, a preloaded respawn on seed 1's new
