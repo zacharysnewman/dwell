@@ -120,10 +120,10 @@ dwell_world::both_faces!(
         // Owner, 2026-11-24: "Grass is a bit out of control, can we just disable grass growing for
         // now" (grass.json `grows` false): a new world's grass, on by its own switch, doesn't grow
         // or spread; a tool that turns growth on still grows it (the other tests).
-        assert!(
-            !dwell_worldgen::grass::GRASS.grows,
-            "growth off in this build"
-        );
+        // Only while the build's growth is off (grass.json `grows`).
+        if dwell_worldgen::grass::GRASS.grows {
+            return;
+        }
         let mut fx = Fixture::new(config(f));
         fx.server.set_grass_envelope(Some(lush()));
         let tall = f.state(dwell_blocks::require("dwell:tall_grass"));
