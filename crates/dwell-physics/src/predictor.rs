@@ -163,6 +163,9 @@ pub struct WaterDrag {
     pub kx: f64,
     pub kz: f64,
     pub linear: f64,
+    /// The speed (m/s, relative to the current) the speed-squared drag acts above only: slower, a
+    /// body glides on under `linear` alone (BUGS.md #220).
+    pub glide: f64,
     pub current: [f64; 2],
     pub fall: Option<dwell_world::falls::FallPush>,
     pub face: dwell_world::FaceFrame,
@@ -183,7 +186,10 @@ impl WaterDrag {
             v
         } else {
             let k = (rx.abs() * self.kx + rz.abs() * self.kz) / speed;
-            let keep = (-self.linear * dt).exp() / (1.0 + k * speed * dt);
+            // The speed-squared drag on the speed over the glide speed only.
+            let over = (speed - self.glide).max(0.0);
+            let slowed = speed - over + over / (1.0 + k * over * dt);
+            let keep = (-self.linear * dt).exp() * slowed / speed;
             DVec3::new(cx + rx * keep, v.y, cz + rz * keep)
         };
         match self.fall {

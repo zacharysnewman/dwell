@@ -51,3 +51,17 @@ describe('performance line', () => {
     expect(r.rate).toBeCloseTo(60, 0);
   });
 });
+
+describe('the memory on the performance line', () => {
+  // Owner, 2026-11-24: "I'd like it to show memory usage" (a climb while playing shows a leak).
+  it('ends the line, with the JavaScript heap where the browser tells it', () => {
+    const base = { fps: 60, cpuMs: 4, gpuMs: 8, serverTicks: 60, serverTickMs: null };
+    expect(formatPerf({ ...base, memoryBytes: 3158 * 1048576, jsHeapBytes: 140 * 1048576 })).toBe(
+      '60 fps · CPU 4.0 ms · GPU 8.0 ms · server 60/s · mem 3,158 MB (JS 140 MB)',
+    );
+    expect(formatPerf({ ...base, memoryBytes: 512 * 1048576, jsHeapBytes: null })).toBe(
+      '60 fps · CPU 4.0 ms · GPU 8.0 ms · server 60/s · mem 512 MB',
+    );
+    expect(formatPerf(base)).toBe('60 fps · CPU 4.0 ms · GPU 8.0 ms · server 60/s');
+  });
+});

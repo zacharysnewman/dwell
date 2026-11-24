@@ -160,14 +160,35 @@ context) at a time with a choice to table it as well as the other options?" Answ
      prioritize"): the worldgen tests share one Realistic map, cached on disk by seed and data.
   1. Builders, a quick fix (#226: blueprint slopes facing the blueprint's way) ("Early, as a quick fix"). Fixed
      2026-11-24: a turned blueprint now turns its ramps' facing (BUGS.md #226).
-  2. Section 1, Moving bodies.
-  3. Section 8, Far trees and far terrain.
-  4. Section 4, Blocks.
-  5. Section 3, Water.
-  6. Then: "Sky question, character painting, inventory icons, split screen": section 6 (the moonlight question), the
-     character painting (section 7), section 9 (inventory icons), the splitscreen (section 7).
-  The snow-line screenshot (#219) goes to the owner when work resumes.
-  7. **Pieces stuck in the ground (owner, 2026-11-24, after BUGS.md #234):** "We could also have a rule for physics
+  **Two passes (owner, 2026-11-24):** "Let's do easy and medium items and we'll hold in the hard ones for now", then
+  "Make these all a \"second pass\" moving those hard items I mentioned before into it. Then we'll move the blocked
+  item from section 8 into it too, and also all the following hard items from each section."
+  **First pass**, in order:
+  2. Section 1, moving bodies: the glide (#220, done 2026-11-24); the Q/E rebinding with draining a hull and flipping a body upright;
+     pre-existing bodies synced on join (#222); copying a body as a blueprint.
+  2a. **Status bar shows everything, and memory (owner, 2026-11-24):** "I think we're running out of memory, with a
+     memory leak. Hard to debug because our status bar with FPS etc is truncated instead of showing everything. And
+     I'd like it to show memory usage." Owner should see: the top-left status lines in full (no "…"), with the
+     game's memory use in them, so a climb is visible while playing. Done 2026-11-24: both lines wrap instead of cutting off (the
+     second kept below the first), the performance line ends "· mem 1,425 MB (JS 109 MB)", sampled once a second.
+  3. **Slide launch off ramps (owner, 2026-11-24):** "Sliding off ramps should maintain velocity in the ramps direction,
+     flat -> shallow slope = shallow launch vector, flat -> shallow -> steep slope = steep launch vector, flat ->
+     shallow -> steep -> wall = vertical launch vector. Use 25m/s as the test velocity. Test 50m/s for overpenetrating
+     terrain, shouldn't." Owner should see: sliding at speed up a ramp launches along the last surface slid on: a
+     shallow ramp a shallow arc, shallow then steep a steep arc, up into a wall straight up; at 25 m/s as at 50 m/s,
+     never through the terrain.
+  4. Section 8: far trees drawn exactly once at every distance, stage and variant (#197: the invariant test, then the
+     fixes).
+  5. Section 4, blocks: the door and ladder recipes; the hit-rule table for the owner; tall grass at most three cells,
+     drawn as one connected stalk (#192); particles scaled with the hit; leafy trees' leaves fading up close (#225).
+  6. Section 3: the creative water bucket (sources added and removed, marked while held).
+  7. Section 6: the moonlight question answered from the code (and what's missing queued).
+  **Second pass** (held): the water inside a hull (#221), a hull's dry air for the player (#227), ladders and doors on
+  ships (#223), a ship's weight and buoyancy; the grey far speckles (#195, waiting on the owner's screenshot); wooden and
+  iron bars (prototype first); the sea's fountains and the block over the water (#224); back-flooded river chunks'
+  detail (#231); metal ore veins (prototype first, their own line); inventory icons from the meshes; character
+  painting; split screen; pieces stuck in the ground (below).
+  - **Pieces stuck in the ground (owner, 2026-11-24, after BUGS.md #234):** "We could also have a rule for physics
      objects that are fully stuck inside the ground, instead of colliding repeatedly have their collider disabled and
      are moved at a constant velocity upward, until they fully enter air again, collider reenabled and allowed to
      settle. This can be added to the end of the queue, because I'm not sure what the effect of this will be on small
@@ -287,6 +308,11 @@ stone, no caves)." Each item below is quoted from that list; reconciled with wha
 item). The sections' order is a proposal for the owner to confirm. The hold is lifted (owner, 2026-11-23, above).
 
 ### 1. Moving bodies: ships continued
+
+Owner, 2026-11-24: "Let's do easy and medium items and we'll hold in the hard ones for now." Doing, in order: the
+glide (#220), the Q/E rebinding with drain and flip, the join sync (#222), copying a body as a blueprint. Held: the
+water inside a hull (#221), a hull's dry air for the player (#227), ladders and doors on ships (#223), and the ship's
+weight and buoyancy (after the copy).
 
 First in this section (owner, 2026-11-23, to share a ship "in a generic way"): copying a body as a blueprint.
 

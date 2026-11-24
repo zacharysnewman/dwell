@@ -383,7 +383,8 @@ fn floating_raft() -> (Fixture, u32) {
 fn a_raft_let_go_in_water_glides_on() {
     // Owner, 2026-11-03: water resists as real water does, by the area facing the motion and the
     // speed squared, so a heavy raft let go glides. Red before: a drag of 1.2/s on its velocity
-    // took 70% of its speed a second, and 1 m/s was 0.19 m/s two seconds on.
+    // took 70% of its speed a second, and 1 m/s was 0.19 m/s two seconds on. Since BUGS.md #220
+    // (0.76) slower than the glide speed only the gentle linear drag acts: it keeps nearly all.
     let (mut f, raft) = floating_raft();
     let body = f.server.body_handle(raft).expect("the raft");
     {
@@ -396,8 +397,61 @@ fn a_raft_let_go_in_water_glides_on() {
     let v = physics.velocity(body);
     let speed = DVec3::new(v.x, 0.0, v.z).length();
     assert!(
-        (0.4..0.8).contains(&speed),
+        (0.9..1.0).contains(&speed),
         "two seconds on the raft goes {speed} m/s"
+    );
+}
+
+#[test]
+fn a_boat_let_go_glides_on_for_about_a_minute() {
+    // face-a-only: the flat test world is face A's; the water's drag has no up but buoyancy's.
+    // BUGS.md #220 (owner, 2026-11-23): "in real water boats don't often come to a stop, they keep
+    // moving in the same direction for a while even without wind or a motor". A raft let go at
+    // 1 m/s down a long still channel keeps going, slowing gently: still drifting after a minute.
+    let mut f = Fixture::new(flat());
+    join_streaming(&mut f, 1);
+    f.server.step();
+    f.take_all();
+    let water = dwell_blocks::require("dwell:water");
+    for x in -6..120 {
+        for z in -6..8 {
+            for y in G - 6..G {
+                f.server.world().set_voxel(x, y, z, water);
+            }
+        }
+    }
+    let surface = f64::from(G) * 0.5;
+    let cells: Vec<([i32; 3], u16)> = (0..2)
+        .flat_map(|x| (0..2).map(move |z| ([x, 0, z], log())))
+        .collect();
+    let raft = f.server.add_body(1, cells, [0.5, surface, 0.5]);
+    steps(&mut f, 240);
+    let body = f.server.body_handle(raft).expect("the raft");
+    {
+        let (_, physics, _) = f.server.sim();
+        let v = physics.velocity(body);
+        physics.set_velocity(body, DVec3::new(1.0, v.y, 0.0));
+    }
+    let mut at = Vec::new();
+    for s in 1..=60 {
+        steps(&mut f, 60);
+        let (_, physics, _) = f.server.sim();
+        let v = physics.velocity(body);
+        at.push((s, DVec3::new(v.x, 0.0, v.z).length()));
+    }
+    let speed = |s: usize| at[s - 1].1;
+    eprintln!(
+        "speeds: {:?}",
+        at.iter()
+            .filter(|(s, _)| [1, 5, 10, 20, 30, 45, 60].contains(s))
+            .collect::<Vec<_>>()
+    );
+    assert!(speed(10) > 0.6, "10 s on: {:.2} m/s ({at:?})", speed(10));
+    assert!(speed(30) > 0.35, "30 s on: {:.2} m/s", speed(30));
+    assert!(
+        (0.1..0.5).contains(&speed(60)),
+        "a minute on, gliding still and slowing: {:.2} m/s",
+        speed(60)
     );
 }
 
@@ -435,12 +489,22 @@ fn a_player_on_a_floating_raft_presses_it_down() {
 #[test]
 fn a_floating_raft_drifts_with_the_current() {
     // Phase 53 G3a (docs/WATER_SURFACE_GRID.md §2c): water slows a body toward the water's own
-    // velocity, so in a 0.5 m/s current a raft let be comes up to it (a 1,400 kg raft slowly: by
-    // the area it shows the water and the speed squared, as it glides on, above).
+    // velocity, so in a 0.5 m/s current a raft let be is carried with it. Since BUGS.md #220 (owner,
+    // 2026-11-23: boats "keep moving in the same direction for a while ... before the
+    // tide/currents exert enough force to move in that direction") gradually: over a minute, the
+    // drag that lets it glide on the same that brings it up to the current.
     let (mut f, raft) = floating_raft();
     let face = dwell_world::FaceFrame::A;
+    let water = dwell_blocks::require("dwell:water");
     for x in -6..8 {
-        for z in -6..8 {
+        for z in 8..60 {
+            for y in G - 6..G {
+                f.server.world().set_voxel(x, y, z, water);
+            }
+        }
+    }
+    for x in -6..8 {
+        for z in -6..60 {
             let (key, i) = dwell_world::currents::current_key(face, x, z);
             let world = f.server.world();
             let mut cells = world
@@ -454,11 +518,17 @@ fn a_floating_raft_drifts_with_the_current() {
     }
     let body = f.server.body_handle(raft).expect("the raft");
     steps(&mut f, 600);
+    let early = f.server.sim().1.velocity(body);
+    steps(&mut f, 3000);
     let (_, physics, _) = f.server.sim();
     let v = physics.velocity(body);
     assert!(
-        v.x.abs() < 0.05 && (0.3..0.51).contains(&v.z),
-        "ten seconds on the raft goes {v:?} in a 0.5 m/s current along z"
+        early.z > 0.02 && early.z < v.z,
+        "ten seconds on it gathers way: {early:?}"
+    );
+    assert!(
+        v.x.abs() < 0.05 && (0.15..0.51).contains(&v.z),
+        "a minute on the raft goes {v:?} in a 0.5 m/s current along z"
     );
 }
 

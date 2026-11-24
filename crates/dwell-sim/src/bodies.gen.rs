@@ -3,7 +3,7 @@
 use crate::felling::{BodyKind, WaterRules};
 
 /// How bodies float (shared/physics/bodies.json `water`).
-pub const WATER: WaterRules = WaterRules { drag_coefficient: 1.0, drag: 0.15, heave_drag: 2.0, angular_drag: 1.5, flood_m3s_per_m2: 1.9 };
+pub const WATER: WaterRules = WaterRules { drag_coefficient: 1.0, glide_speed: 1.5, drag: 0.02, heave_drag: 2.0, angular_drag: 1.5, flood_m3s_per_m2: 1.9 };
 
 /// The body kinds, in wire order (shared/physics/bodies.json).
 pub const BODY_KINDS: [BodyKind; 2] = [

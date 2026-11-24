@@ -20,7 +20,17 @@ export interface PerfFigures {
   serverTicks: number | null;
   /** The server's time per tick (ms): a local world's only. */
   serverTickMs: number | null;
+  /**
+   * The game's memory (bytes: its WebAssembly memories and GPU estimates, ui/memory.ts
+   * `memoryTotal`; owner, 2026-11-24: "I'd like it to show memory usage"), and the page's
+   * JavaScript heap where the browser tells it (Chrome).
+   */
+  memoryBytes?: number | null;
+  jsHeapBytes?: number | null;
 }
+
+const megabytes = (bytes: number): string =>
+  `${Math.round(bytes / 1048576).toLocaleString('en-US')} MB`;
 
 const ms = (v: number | null): string =>
   v === null || !Number.isFinite(v) ? '–' : `${v.toFixed(1)} ms`;
@@ -28,7 +38,8 @@ const ms = (v: number | null): string =>
 /**
  * One line, e.g. "30 fps · CPU 4.1 ms · GPU 31.2 ms · server 60/s, 2.8 ms"; with the animation
  * frames known, "38/60 fps (22 GPU-wait)": drawn of the browser's frames, and those skipped by
- * reason ("GPU-wait": the GPU behind on earlier frames, render/pacing.rs; "no-surface").
+ * reason ("GPU-wait": the GPU behind on earlier frames, render/pacing.rs; "no-surface"); with the
+ * memory known, "· mem 3,012 MB (JS 140 MB)".
  */
 export function formatPerf(p: PerfFigures): string {
   let fps = p.fps === null ? '– fps' : `${String(Math.round(p.fps))} fps`;
@@ -46,7 +57,13 @@ export function formatPerf(p: PerfFigures): string {
     p.serverTicks === null ? 'server –' : `server ${String(Math.round(p.serverTicks))}/s`;
   if (p.serverTickMs !== null && Number.isFinite(p.serverTickMs))
     server += `, ${ms(p.serverTickMs)}`;
-  return `${fps} · CPU ${ms(p.cpuMs)} · GPU ${ms(p.gpuMs)} · ${server}`;
+  let line = `${fps} · CPU ${ms(p.cpuMs)} · GPU ${ms(p.gpuMs)} · ${server}`;
+  if (p.memoryBytes !== null && p.memoryBytes !== undefined) {
+    line += ` · mem ${megabytes(p.memoryBytes)}`;
+    if (p.jsHeapBytes !== null && p.jsHeapBytes !== undefined)
+      line += ` (JS ${megabytes(p.jsHeapBytes)})`;
+  }
+  return line;
 }
 
 /**
