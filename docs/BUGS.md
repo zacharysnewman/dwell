@@ -6,6 +6,16 @@ pins it.
 
 ## Open
 
+### 238. Felled trees fall through the world (0.76)
+
+Owner, 2026-11-24, on 0.76.0: "In 76 something totally broke tree collision somehow, they fall through the world when
+cut down?" Suspects, 0.76's changes to pieces and terrain collision: `PIECE_SKIN` 1 → 1.5 cm (#234), the settle pass
+that settles a sealed-in neighbour (#234), the ground 544 m higher (rows 1152). Checked 2026-11-24: seed 0's
+nearest tree to the spawn cut one row over its base lands and settles as logs natively (inline jobs and the
+browser's remote jobs) and in the browser's creative world; the owner: broken in a creative world, then "Can't repro".
+Open, intermittent; next time: the tree, its ground (slope, chunk edge) and whether the logs appeared anywhere.
+
+
 ### 237. The game's tab crashed ("Aw, Snap!", error code 11) after many reloads in one tab
 
 Found 2026-11-24 in Claude's automation Chrome on the 0.76 branch's dev build (the owner shared the screenshot): after
@@ -96,13 +106,6 @@ buoyancy, walking/swimming etc within that air (obviously if it's flooded it sho
 controller's water reads the world's water cells alone. Owner should see: walking in a boat's dry inside below the
 waterline as on land, no underwater look or sound; swimming once it floods. With #221 (one rule: a hull's dry air
 overrides the world's water). WORK_QUEUE "Owner's list, 2026-11-23" §1.
-
-### 226. Builders lay a blueprint's slopes facing their own way, not the blueprint's
-
-Owner, 2026-11-23: "When placing blocks from blueprints like slopes, should face the direction in the blueprint,
-regardless of the facing player/npc facing direction. I noticed the NPCs were building roofs incorrectly because they
-were at different angles when building the roof slopes on my custom house with thatch." Owner should see: builders
-putting up a blueprint's thatch roof with every slope facing as in the blueprint. WORK_QUEUE "Owner's list, 2026-11-23" §5.
 
 ### 225. A tree's leaves don't fade near the camera as a leaf block does
 
@@ -1362,6 +1365,19 @@ the first ladder went there (it now waits for the cell).
 
 
 ## Fixed
+
+### 226. Builders lay a blueprint's slopes facing their own way, not the blueprint's
+
+Owner, 2026-11-23: "When placing blocks from blueprints like slopes, should face the direction in the blueprint,
+regardless of the facing player/npc facing direction. I noticed the NPCs were building roofs incorrectly because they
+were at different angles when building the roof slopes on my custom house with thatch." Owner should see: builders
+putting up a blueprint's thatch roof with every slope facing as in the blueprint. WORK_QUEUE "Owner's list, 2026-11-23" §5. **Fixed (2026-11-24):** not the builders: a blueprint turned when placed
+turned its blocks' facings only for blocks the registry marks facing (doors); a ramp's `facing` (which way it slopes)
+was left as drawn, so a turned house's roof slopes faced the old way. Placement now turns a block's compass property
+too (`structure.rs` `facing_property`). Red → green: `blueprint.rs`
+`a_blueprints_thatch_slopes_face_as_the_blueprint_turned` (north turned once stayed north). The terrain's goldens are
+unchanged.
+
 
 ### 235. A held Place built a quarter slower on a page whose clock runs a little fast
 
