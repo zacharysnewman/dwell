@@ -188,7 +188,9 @@ context) at a time with a choice to table it as well as the other options?" Answ
   tightness is the grazing angle down the shaft. Open if the owner still sees it.
 - **Review what's left for 0.76.0 (owner, 2026-11-24):** "When we come back, let's review the items left for 0.76.0 to
   see if we want to do all those still or if we can/should drop some of them." Work resumes at 12:30 pm that day with
-  that review first.
+  that review first. **Decided (owner, 2026-11-24):** before the merge, keep "Tab crash #237" and "GPU e2e + @gpu tag";
+  the before/after frames (10 m vs 512 m core) and the full-fall browser check move after 0.76; the portal drop's
+  frame rate is "Follow-up, not blocker": the owner reads the HUD's CPU/GPU ms on a drop, then it is looked into.
 - **Portal drop frame rate (owner, 2026-11-24, the 0.76 branch's build):** "Whew, only getting 20-30 fps on that portal
   drop." Measured (bench `portal-drop`, seed 0, this Mac): ~59.5 fps every way tried: a production build, the dev
   server, a full Retina window (GPU 9 ms), a drop 3 s after loading, and after 3 minutes idle at the portal. Not

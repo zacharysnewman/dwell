@@ -12,8 +12,15 @@ Found 2026-11-24 in Claude's automation Chrome on the 0.76 branch's dev build (t
 ~7 reloads of `?fresh=1&seed=0&spawn=portal` in one tab within ~30 minutes (each a fresh local world, flown down a
 portal's shaft with the spyglass), the next reload crashed the renderer (code 11: the renderer process died, not a
 Rust panic). A fresh browser loaded it fine. Suspects: memory kept across reloads in the tab (WebGPU buffers or the
-workers' WASM), or the new stand-in chunks (each job worker caches up to 192 generated chunks, ~12 MB). To check: the
-bench's reload loop with the tab's memory sampled each reload. Open.
+workers' WASM), or the new stand-in chunks (each job worker caches up to 192 generated chunks, ~12 MB). **Measured
+(2026-11-24):** no leak: 8 reloads of the portal world in one tab, the renderer process plateaus at 2.8–3.15 GB (the
+JS heap ~130–150 MB). Not the stand-ins: the default spawn holds the same (meshes 642 MB without a portal near, 593
+with). What a tab holds (`__dwell.memory()`), 0.76 against the live 0.75.20 on seed 0's spawn: core 263 / 180 MB,
+local server 219 / 189 MB, the 4 generation workers ~200 / ~166 MB each (the mesh workers ~30–40 MB), meshes 642 /
+591 MB: about 300 MB (~10%) more a tab on 0.76, its bigger world maps held in every worker. The crash was memory
+pressure (the owner's Chrome running the game too, builds alongside), not a leak. Left: ~3 GB a game tab is a lot on
+an 8 GB Mac; sharing the maps between the generation workers (or fewer of them) would be the lever. Open as a memory
+item after 0.76.
 
 
 ### 236. Down a portal's shaft: the far face's sky shows through, and light comes in behind a falling player
