@@ -382,11 +382,14 @@ fn even(stick: f32, rock: f32) -> GroundDensity {
     GroundDensity { corners }
 }
 
-/// The items of a 128-cell grass field under a canopy, and their count per kind (sticks, rocks).
+/// The items of a 256-cell grass field under a canopy, and their count per kind (sticks, rocks):
+/// 256 since 0.76 (128 held ~40 rocks, and the ×3 share fell outside its band by chance once the flat
+/// worlds' surface moved rows).
 fn counts_with(f: FaceFrame, d: Option<&GroundDensity>) -> (Vec<([i32; 3], Placed)>, [usize; 2]) {
-    let mut w = Fixture::field(f, 128);
-    for x in 0..128 {
-        for z in 0..128 {
+    const N: i32 = 256;
+    let mut w = Fixture::field(f, N);
+    for x in 0..N {
+        for z in 0..N {
             w.set([x, G + 8, z], state("dwell:leaves"));
         }
     }
@@ -396,7 +399,7 @@ fn counts_with(f: FaceFrame, d: Option<&GroundDensity>) -> (Vec<([i32; 3], Place
         Some(_) => rules.with_density(&by),
         None => rules,
     };
-    let items = w.scatter(&rules, 11, 128);
+    let items = w.scatter(&rules, 11, N);
     let n = |name: &str| {
         items
             .iter()

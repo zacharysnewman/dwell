@@ -204,8 +204,12 @@ fn face(
     sloshing: bool,
     dt: f32,
 ) -> f32 {
-    let (ea, eb) = (ga + da, gb + db);
-    let h = ea.max(eb) - ga.max(gb);
+    // Measured from the higher floor, not as surfaces (floor + depth): at 577 m an f32 surface
+    // is only good to 6e-5 m, under a film's depth (`DRY` 1e-4), and a far corner of a lake cut
+    // open never drained (BUGS.md #234). Floors are whole rows, so their differences are exact.
+    let bed = ga.max(gb);
+    let (ea, eb) = ((ga - bed) + da, (gb - bed) + db);
+    let h = ea.max(eb);
     if h <= DRY || !(h.is_finite()) {
         return 0.0;
     }

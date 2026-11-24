@@ -33,7 +33,8 @@ fn fixture() -> Tectonics {
         hotspot_z: -9000.0,
         hotspot_heading: 60.0,
         hotspot_spacing: 5500.0,
-        hotspot_height: 380.0,
+        // 380 + 40 (0.76): the chain rises from a sea floor 40 m deeper, its islands as tall over the sea.
+        hotspot_height: 420.0,
         hotspot_radius: 2600.0,
         hotspot_decay: 0.6,
         hotspot_widen: 0.12,

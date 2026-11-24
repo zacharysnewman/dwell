@@ -152,11 +152,16 @@ fn biome(stack: &'static str) -> Biome {
 /// The land's columns' heights (rows) over a patch, and their tops' states, every 2 m.
 fn heights(g: &TerrainGenerator) -> Vec<(i32, i32, f32, dwell_blocks::StateId)> {
     let mut out = Vec::new();
-    for x in (-3000..3000).step_by(2) {
-        let z = 1500;
-        let c = g.column_at(x, z);
-        if c.water == dwell_worldgen::terrain::Water::None && c.height > 70.0 + SEA_LEVEL_M as f32 {
-            out.push((x, z, c.height, g.top_state(&c)));
+    // Three lines across the island (one, at z 1500, crossed a river valley's slopes after 0.76's
+    // deeper seas moved the rivers).
+    for z in [500, 1500, 2500] {
+        for x in (-3000..3000).step_by(2) {
+            let c = g.column_at(x, z);
+            if c.water == dwell_worldgen::terrain::Water::None
+                && c.height > 70.0 + SEA_LEVEL_M as f32
+            {
+                out.push((x, z, c.height, g.top_state(&c)));
+            }
         }
     }
     out
@@ -253,9 +258,19 @@ dwell_world::both_faces!(
             caps > 0.2 && caps > 5.0 * mid,
             "the caps' levels gather the ground: {caps:.3} on the caps, {mid:.3} mid-slope"
         );
+        // The steepened part: from mid-slope up to the next cap (25–45 m over a cap) the ground
+        // spends less of itself than the plain generator's (whose default biome is shaped by the
+        // provinces' stacks too, so one level alone, 25 m, compared within noise after 0.76).
+        let band = |g: &TerrainGenerator| {
+            [25.0, 30.0, 35.0, 40.0, 45.0]
+                .iter()
+                .map(|&o| share(g, o).0)
+                .sum::<f64>()
+        };
+        let (steep, plain_band) = (band(&g), band(&plain));
         assert!(
-            mid < plain_mid,
-            "the slopes between are steepened: {mid:.3} vs {plain_mid:.3}"
+            steep < plain_band,
+            "the slopes between are steepened: {steep:.3} vs {plain_band:.3} (mid {mid:.3} vs {plain_mid:.3})"
         );
         // Walls: a step of ≥ 4 m between columns 2 m apart, its top the cap's face block.
         let hs = heights(&g);

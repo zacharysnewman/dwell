@@ -19,9 +19,7 @@ const NAME: &str = "test:starter";
 fn generator(f: FaceFrame, seed: u64) -> (TerrainGenerator, Vec<&'static str>) {
     let e = world_config(NAME).unwrap().expect("the starter's edit");
     let h = e.height.expect("the starter's height field");
-    let map = WorldMap::for_height(face_seed(seed, f.face), h)
-        .with_worldgen(NAME)
-        .unwrap();
+    let map = WorldMap::for_height_with_worldgen(face_seed(seed, f.face), h, NAME).unwrap();
     let names = e.biomes.iter().map(|b| b.name).collect();
     let g = TerrainGenerator::with_map(face_seed(seed, f.face), Arc::new(map))
         .with_biomes_and_geology(&e.biomes, e.map, e.geology)
@@ -463,11 +461,8 @@ dwell_world::both_faces!(
         let e = world_config(NAME).unwrap().unwrap();
         assert!(e.map.sharpen > 1.0, "the starter sharpens");
         let h = e.height.unwrap();
-        let map = Arc::new(
-            WorldMap::for_height(face_seed(0, f.face), h)
-                .with_worldgen(NAME)
-                .unwrap(),
-        );
+        let map =
+            Arc::new(WorldMap::for_height_with_worldgen(face_seed(0, f.face), h, NAME).unwrap());
         let gen_with = |sharpen: f64| {
             let mut m = e.map;
             m.sharpen = sharpen;
@@ -518,9 +513,7 @@ dwell_world::both_faces!(
         assert!(!e.biomes[broadleaf].decorations.is_empty());
         e.biomes[broadleaf].decorations = &[];
         let h = e.height.unwrap();
-        let map = WorldMap::for_height(face_seed(0, f.face), h)
-            .with_worldgen(NAME)
-            .unwrap();
+        let map = WorldMap::for_height_with_worldgen(face_seed(0, f.face), h, NAME).unwrap();
         let g = TerrainGenerator::with_map(face_seed(0, f.face), Arc::new(map))
             .with_biomes_and_geology(&e.biomes, e.map, e.geology)
             .with_vegetation(e.vegetation);
@@ -614,9 +607,9 @@ dwell_world::both_faces!(
             .unwrap();
         wide.biomes[b].spacing = &[("broadleaf_groves", 12)];
         let make = |e: &dwell_worldgen::config::Edit| {
-            let map = WorldMap::for_height(face_seed(0, f.face), e.height.unwrap())
-                .with_worldgen(NAME)
-                .unwrap();
+            let map =
+                WorldMap::for_height_with_worldgen(face_seed(0, f.face), e.height.unwrap(), NAME)
+                    .unwrap();
             TerrainGenerator::with_map(face_seed(0, f.face), Arc::new(map))
                 .with_biomes_and_geology(&e.biomes, e.map, e.geology)
                 .with_vegetation(e.vegetation)
@@ -736,6 +729,10 @@ dwell_world::both_faces!(
     }
 );
 
+/// The 12 km square of the starter's mesa (face A, seed 0): (14 500, 400) until 0.76, whose
+/// deep seas and 512 m core moved the mesa (`examples/arch_scan`: 23 arches, 9 overhangs here).
+const MESA: (i32, i32) = (21_000, 9_000);
+
 /// The mesa's arches stand on fins (0.52.66): with its `arches.fins` (the erosion's fin rule, sites
 /// sliding to a fin nearby) and `arches.rock` (sandstone only), arches outnumber overhangs on the
 /// 12 km square around the tour's mesa spot (before: 1 arch, 15 overhangs; after: 10 and 6).
@@ -743,7 +740,7 @@ dwell_world::both_faces!(
 fn the_mesas_fins_make_arches() {
     // face-a-only: the measured square is face A's mesa (face B's mesa lies elsewhere).
     let (g, _) = generator(FaceFrame::A, 0);
-    let (cx, cz, r) = (14_500, 400, 6_000);
+    let (cx, cz, r) = (MESA.0, MESA.1, 6_000);
     let sites = g.arches_near((cx - r, cz - r), (cx + r, cz + r));
     let arches = sites.iter().filter(|s| s.through).count();
     let overhangs = sites.len() - arches;
@@ -763,7 +760,7 @@ fn feature_spots() {
     // face-a-only: the links are face A's.
     let (g, names) = generator(FaceFrame::A, 0);
     let ground = |x: f64, z: f64| f64::from(g.column_at(x as i32, z as i32).height);
-    let (cx, cz, r) = (14_500, 400, 6_000);
+    let (cx, cz, r) = (MESA.0, MESA.1, 6_000);
     for s in g
         .arches_near((cx - r, cz - r), (cx + r, cz + r))
         .iter()
@@ -861,9 +858,9 @@ fn tall_grass_counts() {
     let (g, _) = generator(FaceFrame::A, 0);
     let game = {
         let e = world_config(NAME).unwrap().unwrap();
-        let map = WorldMap::for_height(face_seed(0, Face::A), e.height.unwrap())
-            .with_worldgen(NAME)
-            .unwrap();
+        let map =
+            WorldMap::for_height_with_worldgen(face_seed(0, Face::A), e.height.unwrap(), NAME)
+                .unwrap();
         TerrainGenerator::with_map(face_seed(0, Face::A), Arc::new(map))
     };
     let grass = dwell_blocks::require("dwell:grass");

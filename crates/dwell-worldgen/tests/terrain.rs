@@ -135,7 +135,7 @@ fn fractal_sums_stay_in_range() {
 }
 
 #[test]
-fn heights_a_low_shore_land_rising_inland_a_shallow_sea_floor() {
+fn heights_a_low_shore_land_rising_inland_a_deep_sea_floor() {
     let g = TerrainGenerator::new(0);
     let (cx, cz) = coast_on_axis(&g);
     let (mut highest, mut lowest) = (f32::MIN, f32::MAX);
@@ -146,15 +146,17 @@ fn heights_a_low_shore_land_rising_inland_a_shallow_sea_floor() {
             lowest = lowest.min(h);
         }
     }
-    // Face-local heights from the midplane: sea level 32, the core's top 10.
+    // Face-local heights from the midplane: sea level 72 (32 before 0.76), the core's top 10.
     let sea = dwell_world::SEA_LEVEL_M as f32;
     // The world map's mountains (ADR 0049): the uplift layer's ranges, ~2,300–2,600 m.
     assert!(
         highest > sea + 1800.0 && highest < sea + 3000.0,
         "{highest}"
     );
+    // The deep sea of 0.76 (owner, 2026-11-18: "Sea level +40m and a steeper shelf"): its floor
+    // reaches the ground's least height, on the core.
     assert!(
-        lowest >= (dwell_world::CORE_M as f32) && lowest > sea - 30.0,
+        lowest >= dwell_worldgen::GROUND_MIN_M as f32 - 0.01 && lowest < sea - 50.0,
         "{lowest}"
     );
     assert!((g.column_at(cx, cz).height - sea).abs() < 6.0);
@@ -224,13 +226,21 @@ fn point_queries_agree_with_the_chunk_path() {
 fn the_core_is_stone_nothing_below_the_face_or_over_the_build_volume() {
     let g = TerrainGenerator::new(5);
     let bottom = MIDPLANE_Y / S;
-    // The 10-layer core (ADR 0025 D1) under land, the coast and the open sea.
+    // The core (ADR 0025 D1; 512 m since 0.76) under land, the coast and the open sea: every
+    // chunk it fills, row by row.
     for column in [(0, 0), (780, 0), (0, -1400), (1200, 300)] {
-        let floor = gen_chunk(&g, ChunkCoord::new(column.0, bottom, column.1));
-        for z in 0..S {
-            for x in 0..S {
-                for y in 0..CORE_LAYERS {
-                    assert_eq!(floor.get(x, y, z), core_at(y), "{column:?}");
+        for cy in 0..(CORE_LAYERS + S - 1) / S {
+            let floor = gen_chunk(&g, ChunkCoord::new(column.0, bottom + cy, column.1));
+            for y in (0..S).take_while(|&y| cy * S + y < CORE_LAYERS) {
+                for z in 0..S {
+                    for x in 0..S {
+                        assert_eq!(
+                            floor.get(x, y, z),
+                            core_at(cy * S + y),
+                            "{column:?} row {}",
+                            cy * S + y
+                        );
+                    }
                 }
             }
         }
@@ -409,7 +419,9 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
     // From the coastal plain's grass out over its beach into the sea.
     for x in (cx - 1600..=cx + 200).step_by(60) {
         let h = g.ground_y(x, cz).expect("inside");
-        for cy in [floor_div(h, S) - 1, floor_div(h, S), floor_div(h, S) + 1] {
+        // Up to the sea's own row too: off the steep shelf (0.76) the water stands far over the bed.
+        let top = (floor_div(h, S) + 1).max(floor_div(SEA_LEVEL, S));
+        for cy in floor_div(h, S) - 1..=top {
             let c = chunk_of(x, cy * S, cz);
             let chunk = gen_chunk(&g, c);
             // A trunk's pad levels its columns (WORK_QUEUE item 44): their fill is the pad's.
@@ -989,17 +1001,24 @@ fn a_decorations_height_band_is_metres_above_sea_level() {
             for dz in -2..=2 {
                 for dx in -2..=2 {
                     let (cx, cz) = (floor_div(x, S) + dx, floor_div(z, S) + dz);
-                    let cy = floor_div(SEA_LEVEL + 3, S);
-                    let chunk = gen_chunk(&g, ChunkCoord::new(cx, cy, cz));
+                    // The chunks the low ground's tops stand in (the sea level need not sit low in
+                    // one: 0.76's lies 4 rows under a chunk's top).
+                    let cy0 = floor_div(SEA_LEVEL, S);
+                    let cy1 = floor_div(SEA_LEVEL + rows_for_m(rule.min_height.into()), S);
+                    let chunks: Vec<_> = (cy0..=cy1)
+                        .map(|cy| gen_chunk(&g, ChunkCoord::new(cx, cy, cz)))
+                        .collect();
                     for lz in 0..S {
                         for lx in 0..S {
                             let top = g.ground_y(cx * S + lx, cz * S + lz).expect("inside");
+                            let cy = floor_div(top + 1, S);
                             if top - SEA_LEVEL >= rows_for_m(rule.min_height.into())
                                 || g.state_at(cx * S + lx, top, cz * S + lz) != M.grass
-                                || !(cy * S..cy * S + S).contains(&(top + 1))
+                                || !(cy0..=cy1).contains(&cy)
                             {
                                 continue;
                             }
+                            let chunk = &chunks[(cy - cy0) as usize];
                             low += 1;
                             planted += usize::from(chunk.get(lx, top + 1 - cy * S, lz) == tall);
                         }
@@ -1193,8 +1212,9 @@ fn no_shore_column_has_drawn_water_higher_than_the_dry_land_beside_it() {
         let water = require("dwell:water");
         let (mut pairs, mut piled) = (0, Vec::new());
         for &(cx, cz) in &coasts {
-            for z in cz - 24..cz + 24 {
-                for x in cx - 24..cx + 24 {
+            // ±48 m: the steeper sea of 0.76 leaves less shore in a patch (seed 7: 6 pairs at ±24).
+            for z in cz - 48..cz + 48 {
+                for x in cx - 48..cx + 48 {
                     let y = SEA_LEVEL - 1;
                     let m = w.get_voxel(x, y, z);
                     let wet = m == water || (m != 0 && w.flooded_at(x, y, z));
@@ -1964,8 +1984,10 @@ fn existing_seeds_spawn_where_they_did() {
     // Since 0.58 the spawn is the shrine nearest the search's point (tests/shrines.rs): the pin is
     // the search's, which is unchanged.
     for (seed, a, b) in [
-        (0u64, [2128.5, 162.0, 7544.5], [-1567.5, -187.5, 1208.5]),
-        (7, [1688.5, 186.0, 7160.5], [-10557.5, -68.5, 2158.5]),
+        // 0.76: the deeper seas, the 512 m core (the sea 576 m up) and the rivers from the
+        // mountains moved the rivers the search prefers (`examples/spawn_pins` prints these).
+        (0u64, [6498.5, 643.0, 9158.5], [7456.5, -695.5, -2175.5]),
+        (7, [872.5, 684.0, 7928.5], [-10311.5, -638.5, 1344.5]),
     ] {
         let t = dwell_worldgen::BifacialTerrain::new(seed);
         assert_eq!(

@@ -34,8 +34,8 @@ back to back.
 (`MIDPLANE_Y`, chunk row boundary 0/−1), also the origin of generation and the centre of the
 **build sphere** (`bounds`: radius 50 km, ARCHITECTURE.md §6.3), whose equator is the rim. Face A is
 y ≥ 0; face B's voxel at y is the face-local voxel `h = −1 − y` (`MIRROR_SUM` = −1), its chunk row
-`cy` the face-local row `−1 − cy`, so face B's sea surface is y = −32 (sea level `h` = 32 on both
-faces). Each face has a **core of 10 stone layers** (`h` 0–9, `CORE_LAYERS`) that generation never
+`cy` the face-local row `−1 − cy`, so face B's sea surface is y = −574 (sea level `h` = 574 on both
+faces, over a 512 m core; 32 over 10 m before 0.76). Each face has a **core of 10 stone layers** (`h` 0–9, `CORE_LAYERS`) that generation never
 carves (but for a portal's shaft, §12), so the disc is at least 20 layers thick; since Phase 48 its
 first rows from the midplane are the indestructible bedrock (§12); the core anchor zone (`CORE_ANCHOR_LAYERS` = 8,
 Phase 20) lies within it. The chunk rows run from −1 563 to 1 562 (the sphere's height, symmetric
@@ -430,16 +430,22 @@ order, natively or in WASM, and agree.
 **Shape.** In a shaft column every cell from the face's ground down to the midplane is open (the
 bedrock and core cut through); the ladder column holds the ladder from the midplane to the top of
 the rim it climbs out onto, on both faces, so it runs unbroken from face B's opening to face A's.
-The rim columns are flat ground with the rim on top; the shaft's wall keeps its bedrock. On face B
-it is all mirrored, as everything is.
+The rim columns are flat ground with the rim on top; the shaft's wall keeps its bedrock. Since 0.76
+(owner, 2026-11-23: "Portals should be made of bedrock. With a no build zone.") every solid cell of
+the rim columns from the midplane up to the rim is the portals' `lining` (`midplane.json`, bedrock,
+validated full and indestructible), the rim itself bedrock too, so no edit digs into the ~1.2 km
+shaft through the 512 m core; and no block is placed with its column within `noBuild` (7.5 m: the
+shaft, the rim and the clear ground the exit lands on) of an axis, at any height on either face
+(`PortalShafts::forbids`, the shared place check's `EditCheck::Protected` and the region edits; the
+client predicts it with the server's rules). On face B it is all mirrored, as everything is.
 
 **Getting through.** Gravity points toward the midplane on both sides and nothing brakes a body in
 the flip band (§10), so a player who falls into a shaft swings across the midplane and rises out of
 the other opening, where the shaft's exit push carries it out sideways onto the ground beside the
-hole (§12.3; before it, the player fell back in and swung between the faces forever). The
-ladder is the other way through: step off the rim over the ladder (it takes hold), look down and hold
-forward; across the midplane the look continues (§6) and forward climbs up the far side to face B's
-rim.
+hole (§12.3; before it, the player fell back in and swung between the faces forever). Until 0.76 a
+ladder was the other way through; owner, 2026-11-23: "Lets get rid of the ladders on the portals"
+(`midplane.json` `ladder.block` null: no ladder; `ladder.wall` still names the wall whose top is the
+opening's height). A drop is the only way through.
 
 **Integration.** The sky test leaves room for the rims; the LOD cuts the shafts at levels whose
 cells are no wider than the radius (levels 0–1) and draws the ground over them coarser; the
@@ -483,7 +489,19 @@ named by the portal rules.
 - **Compatibility:** it changes the terrain every seed generates (generator 23): a new
   compatibility line (0.28.0).
 
-### 12.3 Out of the far opening: the exit push **[built, 2026-11-12]**
+### 12.3 Out of the far opening: the exit push **[built, 2026-11-12; the lift 0.76]**
+
+**The lift (0.76).** With the 512 m core a shaft runs ~1.2 km, and the swing alone no longer brings a
+body out (a far opening a little higher than the near one is never reached). Owner (2026-11-23): the
+portal "should provide just enough to clear the other side by 3m under your feet"; "So a velocity
+setting when falling, not on the ladder"; "Only on the way up". An airborne body (not climbing,
+flying or swimming) rising in a shaft's footprint under its opening is held to
+`√(2 g (top + crest − feet))` (`midplane.json` `exit.crest` 3 m; `PortalShafts::lift`, the controller's
+`step_portal`): it tops out with its feet 3 m over the far opening whatever either shaft's length,
+and the push below carries it out (push 25 m/s² since, so the higher arc still lands 2–4 m past the
+rim). The way down is a free fall. On seed 0 every drop lands beside the far opening on the first
+swing, ~16 s after dropping in; the ladder is untouched (~300 s through).
+
 
 Owner (2026-11-12), on the portal shot: "it looked like the player flew out of the hole instead of
 physics carrying it out", and, asked how a jump into a portal should end: **land beside the hole**.
@@ -526,8 +544,8 @@ several metres out of the far opening, fell straight back in and swung between t
 - **Tests:** `dwell-physics` `tests/portal_exit.rs`
   (`a_player_dropped_into_a_portal_lands_on_the_far_face_beside_the_hole`, both faces; red with the
   pass removed, as on main; `without_the_exit_push_a_dropped_player_swings_between_the_faces`;
-  `every_portal_lets_a_dropped_player_out_beside_an_opening`), `tests/portal_crossing.rs` (the
-  ladder climbs, the push live), `tests/predictor.rs`
+  `every_portal_lets_a_dropped_player_out_beside_an_opening`; `tests/portal_crossing.rs`, the ladder's
+  climbs, was removed with the ladder in 0.76), `tests/predictor.rs`
   (`the_prediction_agrees_with_the_server_through_a_portal_and_out_of_it`: no replays, and replays
   for a client without the shafts), `portal_shafts.rs`'s unit test, `gen.test.mjs`.
 

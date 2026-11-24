@@ -47,8 +47,7 @@ both_faces!(
             let e = world_config(NAME).unwrap().expect("the Realistic world");
             let seed = face_seed(world, f.face);
             let map = Arc::new(
-                WorldMap::for_height(seed, e.height.expect("its height field"))
-                    .with_worldgen(NAME)
+                WorldMap::for_height_with_worldgen(seed, e.height.expect("its height field"), NAME)
                     .unwrap(),
             );
             let g = TerrainGenerator::with_map(seed, map.clone())

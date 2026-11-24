@@ -68,6 +68,24 @@ pub(crate) fn layer_of(collider: &Collider) -> Layer {
     }
 }
 
+/// Some bodies' colliders as they lay when read ([`Physics::shapes_of`]).
+pub struct BodyShapes(Vec<(Aabb, Pose, SharedShape)>);
+
+impl BodyShapes {
+    /// Whether the box `lo..hi` (world metres) overlaps any of the shapes.
+    pub fn overlaps_box(&self, lo: DVec3, hi: DVec3) -> bool {
+        let cell = Aabb::new(lo, hi);
+        let half = (hi - lo) * 0.5;
+        let shape = Cuboid::new(half);
+        let pose = Pose::from_translation(lo + half);
+        self.0.iter().any(|(aabb, at, s)| {
+            aabb.intersects(&cell)
+                && rapier3d_f64::parry::query::intersection_test(&pose, &shape, at, s.as_ref())
+                    .is_ok_and(|i| i.intersecting)
+        })
+    }
+}
+
 /// Tunables of the world (the former `PhysicsConfig`).
 #[derive(Clone, Copy, Debug)]
 pub struct PhysicsConfig {
@@ -411,6 +429,27 @@ impl Physics {
                     .is_some_and(|col| col.collision_groups().memberships.contains(APART))
             })
         })
+    }
+
+    /// The colliders of `bodies` as they lie now, to test boxes against while the physics is
+    /// changed (BUGS.md #234: settling pieces, the others' shapes read before any is removed).
+    pub fn shapes_of(&self, bodies: &[BodyHandle]) -> BodyShapes {
+        let mut out = Vec::new();
+        for h in bodies {
+            let Some(b) = self.w.bodies.get(h.0) else {
+                continue;
+            };
+            for &c in b.colliders() {
+                if let Some(col) = self.w.colliders.get(c) {
+                    out.push((
+                        col.compute_aabb(),
+                        *col.position(),
+                        col.shared_shape().clone(),
+                    ));
+                }
+            }
+        }
+        BodyShapes(out)
     }
 
     /// Whether any of `body`'s colliders overlaps another body's (a piece, apart or not; not a
@@ -931,9 +970,12 @@ fn octagon_prisms(
 /// How far (m) each face of a piece cell's box is drawn in from the cell's. Cells detached together
 /// lie face to face with their neighbours and the walls round them: boxes the cells' size touch
 /// exactly, and the solver held a packed raft of falling sand by its walls' friction, creeping
-/// down at ~0.2 m/s for the 30 s until it timed out (seed 0's dam site, 2026-11-06). A centimetre
-/// apart they fall freely; nothing draws a piece by its colliders.
-pub const PIECE_SKIN: f64 = 0.01;
+/// down at ~0.2 m/s for the 30 s until it timed out (seed 0's dam site, 2026-11-06). Apart they
+/// fall freely; nothing draws a piece by its colliders. 1.5 cm, not 1 (BUGS.md #234):
+/// Parry keeps a voxel's contact points within 1 cm of it, so a piece drawn in by exactly 1 cm in
+/// a pit one cell wide was thrown out at ~1 m/s, or not, by the rounding of where the pit lay. Not
+/// wider: 2 cm let a surface blast's heap rattle 36% longer (65,000 body-ticks against 48,000).
+pub const PIECE_SKIN: f64 = 0.015;
 
 /// The cell `c` of a piece as its collider: a box of its mass, colliding as its `collide` says.
 #[cfg(test)]
@@ -1072,6 +1114,63 @@ mod piece_box_tests {
             hull: None,
             joined: 0,
         }
+    }
+
+    // face-a-only: a contact between a piece and the terrain's voxels; no up but gravity's.
+    #[test]
+    fn a_piece_in_a_one_cell_pit_rests_wherever_the_pit_lies() {
+        // BUGS.md #234: Parry keeps a voxel's contact points within 1 cm of it (its
+        // `test_voxel`, the voxel grown by 1e-2). A piece drawn in by exactly 1 cm sat on that
+        // edge in a pit one cell wide, and the rounding of where the pit lay kept a wall's bogus
+        // point: the piece rose out at ~1 m/s at most heights (2035 of 2400 rows at x 0) and
+        // not at others (row 61, the flat test world's ground until 0.76). Red at a 1 cm skin.
+        let mut bad = Vec::new();
+        for row in (1100i32..1200).step_by(3) {
+            for x in (-40i32..40).step_by(5) {
+                let mut physics = Physics::new(PhysicsConfig::default());
+                let mut keys = Vec::new();
+                use rapier3d_f64::math::IVector;
+                for vx in x - 1..=x + 1 {
+                    for vz in -1..=1 {
+                        for vy in row - 1..=row {
+                            if !(vx == x && vz == 0 && vy == row) {
+                                keys.push(IVector::new(vx.into(), vy.into(), vz.into()));
+                            }
+                        }
+                    }
+                }
+                let ground = physics.w.bodies.insert(RigidBodyBuilder::fixed().build());
+                let voxels = SharedShape::new(rapier3d_f64::parry::shape::Voxels::new(
+                    DVec3::new(1.0, dwell_world::CELL_H, 1.0),
+                    &keys,
+                ));
+                let collider = ColliderBuilder::new(voxels)
+                    .collision_groups(groups(Layer::Terrain))
+                    .build();
+                physics
+                    .w
+                    .colliders
+                    .insert_with_parent(collider, ground, &mut physics.w.bodies);
+                let at = DVec3::new(
+                    f64::from(x) + 0.5,
+                    dwell_world::m_of_row(row) + dwell_world::CELL_H / 2.0,
+                    0.5,
+                );
+                let piece =
+                    physics.add_piece(at, &[cell(0.0, 0.0, 0.0, 100.0, Collide::All)], false);
+                physics.step(1.0 / 60.0);
+                let v = physics.velocity(piece);
+                if v.y > 0.0 {
+                    bad.push((x, row, v.y));
+                }
+            }
+        }
+        assert!(
+            bad.is_empty(),
+            "{} pits threw their piece up, e.g. {:?}",
+            bad.len(),
+            &bad[..bad.len().min(4)]
+        );
     }
 
     // face-a-only: the boxes are in the piece's own frame, which has no up.

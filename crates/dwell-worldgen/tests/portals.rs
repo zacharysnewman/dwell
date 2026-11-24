@@ -116,8 +116,9 @@ dwell_world::both_faces!(
                             Part::Shaft { ladder } => {
                                 for h in MIDPLANE_Y..=top.max(ladder_top) + 2 {
                                     let m = v.at(x, f.row(h), z);
-                                    if ladder && h <= ladder_top {
-                                        assert_eq!(m, f.state(p.ladder), "{portal:?} ladder {h}");
+                                    if let Some(l) = p.ladder.filter(|_| ladder && h <= ladder_top)
+                                    {
+                                        assert_eq!(m, f.state(l), "{portal:?} ladder {h}");
                                     } else {
                                         assert_eq!(m, M.air, "{portal:?} ({dx}, {dz}) at {h}");
                                     }
@@ -130,8 +131,17 @@ dwell_world::both_faces!(
                                     assert_eq!(v.at(x, f.row(h), z), f.state(p.rim), "rim");
                                 }
                                 assert_eq!(v.at(x, f.row(top + rows + 1), z), M.air);
-                                // The shaft's wall keeps its bedrock.
+                                // The shaft's wall keeps its bedrock, and is lined with the portals'
+                                // `lining` from the midplane up to the rim (owner, 2026-11-23:
+                                // "Portals should be made of bedrock").
                                 assert_eq!(v.at(x, f.row(MIDPLANE_Y), z), bedrock);
+                                for h in MIDPLANE_Y..=top {
+                                    assert_eq!(
+                                        v.at(x, f.row(h), z),
+                                        p.lining,
+                                        "{portal:?} wall at {h}"
+                                    );
+                                }
                                 checked.1 += 1;
                             }
                             Part::Clear if under.contains(&(x, z)) => {}
@@ -160,8 +170,12 @@ dwell_world::both_faces!(
 );
 
 #[test]
-fn the_ladder_runs_unbroken_from_face_a_to_face_b_across_the_midplane() {
-    // both-faces: the ladder crosses between them.
+fn no_ladder_stands_in_a_portals_shaft() {
+    // both-faces: the old ladder's column runs between them.
+    // Owner, 2026-11-23: "Lets get rid of the ladders on the portals" (midplane.json `ladder.block`
+    // null): the column the ladder ran up is open from face B's opening to face A's, and the wall
+    // it was fixed to is still solid the whole way (the opening's height is that wall's top).
+    assert!(MIDPLANE.portals.ladder.is_none());
     for seed in [0u64, 3] {
         let g = BifacialTerrain::new(seed);
         let p = g.portals();
@@ -170,16 +184,13 @@ fn the_ladder_runs_unbroken_from_face_a_to_face_b_across_the_midplane() {
             let (lx, lz) = p.ladder_column(portal);
             let top_a = FaceFrame::A.row(g.local(Face::A).ladder_top(p, portal));
             let top_b = FaceFrame::B.row(g.local(Face::B).ladder_top(p, portal));
-            assert!(FaceFrame::at_row(top_b).is_b() && !FaceFrame::at_row(top_a).is_b());
             for y in top_b..=top_a {
+                let m = v.at(lx, y, lz);
                 assert!(
-                    info(v.at(lx, y, lz)).climbable,
+                    !info(m).climbable && m == M.air,
                     "seed {seed} {portal:?} row {y}"
                 );
             }
-            assert!(!info(v.at(lx, top_a + 1, lz)).climbable);
-            assert!(!info(v.at(lx, top_b - 1, lz)).climbable);
-            // Its wall is solid the whole way: the ladder is fixed to it.
             let (wx, wz) = p.wall_column(portal);
             for y in top_b..=top_a {
                 assert!(
@@ -277,7 +288,7 @@ fn portal_rules_added_by_data_alone_shape_the_world() {
         rim_block: "dwell:sand",
         rim_width: 2.0,
         rim_rows: 2,
-        ladder: "dwell:ladder[facing=west]",
+        ladder: Some("dwell:ladder[facing=west]"),
         wall: [1, 0],
         ..MIDPLANE.portals
     };
@@ -494,4 +505,62 @@ fn a_portal_monument_is_named_by_data_alone() {
     let p = none.portals();
     assert!(none.local(Face::A).monument(p, p.sites[0]).is_none());
     assert!(p.monument_feet(p.sites[0]).is_empty());
+}
+
+#[test]
+fn a_shafts_stand_ins_run_down_it_and_out_of_the_far_opening_over_its_arch() {
+    // both-faces: from face A's rim, the stand-ins run to face B's arch.
+    // BUGS.md #236 (owner, 2026-11-24: "The tube mesh", then "the arched exit on the other side,
+    // would show stone not sky, until you get closer"; "don't special case it"): a client draws
+    // a shaft's chunks as generated where they aren't loaded: from a chunk under its own face's
+    // opening (that ground is the far view's) down the shaft and out of the far opening, the
+    // far face's arch whole; none for a shaft out of reach.
+    let shafts = dwell_worldgen::portal_shafts_for_sized(
+        GENERATOR_TERRAIN,
+        0,
+        dwell_protocol::world_size::WorldSize::DEFAULT,
+    );
+    assert!(shafts.stand_in > 0.0 && shafts.stand_in_over > 25.0);
+    let g = BifacialTerrain::new(0);
+    let s = shafts.shafts[0];
+    let top_a = MIDPLANE_M + s.top(Face::A);
+    let eye = [s.axis[0], top_a + 1.6, s.axis[1]];
+    let coords = shafts.stand_ins(eye);
+    let held: std::collections::HashSet<ChunkCoord> = coords.iter().copied().collect();
+    // Never over the eye's own face's opening: its ground is drawn by the far view.
+    let hi = coords.iter().map(|c| c.y * S + S - 1).max().unwrap();
+    assert!(hi < row_of_m(top_a) - S + 1, "own face: {hi}");
+    // Every cell of the far face's arch (stone over its opening) lies in a stand-in.
+    let top_b = MIDPLANE_M - s.top(Face::B);
+    let stone = require("dwell:stone");
+    let [ax, az] = s.axis.map(|v| v.floor() as i32);
+    let mut arch = 0;
+    for y in row_of_m(top_b - 40.0)..row_of_m(top_b) {
+        for z in az - 8..=az + 8 {
+            for x in ax - 8..=ax + 8 {
+                let c = ChunkCoord::new(x.div_euclid(S), y.div_euclid(S), z.div_euclid(S));
+                let mut chunk = Chunk::default();
+                g.generate(c, &mut chunk);
+                if chunk.get(x.rem_euclid(S), y.rem_euclid(S), z.rem_euclid(S)) == stone
+                    && (x - ax).abs() <= 1
+                    && (z - az).abs() <= 1
+                {
+                    arch += 1;
+                    assert!(held.contains(&c), "arch cell {x},{y},{z} not drawn");
+                }
+            }
+        }
+    }
+    assert!(arch > 0, "the far arch crosses over the opening");
+    // Down the shaft: ~1.2 km of rows.
+    let rows: Vec<i32> = coords.iter().map(|c| c.y).collect();
+    assert!(rows.iter().max().unwrap() - rows.iter().min().unwrap() > 60);
+    let far = [s.axis[0] + shafts.stand_in + 1.0, eye[1], s.axis[1]];
+    assert!(
+        shafts
+            .stand_ins(far)
+            .iter()
+            .all(|c| !held.contains(c) || shafts.shafts.len() > 1),
+        "out of reach: none of this shaft's"
+    );
 }

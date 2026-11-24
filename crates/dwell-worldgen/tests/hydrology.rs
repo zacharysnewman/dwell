@@ -186,14 +186,14 @@ both_faces!(
     }
 );
 
-const DIGEST_7_A: u64 = 0x2ee6_ff17_8ed3_2416;
-const DIGEST_7_B: u64 = 0x05ad_7136_5044_8386;
-const MEDIUM_7_A: u64 = 0x52f6_394b_2c58_eb19;
-const MEDIUM_7_B: u64 = 0x0a90_09ef_73a6_611f;
-const PLATES_7_A: u64 = 0x8079_0a7d_6060_4b0c;
-const PLATES_7_B: u64 = 0x00bf_8fcb_fd75_5466;
-const ROCK_RAIN_7_A: u64 = 0x2868_cbf1_35ab_39a0;
-const ROCK_RAIN_7_B: u64 = 0xc5ff_467f_d0f3_169a;
+const DIGEST_7_A: u64 = 0x6800_745f_9a7e_9208;
+const DIGEST_7_B: u64 = 0x48d2_eeea_1994_8a44;
+const MEDIUM_7_A: u64 = 0x88f5_929e_8554_d61a;
+const MEDIUM_7_B: u64 = 0xc9c9_c742_6a3f_09bc;
+const PLATES_7_A: u64 = 0x0fe7_6db5_ee63_9555;
+const PLATES_7_B: u64 = 0xea6e_64c4_5091_bf16;
+const ROCK_RAIN_7_A: u64 = 0x642a_f7dc_a411_fdb5;
+const ROCK_RAIN_7_B: u64 = 0xb096_1381_2d90_118c;
 
 /// A synthetic island on a `n` × `n` grid of 100 m cells: a cone rising to `peak` m from the coast
 /// at `radius` cells, plus `extra(x, z)`.
@@ -386,7 +386,7 @@ fn the_general_power_path_is_bit_identical_everywhere() {
     assert_eq!(m.digest(), DIGEST_1234_GENERAL, "{:#018x}", m.digest());
 }
 
-const DIGEST_1234_GENERAL: u64 = 0xca1c_1290_2106_1026;
+const DIGEST_1234_GENERAL: u64 = 0x93fa_734f_6d5f_1dc8;
 
 // ---- The uplift layer ---------------------------------------------------------------------------
 
@@ -584,3 +584,48 @@ fn every_world_size_keeps_the_hydrology_grid_at_todays_cell_count() {
     let p = hydrology::profile(hydrology::DEFAULT).unwrap();
     assert_eq!(p.sized(ten).cell, 1000);
 }
+
+both_faces!(
+    /// BUGS.md #196 (owner, 2026-11-16: "our rivers in realistic don't seem to come from the
+    /// mountains, just random points in the world"; 2026-11-17: "Yes A and B"): with headwaters
+    /// each river is traced up its largest feeder, a thin stream, so its sources stand far higher:
+    /// the median source well over the median without, and many in the land's top quarter.
+    fn rivers_rise_in_the_high_ground_with_headwaters(f: FaceFrame) {
+        let with = coarse();
+        assert!(
+            with.river_headwaters.is_some(),
+            "the default profile has headwaters"
+        );
+        let without = HydrologyParams {
+            river_headwaters: None,
+            ..with
+        };
+        let sources = |p: &HydrologyParams| {
+            let m = hydrology::generate(7, f, p);
+            let mut h: Vec<f64> = m
+                .rivers
+                .iter()
+                .filter_map(|r| r.path.first().map(|v| v.surface))
+                .collect();
+            h.sort_by(f64::total_cmp);
+            let mut land: Vec<f32> = m.surface.iter().copied().filter(|&s| s > 0.0).collect();
+            land.sort_by(f32::total_cmp);
+            (h, f64::from(land[land.len() * 3 / 4]))
+        };
+        let (hw, top_quarter) = sources(&with);
+        let (plain, _) = sources(&without);
+        let median = |v: &[f64]| v[v.len() / 2];
+        assert!(
+            median(&hw) > 2.0 * median(&plain),
+            "sources' median {:.0} m with headwaters, {:.0} m without",
+            median(&hw),
+            median(&plain)
+        );
+        let high = hw.iter().filter(|&&h| h >= top_quarter).count();
+        assert!(
+            high * 4 >= hw.len(),
+            "{high} of {} sources in the land's top quarter (over {top_quarter:.0} m)",
+            hw.len()
+        );
+    }
+);

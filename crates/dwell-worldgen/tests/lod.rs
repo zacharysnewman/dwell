@@ -338,7 +338,8 @@ fn the_flat_worlds_lod_equals_the_downsample_of_its_chunks() {
     }
     let mut cells = LodCells::new();
     assert_eq!(
-        generate_flat_lod(section_at(2, 0, 200, 0), &mut cells),
+        // 200 rows over the flat ground's top (row 200 itself until 0.76, under its 1152 since).
+        generate_flat_lod(section_at(2, 0, i64::from(FLAT_TOP_Y) + 200, 0), &mut cells),
         LodKind::Empty
     );
     assert_eq!(
@@ -520,10 +521,13 @@ fn coarse_cells_show_the_grounds_surface_not_the_floor() {
         let (mut tops, mut stone, mut grassy) = (0, 0, 0);
         for z in 0..N {
             for x in 0..N {
+                // The column's top as seen from above: a sea's surface hides its bed (since 0.76's
+                // 512 m core the bed lies in the cell under the water's, the core's stone).
                 if let Some(m) = (0..N)
                     .rev()
                     .map(|y| cells[cell_index(x, y, z)])
-                    .find(|&m| m != M.air && m != M.water)
+                    .find(|&m| m != M.air)
+                    .filter(|&m| m != M.water)
                 {
                     tops += 1;
                     stone += i32::from(m == M.stone);

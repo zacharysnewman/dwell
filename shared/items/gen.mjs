@@ -236,7 +236,12 @@ export function itemsRust(data) {
 }
 
 /** A TS string literal, single-quoted as the client's Prettier writes it. */
-const q = (v) => `'${String(v).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+// As prettier writes a string: single quotes, or double when it holds a ' and no " ("Ship's wheel").
+const q = (v) => {
+  const t = String(v).replace(/\\/g, '\\\\');
+  if (t.includes("'") && !t.includes('"')) return `"${t}"`;
+  return `'${t.replace(/'/g, "\\'")}'`;
+};
 
 /** The shell's table: the build modes' key and labels (the controls list, the HUD). */
 export function buildModesTs(data) {

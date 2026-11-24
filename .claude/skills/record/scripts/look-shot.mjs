@@ -86,7 +86,8 @@ const url =
 const browser = await chromium.launch({
   headless: false,
   channel: 'chrome',
-  args: ['--enable-unsafe-webgpu', '--disable-renderer-backgrounding', '--disable-background-timer-throttling'],
+  // Muted unless testing sound (DWELL_SOUND=1; owner, 2026-11-24).
+  args: ['--enable-unsafe-webgpu', '--disable-renderer-backgrounding', '--disable-background-timer-throttling', ...(process.env.DWELL_SOUND ? [] : ['--mute-audio'])],
 });
 // The page's content policy would refuse the injected stylesheet that hides the HUD: bypassed.
 const page = await (

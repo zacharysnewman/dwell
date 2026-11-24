@@ -36,7 +36,7 @@ fn flat_bounds_at(top: f64) -> LodBounds {
     }
 }
 
-/// The bifacial test world's crust per face: the 10-layer core (Phase 16), so 20 layers in all.
+/// The bifacial test world's crust per face: the core (Phase 16; 512 m, 1024 rows, since 0.76).
 const CRUST: i64 = dwell_world::CORE_LAYERS as i64;
 
 /// Both faces, each flat: ground where a face-local cell's bottom is below `CRUST`.
@@ -1131,7 +1131,7 @@ fn ground_columns(c: LodCoord) -> f64 {
     f64::from(n)
 }
 
-/// Meshes a section of the 20-layer crust as the system does for a viewer on `view_face`.
+/// Meshes a section of the crust as the system does for a viewer on `view_face`.
 fn crust_mesh(c: LodCoord, view_face: i32) -> dwell_mesh::SectionMeshes {
     let mut cells = bifacial_section(c).cells;
     cells_for_viewer(c, &mut cells, view_face, false);
@@ -1152,9 +1152,12 @@ fn a_thin_crust_meshes_the_viewers_face_whole_and_none_of_the_other_at_every_lev
     // every column with ground exactly once (no holes), and no face of the other side faces the
     // viewer (none of it shows through). Levels up to 11 lie wholly on one face; the root holds
     // both and is meshed for the viewer's face.
+    // The sections holding each face's surface (the crust's top, `CRUST` rows over the midplane):
+    // by the midplane until 0.76, whose 512 m crust buries those at the low levels whole.
+    let top = dwell_world::m_of_row(CRUST as i32);
     for level in 1..=MAX_LEVEL {
-        let above = section_at(level, [0.5, 0.5, 0.5]);
-        let below = section_at(level, [0.5, -0.5, 0.5]);
+        let above = section_at(level, [0.5, top - 0.5, 0.5]);
+        let below = section_at(level, [0.5, -(top - 0.5), 0.5]);
         for view_face in [1, -1] {
             for c in [above, below] {
                 let (up, down) = up_down_area(&crust_mesh(c, view_face).opaque);
@@ -1683,7 +1686,9 @@ dwell_world::both_faces!(
     /// LOD asks for the chunks around the camera beyond the streamed view — the face-local mirror
     /// of each other, chunk for chunk.
     fn asks_for_the_chunks_around_the_camera_on_either_face(f: dwell_world::FaceFrame) {
-        let feet = [0.5, f.y(CRUST as f64 + 1.6), 0.5];
+        // On the crust (its top is row `CRUST`, in metres `m_of_row`; until 0.76 this read the rows as
+        // metres, harmless over a 20-row core, 513 m in the air over 1024 rows).
+        let feet = [0.5, f.y(dwell_world::m_of_row(CRUST as i32) + 1.6), 0.5];
         let mut t = ChunkSetup::new(feet, 4.0);
         t.host.bifacial = true;
         // Looking 10° below the face's horizon: in the world, toward the face's ground.
@@ -1696,7 +1701,7 @@ dwell_world::both_faces!(
             f.face,
             local.len()
         );
-        let a_feet = [0.5, CRUST as f64 + 1.6, 0.5];
+        let a_feet = [0.5, dwell_world::m_of_row(CRUST as i32) + 1.6, 0.5];
         let mut on_a = ChunkSetup::new(a_feet, 4.0);
         on_a.host.bifacial = true;
         on_a.run(&camera(a_feet, 0.0, -10.0), 400);

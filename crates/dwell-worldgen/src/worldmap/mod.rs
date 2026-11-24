@@ -48,9 +48,9 @@ pub const NO_FLOW: u8 = 0x0f;
 pub const NO_LAKE: u16 = 0;
 pub const NO_RIVER: u32 = u32::MAX;
 
-/// The lowest height a cell keeps (m above sea): the sea floor never lies deeper (the core stops
-/// it sooner).
-pub const FLOOR: f32 = -40.0;
+/// The lowest height a cell keeps (m above sea): 1 m over the core's top, so the sea's bed lies on
+/// the core and never floods its stone (owner, 2026-11-18: "Sea level +40m and a steeper shelf").
+pub const FLOOR: f32 = (crate::GROUND_MIN_M - dwell_world::SEA_LEVEL_M) as f32;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MapLake {
@@ -149,6 +149,23 @@ impl WorldMap {
         let mut map = Self::from_hydrology(seed, &hydrology::generate_with_height(seed, p, h));
         map.tectonics = h.tectonics;
         map
+    }
+
+    /// [`WorldMap::for_height`] then [`WorldMap::with_worldgen`]`(text)`, through the disk cache
+    /// (`cache::for_worldgen`, keyed by the seed, the text and `h`): computed once per build, then
+    /// read back byte-identical (the Realistic tests; 5–7 s a map against ~30 ms).
+    pub fn for_height_with_worldgen(
+        seed: u64,
+        h: crate::terrain::HeightField,
+        text: &str,
+    ) -> Result<Self, String> {
+        // A bad config fails here as `with_worldgen` would, before the cache is asked.
+        crate::config::world_config(text)?;
+        Ok(cache::for_worldgen(seed, text, &format!("{h:?}"), || {
+            Self::for_height(seed, h)
+                .with_worldgen(text)
+                .expect("a config that parsed")
+        }))
     }
 
     /// [`WorldMap::for_height`] for a Realistic world over a given plate tectonics (R2; tests: a

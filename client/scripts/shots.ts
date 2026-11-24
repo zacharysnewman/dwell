@@ -47,6 +47,8 @@ async function main(): Promise<void> {
       '--use-vulkan=swiftshader',
       '--use-webgpu-adapter=swiftshader',
       '--no-proxy-server',
+      // Muted unless testing sound (DWELL_SOUND=1; owner, 2026-11-24).
+      ...(process.env.DWELL_SOUND ? [] : ['--mute-audio']),
     ],
   });
   const client = `${base.replace(/\/$/, '')}/dwell/`;

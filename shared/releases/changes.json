@@ -2,6 +2,17 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.76.0",
+      "changes": [
+        "A new compatibility line: deeper seas. The open sea is about 60 m deep, with deep water close off the coast, room for ships to sail and wrecks to sink",
+        "The ground runs 512 m down to the bedrock",
+        "Rivers rise as thin streams up in the mountains and run all the way to the sea",
+        "Portals are lined with bedrock and nothing can be built round them; no ladders: drop in and you're carried up and out of the far side's hole",
+        "No more boulders at the foot of cliffs; tall grass no longer grows or spreads over the days, for now",
+        "New worlds only: worlds from 0.75 open in a 0.75 build"
+      ]
+    },
+    {
       "version": "0.75.20",
       "changes": [
         "Damaging a block next to a slope no longer leaves holes in the slope",

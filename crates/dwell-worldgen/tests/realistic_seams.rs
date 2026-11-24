@@ -26,9 +26,12 @@ both_faces!(
         for world in SEEDS {
             let seed = face_seed(world, f.face);
             let map = Arc::new(
-                WorldMap::for_height(seed, e.height.expect("its height field"))
-                    .with_worldgen("test:realistic")
-                    .unwrap(),
+                WorldMap::for_height_with_worldgen(
+                    seed,
+                    e.height.expect("its height field"),
+                    "test:realistic",
+                )
+                .unwrap(),
             );
             let field = BiomeField::with_params(&map, seed, e.map);
             let r = 46_000 / STEP;

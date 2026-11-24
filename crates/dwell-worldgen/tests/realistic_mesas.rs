@@ -22,7 +22,8 @@ use dwell_worldgen::worldmap::WorldMap;
 
 const NAME: &str = "test:realistic";
 /// The brief's seeds and the owner's (its face B is a third red rock mesa: most of the mesas).
-const SEEDS: [u64; 4] = [1, 7, 42, 2_741_893_632];
+// Seed 2 joined with 0.76's deeper seas, whose changed drainage left face A's four seeds one mesa top.
+const SEEDS: [u64; 5] = [1, 2, 7, 42, 2_741_893_632];
 /// The tops' and floors' rms gain (m) over the flat 0.61 relief, [min, max].
 /// Tops 0.12 m at least (0.25 before the 0.65 line's curved plates moved the mesas: face A now samples
 /// only seed 1 A's 4 top patches, 0.91 -> 1.04 m; face B 0.80 -> 1.27 m over 7).
@@ -68,8 +69,7 @@ fn census(world: u64, f: FaceFrame) -> Census {
     let wall_m = e.geology.erosion.wall;
     let talus = e.geology.erosion.talus_width;
     let map = Arc::new(
-        WorldMap::for_height(seed, e.height.expect("its height field"))
-            .with_worldgen(NAME)
+        WorldMap::for_height_with_worldgen(seed, e.height.expect("its height field"), NAME)
             .unwrap(),
     );
     let g = [generator(seed, &map, true), generator(seed, &map, false)];

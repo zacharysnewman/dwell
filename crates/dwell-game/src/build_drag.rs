@@ -552,7 +552,8 @@ impl BuildDrag {
     /// [`aim`](Self::aim) at `now_ms`, paced by the clock (docs/BUGS.md #30): a piece at most every
     /// [`BUILD_REPEAT_S`] (`buildModes.repeatS`), counted from the time between calls, so a page
     /// at a few frames a second, calling this at each tick it predicts, builds at the same rate as
-    /// one at 60. No credit is saved up past one piece: a stroke held still builds no burst after.
+    /// one at 60. No credit is saved up past one piece and a call's time: a stroke held still builds no
+    /// burst after.
     pub fn aim_at(
         &mut self,
         eye: [f64; 3],
@@ -563,7 +564,16 @@ impl BuildDrag {
     ) {
         if self.pace_ms.is_finite() {
             let gained = (now_ms - self.pace_ms).max(0.0) / (BUILD_REPEAT_S * 1000.0);
-            self.pace = (self.pace + gained).min(1.0);
+            // The call that crosses a piece keeps its overshoot (at most its own time): capped at
+            // one piece, a page predicting ticks a little faster than 60 a second (a client
+            // catching up its clock, 61.2 Hz) fell 2% short every third tick and built a piece
+            // every fourth, 15 a second for the data's 20 (0.76, game_local's held-place test).
+            // A stroke already holding a piece (blocked, or between strokes) keeps just that one.
+            self.pace = if self.pace >= 1.0 {
+                1.0
+            } else {
+                (self.pace + gained).min(1.0 + gained.min(1.0))
+            };
         }
         self.pace_ms = now_ms;
         // Not ahead of what the server's region queue takes: pieces waiting to go out are not yet
@@ -1528,6 +1538,31 @@ mod tests {
             pieces(&mut d, &mut w, 1000.0, 100.0),
             2,
             "one now, the next a repeatS on"
+        );
+    }
+
+    #[test]
+    fn a_held_stroke_keeps_the_rate_when_ticks_come_a_little_fast() {
+        // face-a-only: pacing has no up.
+        // 0.76: a client catching up its clock predicts ~61.2 ticks a second; capped at one piece,
+        // three ticks fell 2% short of one and a piece waited for the fourth: 15 a second, not
+        // the data's 20 (red before).
+        let f = FaceFrame::A;
+        let mut d = started(f, DragKind::Line, [0, 1, 0], [0, 1, 0]);
+        let mut w = Fake::default();
+        let eye = [3.0, 1.6, 0.5];
+        let up = towards(f, eye, [0.5, 30.0, 0.5]);
+        let tick = 1000.0 / 61.2;
+        let (mut n, mut t) = (0, 0.0);
+        while t < 1000.0 - 1e-6 {
+            d.aim_at(eye, up, 64.0, &mut w, t);
+            n += d.pump_tries(t).len();
+            t += tick;
+        }
+        let per_s = (1.0 / BUILD_REPEAT_S).round() as usize;
+        assert!(
+            n.abs_diff(per_s) <= 1,
+            "{n} pieces in a second, {per_s} due"
         );
     }
 

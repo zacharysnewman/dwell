@@ -169,6 +169,7 @@ impl Server {
     /// Tests, tools: turns the world's grass growth on or off.
     pub fn set_grass_enabled(&mut self, on: bool) {
         self.grass.enabled = on;
+        self.grass_forced = on;
         self.share_grass_with_ecology();
     }
 
@@ -271,7 +272,9 @@ impl Server {
     }
 
     fn grass_step(&mut self, wait: bool) {
-        if !self.grass.enabled {
+        // Off in this build (grass.json `grows`, owner 2026-11-24): no world grows, its own switch
+        // kept for when it is on again; a test or tool that turns it on still grows it.
+        if !self.grass.enabled || !(dwell_worldgen::grass::GRASS.grows || self.grass_forced) {
             return;
         }
         let env = self.grass_envelope.clone();

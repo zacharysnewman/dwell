@@ -50,8 +50,7 @@ fn census(world: u64, f: FaceFrame) -> Census {
     let seed = face_seed(world, f.face);
     let e = world_config(NAME).unwrap().expect("the Realistic world");
     let map = Arc::new(
-        WorldMap::for_height(seed, e.height.expect("its height field"))
-            .with_worldgen(NAME)
+        WorldMap::for_height_with_worldgen(seed, e.height.expect("its height field"), NAME)
             .unwrap(),
     );
     // The old rule, the build's data (rocks.json `shaping.notched`), and 0.65's.

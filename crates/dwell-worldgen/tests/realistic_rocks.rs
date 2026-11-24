@@ -23,8 +23,7 @@ fn generator(seed: u64) -> TerrainGenerator {
     let e = world_config(NAME)
         .unwrap()
         .expect("the Realistic world's edit");
-    let map = WorldMap::for_height(seed, e.height.expect("its height field"))
-        .with_worldgen(NAME)
+    let map = WorldMap::for_height_with_worldgen(seed, e.height.expect("its height field"), NAME)
         .unwrap();
     TerrainGenerator::with_map(seed, Arc::new(map))
         .with_biomes_and_geology(&e.biomes, e.map, e.geology)
@@ -316,7 +315,9 @@ dwell_world::both_faces!(
         // floor the forests' lee is wetter and covers nearly all of them (0-3 a face, on 5 seeds
         // too): no minimum; any that is sampled must still not be red sand (the check above).
         assert!(
-            arid >= 30 && humid >= 50,
+            // 25 arid since 0.76 (the cold desert back under 220 mm: 29 on face A); 20 with 0.76's
+            // rivers from the mountains (more rivers wet more floors: 23 on face A).
+            arid >= 20 && humid >= 50,
             "arid {arid}, humid {humid}, forest {forests} floors sampled"
         );
     }

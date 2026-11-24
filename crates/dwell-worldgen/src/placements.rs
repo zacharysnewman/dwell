@@ -512,10 +512,14 @@ impl Planter {
         if roll >= most * self.rise_factor(g.above_sea) {
             return None;
         }
-        if let Some(f) = factor
-            && roll >= open * self.rise_factor(g.above_sea) * f(index as usize, x, z)
-        {
-            return None;
+        if let Some(f) = factor {
+            let chance = open * self.rise_factor(g.above_sea);
+            // Whether the roll fails against a factor of `bound`: the factor may stop at a bound
+            // over its value that already fails (its dearer parts then never asked).
+            let fails = |bound: f32| roll >= chance * bound;
+            if fails(f(index as usize, x, z, &fails)) {
+                return None;
+            }
         }
         let mut pick = self.h(gx, gz, 3) % self.total_weight.max(1);
         let mut shape = 0;
@@ -776,8 +780,11 @@ pub fn max_rise(planters: &[Planter]) -> i32 {
         .unwrap_or(0)
 }
 
-/// The climate's factor on a placement's chance: (planter index, x, z) → 0..1 (`vegetation.rs`).
-pub type Factor<'a> = dyn Fn(usize, i32, i32) -> f32 + 'a;
+/// The climate's factor on a placement's chance: (planter index, x, z, fails) → 0..1
+/// (`vegetation.rs`). `fails(b)` answers whether the candidate's roll fails against a factor of `b`:
+/// a factor that knows a bound `b` over its value with `fails(b)` may return 0 without the rest of
+/// it, the same outcome (the roll fails against both).
+pub type Factor<'a> = dyn Fn(usize, i32, i32, &dyn Fn(f32) -> bool) -> f32 + 'a;
 
 /// A placement's spacing at an anchor (planter index, x, z) → blocks, with the most it can be:
 /// the biomes' `spacing` (0.52.65).
@@ -1018,12 +1025,12 @@ mod tests {
             "under water"
         );
         // The climate's factor: 1 everywhere places the same; 0 west of x = 50 none there.
-        let one = |_: usize, _: i32, _: i32| 1.0;
+        let one = |_: usize, _: i32, _: i32, _: &dyn Fn(f32) -> bool| 1.0;
         assert_eq!(
             trees_in_with(&p, (0, 0), (99, 99), &dirt, Some(&one), None),
             trees
         );
-        let east = |_: usize, x: i32, _: i32| f32::from(u8::from(x >= 50));
+        let east = |_: usize, x: i32, _: i32, _: &dyn Fn(f32) -> bool| f32::from(u8::from(x >= 50));
         let half = trees_in_with(&p, (0, 0), (99, 99), &dirt, Some(&east), None);
         assert!(!half.is_empty() && half.iter().all(|t| t.anchor[0] >= 50));
     }

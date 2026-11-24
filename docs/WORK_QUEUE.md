@@ -12,11 +12,438 @@ or decision the owner gives goes into this file **in the same turn it arrives**,
 the work, quoting the owner's words; never only in a session's memory or an agent's brief. An item nobody
 recorded doesn't exist for the next session.
 
-**Hold (owner, 2026-11-18): "Put a hold on everything except ships, cannons, etc."** Only the ships and cannons
-work (docs/CANNONS.md C4–C5 and what they need) goes ahead; every other item, the CI failures included, waits until
-the owner lifts the hold. Parked at the hold: the cold desert fix for main's failing `realistic_variety` (branch
-`claude/cold-desert-region`, unmerged: back at 220 mm the one-region check passes, biomes per 4 km² reads 2.796
-against 2.8, 2.958 before 0.73's lee floor; it raises the 0.75 line).
+**Hold lifted (owner, 2026-11-23):** "what's on hold? We'll be pulling everything out of hold and removing the boats,
+cannons only hold rules." The 2026-11-18 hold ("Put a hold on everything except ships, cannons, etc.") is over: the CI
+failures, the queued items and the owner's list of 2026-11-23 are all workable again. (The parked cold desert fix rides
+the deep-seas line, PR #1109.)
+
+## Indefinite hold (owner, 2026-11-23)
+
+Owner, 2026-11-23: "Let's setup an indefinite hold area and put realistic at scale, older open PRs (I'd like to know
+what these are though), low shrub seed, water darkened by SSAO." Not worked until the owner takes an item out.
+
+- **Realistic worlds at real-world scale** (PR #976, the 0.71 line; closed 2026-11-17 after the comparison: 0.73 took
+  only sea moderation and the lee floor, the moisture recovery recorded in docs/FUTURE.md).
+- **Older open PRs:** none open (2026-11-23, only #1109, the deep seas). Closed unmerged on 2026-11-17: #976 above, and
+  three experiments marked "do not merge": #1051 (no worker prewarm), #1052 (rocks tint the far LOD again), #1053 (no
+  town jobs).
+- **The low_shrub seed** and **water darkened by SSAO underwater:** dropped 2026-11-17 (owner: "I don't know what
+  either of the unclear queue items are, drop them"; from the check-in list, never recorded in the owner's words); held
+  here.
+
+## Q&A with the owner, 2026-11-23 (one question at a time)
+
+Owner, 2026-11-23: "Honestly there's too much to answer here. Can you do some Q & A with me, one question (with
+context) at a time with a choice to table it as well as the other options?" Answers:
+
+- **Rivers from the mountains (#196, Follow-ups):** fold into the 0.76 line with the deep seas and the underground
+  ("Fold into 0.76"). Owner should see: on a new world, each river traced back up to the ridge as a thin stream, more
+  and longer rivers, the small ones narrow.
+- **Blocks against a build platform's side:** "Join the raft": anything placed against a build platform (top or side)
+  becomes part of the body being built, so the whole build launches together. Owner should see: a raft built off a
+  platform's sides launches whole when the platform is broken.
+- **Hit counts for blocks not on the owner's sheet:** "Accept all": obsidian 20 base hits; build platform as planks;
+  snowy grass as grass; red sand and the moon dusts as sand; red dirt as dirt; red sandstone and basalt as stone; snowy
+  leaves as leaves; brush and saplings 1 hit (docs/BLOCK_DAMAGE.md, the proposals now confirmed).
+- **Boat glide (#220):** "Yes, as proposed": the speed-squared drag kept, the linear drag 0.15 → ~0.02/s, tuned by feel.
+- **Land vehicles:** "Wheeled carts later": a design pass for carts and wagons with wheels, a future feature.
+- **Palm fronds (cards or blocks):** tabled.
+- **Haze (item 29):** already settled 2026-11-12 ("Yeah let's go with D on haze": half distance 6 km, scale height
+  1 km); the "waiting" listing was stale.
+- **Showcase recordings (item 40):** "Keep paused": only when idle or when the owner asks for a video.
+- **The two ship videos (2026-11-18):** the owner never saw them ("I didn't see these, share them again."); the files
+  were lost with the scratch folder. Owner: "We don't have good looking boats/ships yet, once I get my design shared
+  back we can revisit this." Waits on the owner's ship, shared as a file (section 1's first item).
+- **The shake (doors, ladders, dynamite; BLOCK_DAMAGE.md §17):** seen in creative only with a tool held (the hand
+  breaks in one hit there); none of them is craftable in adventure. Owner, 2026-11-23: "Look is bad, it should work like
+  the block damage does with showing blocks underneath. Do an actual good shake. The current one looks weird, only
+  affects one face, and is barely detectable. Also, I think cannons should maybe be included in this. Also the shake
+  should affect the "thing" as a whole, so not just the voxel of the door you hit, but the whole door. And yes queue
+  recipes." To do: a clear shake of the whole block (every cell of a door, a cannon's four), drawn so the blocks behind
+  and under show through as block damage does (no faces culled against it), every face moving; cannons join the shake
+  blocks (questions: their hit count); crafting recipes for the door, the ladder and dynamite (questions: costs). Owner
+  should see: hitting a door with a tool shakes the whole door visibly, nothing missing round it; the same for a ladder,
+  dynamite and a cannon; doors, ladders and dynamite craftable in adventure. BUGS.md #229.
+- **Dropped items 3x bigger, ground sticks and rocks picked up by walking (Follow-ups):** "Into section 4 (Blocks)".
+- **Door swing (Follow-ups):** with the shake (#229). Owner, 2026-11-23: "With the shake, and the door should be made to
+  take up about the same depth space as a ladder instead of a full block. The position in the block should depend on
+  where you're facing when you place it, doors should face you (like you're outside the house)." Owner should see: a
+  door as thin as a ladder against the cell's side away from the player who placed it (its face toward them, as from
+  outside the house), swinging open and shut.
+- **Hit table (Follow-ups):** merged into section 4's block table (hit rule, hit counts by tool, break times).
+- **Spawn search (Follow-ups):** owner, 2026-11-23: "I've noticed it takes up to 20s. I think this benchmark may be
+  wrong, I'm not sure. Could be for existing worlds it's longer." The ~2 s figure was a new world's; to measure: new
+  and reopened worlds, local and joined, on the owner's machines. Owner should see: "Finding a place to stand" for
+  about a second or less, on new and existing worlds. BUGS.md #230.
+  Then, 2026-11-23: "Actually can drop it, I'm getting <4/s spawn times." Dropped.
+- **CI failures:** owner, 2026-11-23: "Im not sure, what failures are important in CI? I think we're not blocking on CI
+  failures currently, but if there's real broken things we want to fix, but don't want to spend a bunch of time on long
+  running tests that are flaky in CI only?" Main's last run (#1108): two real failures, both fixed on the deep-seas
+  branch (the Realistic golden stale since the wall torch moved block ids, which stopped the Rust run with 294 tests
+  unrun; `buildModes.gen.ts` unformatted: the items generator now quotes as prettier does). The e2e failures: known
+  CI-only flakes (buildDrag towering and bridging #30, spawn reopen #51, never drawn after a join #49, touch), and two
+  not on the known list (`characters.spec` "another client sees your body walk…", `play.spec` "local mode streams
+  terrain"). Owner: "One quick GPU check": run those two once locally on the GPU; passing, they join the known CI-only
+  list in CLAUDE.md; failing, they are bugs to fix. No more time on the rest.
+  Owner, 2026-11-23: "I also would like to skip or not run tests that are flaky in CI only, but still run locally as
+  needed? Thoughts on this?" Proposed: tag each CI-only flaky test `@gpu` in its title; CI's Playwright config leaves
+  them out (`grepInvert`), a local run on the GPU includes them (the owner's `playwright.gpu.config.ts` committed as that
+  config); the tagged ones are those CLAUDE.md lists as failing only under CI's software renderer (#30, #51, #34, #49,
+  touch), and the two unknown specs only if the GPU check passes them; run locally before a merge touching their area;
+  CLAUDE.md's "Known CI failures" kept in step with the tag. Owner should see: CI green but for real failures, the
+  tagged tests still run on a GPU locally. **Done on the 0.76 branch (2026-11-24):** the GPU check: `play.spec` "local
+  mode streams terrain" passes (CI-only, tagged); `characters.spec` "another client sees your body walk…" failed on
+  the GPU too, its arms check's 5 s wait too short for the arms' mesh (fixed: 20 s, passes in 8.5 s). Eight tests tagged
+  `@gpu`; CI's config leaves them out.
+- **Worldgen tests share one Realistic map (owner, 2026-11-23):** "That's a long running tasks why does it take 15+
+  minutes?" Measured: `cargo test -p dwell-worldgen` 16+ min serially and 16.7 min (1000 s) four binaries at a time;
+  each `realistic_*` binary (about 15) builds the whole Realistic world map itself, 95–281 s each
+  (`realistic_snowy_leaves` 281 s, `realistic_shrubs` 214 s, `realistic_talus` 197 s). Proposed: build the map once
+  per seed and data and share it (cached on disk, keyed by the seed and a hash of the worldgen data, rebuilt when
+  either changes), so the suite runs in ~2 min. Owner: "Queue that." Then: "This caching seems good to prioritize:
+  caching it on disk keyed by seed and data": done first, before the rest of 0.76's fixes. **Measured
+  first (2026-11-23), my ~2 min estimate was wrong:** a Realistic map builds in 5–7 s and reads back from disk in
+  30 ms (byte-identical), but `realistic_snowy_leaves` takes 240 s alone and its 8 map builds are ~25 s of it; a CPU
+  sample puts nearly all the rest in tree placement (`trees_in` → `Planter::candidate_with` → `tree_density_at`:
+  the biome mix, plate provinces and noise recomputed per candidate) over the tests' wide sweeps (127 × 127 patches
+  × 4 seeds × 2 faces). The map cache alone saves ~10–20 %. Asked what to do: "Speed up tree placement": each
+  patch's biome mix and density worked out once, not per candidate, the same trees (pinned by the goldens); it speeds
+  the game's chunk loads too; the map cache after, if still worth it. Owner should see: the worldgen suite much
+  faster, and chunks loading at least as fast, with the same trees. **First pass (2026-11-23), exact (the
+  same trees: a hash of 964 trees over 200 Realistic patches unchanged, `examples/trees_cost.rs`):** tree placement
+  3.09 s → 2.25 s (−27 %): a candidate's density stops at its biomes' share when that already fails its roll (the
+  cliffs', tops' and volcanoes' factors are each at most 1), and talus's cliff search stops after a ring once the
+  rings left can't pass it; plate boundaries' distance skips runs of segments by box. What's left is the column
+  itself (95 % of placement time): the plate provinces ~40 %, the biome mix ~38 %; candidates' ground and slope
+  ~55 % of column reads, talus's cliff search ~37 %.
+  **The map cache, when built (owner, 2026-11-23):** "Just ensuring the stored data gets cleared when it's outdated
+  and never going to be used again." Planned: one folder per worldgen version (a hash of the worldgen code and data)
+  under the build's `target/`; a run that opens the cache deletes every other version's folder first, so only the
+  live version's maps are ever on disk (a few MB a seed); `cargo clean` removes it all. Owner should see: the cache
+  never growing past the current version's maps.
+  **Built (2026-11-23, at the owner's reminder):** in the existing native map cache (`worldmap::cache`, the temp
+  directory's `dwell-world-maps`) rather than a second one under `target/`, so one rule covers both: the first
+  time a process opens the directory it deletes every map another build made (it held 751 MB, 109 maps of three
+  old builds, never read again; after: only this build's 81). The fingerprint now covers all of `dwell-worldgen`'s
+  sources (the old list missed the plates and geology a Realistic map reads). Maps with a world config go through
+  `WorldMap::for_height_with_worldgen` (keyed by seed, config and height field; 34 test call sites), read back
+  byte-identical (`tests/map_cache.rs`). `realistic_snowy_leaves` runs its 4 seeds on threads (240 s → 150 s
+  alone). The worldgen suite, 4 binaries at a time: 1000 s before → 533 s cold, 504 s warm. Owner should see: the full worldgen suite done in
+  about 2 minutes, its results unchanged.
+- **Snow-line speckle (#219):** owner: "I'm not sure if it looks bad, snowy mountains seem pretty rare in our current
+  generation rules." Then: "Send me a screenshot" of the spot (seed 4065579781, Realistic, (−21950, −8850)).
+- **The 512 m underground:** "Measure first": the world's size, generation and load time at 512 m before building.
+- **Order (owner, 2026-11-23, by the Q&A):**
+  0. 0.76 in flight: deep seas; the 512 m underground (measured first); rivers from the mountains.
+     **State (2026-11-23):** all three built on `claude/deep-sea`; the boulder dropped from talus (#232); a river
+     doubling back to its junction now meets at one level (a red→green unit test; it walled the water at a
+     confluence on seed 7); the tests written for the 10 m core or the old sea level updated (the core test walks
+     every core chunk, the low-grass test reads the chunk each top stands in, the LOD's coarse-cells test skips sea
+     columns, the starter's mesa square moved to (21 000, 9 000)); tuned bars moved by the new rivers, each with a
+     note (tall peaks' margin over the undetailed ring 100 → 40 m, the crests and the map margin kept; arid floors
+     sampled ≥ 20; cliff edges per 100 up to 53; the boulder fixture's check allows its bleed); pins, goldens and
+     spawns re-pinned. **Portals through the deep core (owner, 2026-11-23):** asked, since each portal's shaft
+     now runs ~1.2 km through the core (a 150 s climb; a dropped player swings between the faces): "Portals should
+     be made of bedrock. With a no build zone. Then the force from the portal should always provide enough for you
+     to just clear the edge, so the world horizon instead of just accelerating you, it should provide just enough to
+     clear the other side by 3m under your feet." Read as: the shaft's walls bedrock (unbreakable), a no-build zone
+     round it; crossing the midplane, the portal sets the player's speed so they rise out of the far face's hole and
+     top out with their feet 3 m over its rim, whatever the shaft's length (not a fall that accelerates and swings).
+     Owner should see: dropping into a portal carries you through and out of the far hole, cresting 3 m over its
+     edge, then landing beside it; the shaft's walls can't be broken or built in. Then: "So a velocity setting when falling, not
+     on the ladder." Built so: only an airborne body (dropped in) is lifted; climbing the ladder never is. Asked whether the fall down should be set too: "Only on the way up": a free fall to the
+     midplane, the rise set on the far side (~16 s through). Then (owner, 2026-11-23): "Lets get rid of the ladders on
+     the portals." Owner should see: no ladder in any portal's shaft; a drop is the only way through. Asked whether to look at a portal crossing in game before 0.76 ships (owner, 2026-11-24): "Yes I do": a local build of the branch for the owner's look before the merge. Also: sea level and the flat
+     worlds' top moved to row 1152 (576 m), a whole chunk, as on main. **Open:** BUGS.md #233, a 1.16 m step in the base ground at a face B confluence, the one red
+     test; then the browser check and your look (deep sea, a coast, rivers off a mountain). With it: the quick
+     GPU check of the two unknown e2e specs and the `@gpu` tag for CI-only flaky tests. First (owner, 2026-11-23, "good to
+     prioritize"): the worldgen tests share one Realistic map, cached on disk by seed and data.
+  1. Builders, a quick fix (#226: blueprint slopes facing the blueprint's way) ("Early, as a quick fix").
+  2. Section 1, Moving bodies.
+  3. Section 8, Far trees and far terrain.
+  4. Section 4, Blocks.
+  5. Section 3, Water.
+  6. Then: "Sky question, character painting, inventory icons, split screen": section 6 (the moonlight question), the
+     character painting (section 7), section 9 (inventory icons), the splitscreen (section 7).
+  The snow-line screenshot (#219) goes to the owner when work resumes.
+  7. **Pieces stuck in the ground (owner, 2026-11-24, after BUGS.md #234):** "We could also have a rule for physics
+     objects that are fully stuck inside the ground, instead of colliding repeatedly have their collider disabled and
+     are moved at a constant velocity upward, until they fully enter air again, collider reenabled and allowed to
+     settle. This can be added to the end of the queue, because I'm not sure what the effect of this will be on small
+     1m wide holes. Or if players count for this." Open questions for its start: what counts as fully stuck (every
+     corner inside solid cells, or held there for some time); whether a piece snug in a hole one cell wide counts;
+     whether players get the same rule (today `lift_buried_players` lifts a player inside the ground at once).
+     Owner should see: a block or log trapped inside rock floats straight up out of it, then lands and settles,
+     instead of shaking in place.
+- **Portal shaft drawing and light (owner, 2026-11-24, BUGS.md #236):** "It looks like the chunks aren't loading very
+  far down for the portal, so I can just see the other world face's sky. And it seems like they might unload behind
+  as I fall, allowing light to shine down into the hole as well. What are possible solutions." Options given; the
+  owner picks. Then (2026-11-24): "The possible problem I'm wanting to correct with #2 is the structure arches will
+  mostly block the sky/light for the tube.": the shaft's open cells see the sky by the portal data, from one opening
+  to the other, whatever stands over the opening (the arch) or isn't held over them; the stand-in walls lit alike. Then (owner, 2026-11-24, after the tube): "The tube looks right, but the arched exit
+  on the other side, would show stone not sky, until you get closer, to where you could see the edges of the arches,
+  thoughts?" (the far face's arch, its two arms crossing 27–30 m over the opening, isn't drawn: the far face's LOD
+  isn't, and the stand-ins stop a chunk short of the opening). Owner should see: down a shaft, the far arch's stone
+  cross over the far opening with slivers of sky beside it, opening up as you near it. Built ("Yeah don't special
+  case it, go ahead."): the stand-ins are the generated chunks, out of the far opening over its arch. Then: "the
+  tube mesh texture seems like it might be tiled too tightly vertically, hard to tell at that angle though":
+  checked face-on, a bedrock side repeats once a metre both ways (a tile over two ½ m rows), as every block's; the
+  tightness is the grazing angle down the shaft. Open if the owner still sees it.
+- **Review what's left for 0.76.0 (owner, 2026-11-24):** "When we come back, let's review the items left for 0.76.0 to
+  see if we want to do all those still or if we can/should drop some of them." Work resumes at 12:30 pm that day with
+  that review first. **Decided (owner, 2026-11-24):** before the merge, keep "Tab crash #237" and "GPU e2e + @gpu tag";
+  the before/after frames (10 m vs 512 m core) and the full-fall browser check move after 0.76; the portal drop's
+  frame rate is "Follow-up, not blocker": the owner reads the HUD's CPU/GPU ms on a drop, then it is looked into.
+- **Portal drop frame rate (owner, 2026-11-24, the 0.76 branch's build):** "Whew, only getting 20-30 fps on that portal
+  drop." Measured (bench `portal-drop`, seed 0, this Mac): ~59.5 fps every way tried: a production build, the dev
+  server, a full Retina window (GPU 9 ms), a drop 3 s after loading, and after 3 minutes idle at the portal. Not
+  reproduced; suspects left: the owner's own tab (two game tabs, its Graphics settings, a larger display) or the Mac
+  hot from hours of builds just before. Next: the HUD's CPU/GPU ms from the owner during a drop. Owner should
+  see: a portal drop at 60 fps on High (the M1 Air target).
+- **Grass growth off (owner, 2026-11-24):** "Grass is a bit out of control, can we just disable grass growing for
+  now". Done on the 0.76 branch: `shared/worldgen/grass.json` `grows: false` stops every world's grass growing and
+  spreading (each world's own switch kept for when it's on again; tests and tools can still turn it on). Owner should
+  see: meadows stay as generated; no tall grass creeping over the ground over the days.
+- **Game instances tool (owner, 2026-11-24):** "Make a script/tool/skill (whatever is most appropriate and still
+  discoverable) for yourself to quickly check for running game instances in order to clean them up easily, when not
+  using them." Done: the `instances` project skill (`.claude/skills/instances/scripts/instances.sh`: list; `stop`
+  by kind or pid; never the owner's own Chrome). Owner should see: no leftover servers or browsers after Claude's
+  checks. Owner should see: looking or falling down a portal, bedrock walls all the way down to a small disc of
+  the far face's sky at the far end, and no light pouring in behind as they fall. Part of 0.76 (portals through the
+  512 m core are new on this line).
+- **Respawn hand-over on a mountainside (found 2026-11-24, 0.76):** with the LOD, a preloaded respawn on seed 1's new
+  mountainside spawn keeps the loading screen 10 frames (0.15 s; 130 without the preload): its ring is drawable,
+  but 9 of 81 chunks count ready until the LOD hands its sections over, all at once on the 10th frame. In the old
+  valley spawn it opened on the first. To look at: why the hand-over waits ~9 frames. Owner should see: respawning
+  opens the view at once, on any terrain.
+- **Game browsers muted (owner, 2026-11-24):** "Kill any open game browsers and ensure when you open them you mute
+  the sound unless your doing sound testing." Done: bench, shots, panoramas and look-shot launch with
+  `--mute-audio` unless `DWELL_SOUND=1`; the DevTools browser too. Owner should see: no game sound from browsers
+  Claude opens.
+- **Copying a body as a blueprint:** "Aim at it with the copy tool": with the region copy tool, aiming at a moving body
+  and copying takes the whole body onto the clipboard in its original rotation (saved and exported from the Structures
+  panel). Pasting it: "A moving body again" (it floats if over water).
+- **Flipping a body upright:** "Hold E (think FPS controls like Halo, X on controller), Q is used for inventory", in
+  "Both modes". Owner should see: holding E (X on a controller) by a capsized boat rights it.
+- **Draining a flooded hull (creative):** "Hold E inside the hull": bails it dry over a second or two.
+- **Ladders and doors on ships (#223):** owner: "I thought doors open with a right click, left trigger? But yes
+  generally exactly as on land." (Right: doors open with right click, the Use of Place, or the left trigger.)
+- **Rebinding for "hold E":** today E opens the inventory and Q is unbound in play. Owner: "Q inventory, E interact":
+  Q opens the inventory (backpack or creative); E is interact (tap: use a door, helm or cannon; hold: flip a body upright
+  or bail a hull); right click still uses doors. Controller: X is interact (the owner's "X on controller"), the
+  spyglass moves from X to the right stick click ("Right stick click"). Data: shared/input/gamepad.json and the keyboard
+  bindings; Settings' rebinding keeps working. Owner should see: Q opens the inventory, E uses and (held) flips or
+  bails; X likewise on a controller, the spyglass on the right stick click.
+- **Bars (wooden and iron):** owner: "Join neighbors like a fence. Should be 3 bars in each direction (flat) left/right,
+  (flat) forward/back, and (vertical) three bars each direction, but we only want to show the bars as needed when they
+  connect, so maybe show all when initially placing, but when connected to another solid block or bars, hide the other
+  bar angles. I'm sure this isn't a clear description so perhaps we could prototype the dynamic connecting." Then:
+  "Prototype page first" (a docs/prototypes page: place bars and solid blocks on a small grid, see the connecting rule,
+  tune it; then the game). Recipes: "Wood now, iron with ore" (wooden bars from sticks; iron bars once metal ore and
+  smelting exist). Owner should see: bars that show all their bars alone and only the connecting ones beside bars or
+  solid blocks.
+- **Recipes for the door and ladder:** owner: "Door 4 takes wood planks, ladder takes 4 sticks." (A door from 4 planks;
+  a ladder from 4 sticks.) Dynamite stays creative-only until a gunpowder material exists. Owner should see: a door and
+  a ladder craftable in adventure at those costs.
+- **Metal ore veins:** owner: "Always at the surface, and veins 1-5 blocks thick, up to 25m long." Each vein starts at
+  the surface (an outcrop to spot) and runs down at a sweeping angle; density "Common" (several per 100 m). Owner should
+  see: silvery, shiny outcrops easy to find, each a vein 1–5 blocks thick running down up to 25 m.
+  Shape, owner 2026-11-23 ("For ore veins we haven't discussed the kind of curve they should generate in?"): the path's
+  curve "Prototype first" and the thickness along it "Try them in the prototype": a docs/prototypes page with the vein's
+  path (a smooth arc, an S-curve, a wandering path) and its thickness profile (tapering, swelling, even) as controls, the
+  owner picking there. Line: "Ship 0.76 now, veins next line" (the veins on the line after the prototype).
+  Drops: "Raw ore, pickaxe only" (breaks like hard stone with a pickaxe, none by hand; drops raw metal ore, kept for
+  smelting later: iron bars and metal tools use it once smelting exists).
+- **Character painting:** "Pause menu: 'Character'" (opened from the pause menu in any world; the look saved per
+  device and shown to other players); "Face by face" (click any face of the model and fill it from the palette, with a
+  fill for a whole part such as the shirt or the hair); hat on or off. Owner should see: a Character menu from the
+  pause menu where any face is painted from a palette, the hat toggled, other players seeing the result.
+  Owner, 2026-11-23: "Actually, skin should be separate and change all at once. For the character painter that was what
+  I meant by skin color." So skin is its own colour, chosen once for every skin face together (not painted face by
+  face); the rest (hair, clothes, hat) painted face by face. Owner should see: a skin colour picker that recolours all
+  the character's skin at once, beside the face-by-face painting of everything else.
+  Owner, 2026-11-23: "We should also put let's make hair separate too like skin." So hair is its own colour too, all
+  at once; the clothes and the hat painted face by face. Owner should see: skin and hair colour pickers that each
+  recolour all of it at once, beside the face-by-face painting of the clothes and hat.
+- **Splitscreen:** "Up to 4 players", "Local and online" (each a full player, in a local, friend or dedicated world).
+  Owner should see: two to four players on one screen, each with their own view and HUD, playing locally or joined to
+  a friend's world, at 60 fps with tuned visibility and settings.
+- **Water source tool:** "A creative bucket": place puts a water source, break or use takes one away; while held,
+  sources show a marker so they can be seen. Owner should see: a creative bucket that adds and removes water sources,
+  the sources marked while it's held.
+- **Particles:** "Count scales with the hit": a weak hit (the hand, the wrong tool) a few tiny chips, a strong one
+  more, the final break a bigger burst of larger pieces.
+- **Inventory icons:** "Rendered from the game's meshes" (each block's own mesh in one standard three-quarter view at
+  build time, flat items drawn flat, so the icons follow the blocks' looks); look-alikes told apart by "Their own
+  colours and textures only" (two icons still alike mean the blocks need more distinct looks).
+
+## Owner's list, 2026-11-23, grouped into sections
+
+Owner, 2026-11-23: "These are all items to queue up into our roadmap. But we'll need to reconcile with what we have in
+there currently. Also many items may make sense to work in the same section, being related, the same feature, or
+affecting similar features, like the ocean floor depth increase going along with the underground depth increase (solid
+stone, no caves)." Each item below is quoted from that list; reconciled with what the queue already held (noted per
+item). The sections' order is a proposal for the owner to confirm. The hold is lifted (owner, 2026-11-23, above).
+
+### 1. Moving bodies: ships continued
+
+First in this section (owner, 2026-11-23, to share a ship "in a generic way"): copying a body as a blueprint.
+
+- "Floating objects need more inertia, boats essentially never stop moving." Owner, 2026-11-23 (clarified): "I think I
+  may have used the wrong terms. The idea is that in real water boats don't often come to a stop, they keep moving in
+  the same direction for a while even without wind or a motor before the tide/currents exert enough force to move in
+  that direction. Thoughts?" Proposed: the speed-squared drag stays (a fast boat slows quickly); the linear `drag`
+  (shared/physics/bodies.json `water.drag`, 0.15/s, what brings a slow boat to a dead stop) down to about 0.02/s, so a
+  slow boat glides on for a minute or so; both are relative to the water's current (already built: rivers carry bodies),
+  so on a current the boat turns to drift with it. Tides or sea currents on the open sea (still today) would be a new
+  water feature. Owner should see: a boat let go of at the helm keeps gliding the way it was going, slowing gently over
+  about a minute; on a river it gradually turns and drifts with the current. BUGS.md #220.
+- "Water inside of dynamic objects should not visible from underneath or above. It needs a dynamic clipping, not
+  column-based, since dynamic objects don't align with columns." Owner should see: from above, below or beside, no lake
+  water drawn in a hull's dry inside, at any turn of the hull. Reconciled: CANNONS.md §12 H3 part one (0.75.14) hides the
+  lake inside each hull's dry-air box, turned with the hull (not by columns), only the four nearest hulls; the owner
+  still sees water there, so it falls short: check from underneath and at angles. BUGS.md #221.
+- Owner, 2026-11-23: "Is this covered: the general water plane that a dynamic object with air inside of it, shouldn't
+  affect the player, buoyancy, walking/swimming etc within that air (obviously if it's flooded it should affect them
+  still)." Not covered: the controller's water (`submerged_fraction`) reads the world's water cells alone, so a player in
+  an open hull below the waterline swims and floats there. One rule with #221: a hull's dry air overrides the world's
+  water, for the drawing, the player (swimming, buoyancy, walking), the underwater view and sound, and anything else in
+  it; its own water once it floods. Owner should see: standing and walking in a boat's dry inside below the waterline as
+  on land (no swimming, no underwater look or sound); in a flooded hull, swimming as in water. BUGS.md #227.
+- Owner, 2026-11-23: "I think boats might be too heavy too? I have a small ship I built, that if I could somehow copy a
+  ship dynamic objects I could share it with you for testing. It's super heavy and sits low very low in the water, but
+  I'm not sure how this works in real ships and if I'm missing stuff." Explained: a real hull is a thin shell round a lot
+  of air; a Dwell wall is a whole block (planks solid wood, 600 kg/m³, ~300 kg a cell), so a ship of block walls and
+  decks is far heavier for its size; air lifts it only where counted (CANNONS.md §12 H1). Sharing it now: in a local
+  world, `copy(await __dwell.scene('bodies', ''))` in the console copies every body's cells (its own grid). To do with
+  it: measure its mass, displacement, counted air and draft; then weigh lighter planks (boards with air, ~200–300 kg/m³),
+  hull blocks as thin shells, or the air count. Owner should see: a ship built of planks riding well up in the water,
+  heavier ships (cannons, stone ballast) lower. Owner, 2026-11-23: "I'm not sure if it's the weight or the air pressure/buoyancy
+  that's causing it." So the measure separates the two: the ship's weight against the lift its counted air and its
+  blocks give (whether the air inside is counted at all, and whether the buoyancy rule weighs it right), before any fix. Owner,
+  2026-11-23: "I don't have the ship on this computer, so it would need to be copyable in a generic way." So the copy
+  and save of a body as a blueprint (below in this section) comes first: copied into the region tools' clipboard in its
+  original rotation, saved and exported as a file by the Structures panel (its save, export and import are built),
+  imported on any computer. Owner should see: a ship copied in game, exported as a file, and pasted as a ship elsewhere.
+- "Pre-Existing dynamic objects should be synced across the network." Owner should see: a player joining a world with
+  rafts, boats or felled logs already moving or at rest sees them where the host does. BUGS.md #222.
+- "Ladders and Doors should work normally on dynamic objects." Owner should see: a ladder placed on a ship climbs as on
+  land, a door on a ship opens and closes with Use, both moving with the ship. BUGS.md #223.
+- "A creative mode tool to flip dynamic objects upright, possibly in Adventure too." Owner should see: a capsized boat
+  turned upright by a tool. (Questions first: which tool, and in adventure.)
+- "A creative mode tool to drain/clear water filling a dynamic object (this doesn't mean removing the water in the
+  columns, but removing it from "filled" inside of it, if that even works right now)." Owner should see: a flooded hull
+  emptied by the tool, floating high again. (Flooding is built: CANNONS.md §12 H2, the hull's water volume.)
+- "Creative mode (and theoretically adventure mode, since pasting in adventure should be placing a blueprint) feature to
+  select a dynamic object and copy/save it as a blueprint (in its original, not current rotation)." Owner should see: a
+  boat selected and saved as a structure, which pastes upright as it was built. Reconciled: the owner's 2026-11-18 answer
+  that body tools "should ultimately use the same tooling (updated perhaps) that is used to copy paste sections" (above,
+  under ships); and blueprints (docs/BLUEPRINTS.md).
+
+### 2. The world's depth: deep seas, a deep underground, ores (one worldgen line)
+
+- "Increase underground size up from 10m to 512m. This will give us lots of room for metal ore veins and future
+  dungeons." With the owner's note: "the ocean floor depth increase going along with the underground depth increase
+  (solid stone, no caves)." Owner should see: digging down from anywhere goes through solid stone for about half a
+  kilometre before the bedrock. Reconciled: the deep seas (sea level +40 m, CANNONS.md §18, the 0.76 line, draft PR #1109
+  unmerged) change the same constants (`seaLevel`, `coreLayers`); proposed: one line for both, the core 512 m with the
+  sea and the land over it. Owner, 2026-11-23, asked "fold the 512 m underground into that same line, or merge the deep
+  seas first?": "Yes" (read as: fold them into one line, PR #1109). (To measure first: the cost of half a kilometre of
+  stone a face in chunks, saves and streaming; the sea level rides up with the core.)
+- "Add in metal ore veins silvery/shiny they should run into the ground at a random, but sweeping angle." Owner should
+  see: silvery, shiny veins in the stone, running down into the ground at sweeping angles, seen in cliffs and when
+  digging. (Prototype content, ARCHITECTURE.md §6.1: a data-driven vein system; questions first.)
+- "Remove boulders (if not already removed)." Already done: the 0.74 line (2026-11-17, `boulders` out of every biome).
+  **Fell short (owner, 2026-11-23):** "There shouldn't be boulders. These were supposed to be removed. But I've seen
+  them in game still." The loose `boulders` placement is in no biome, but the 2026-11-17 change kept talus, and
+  talus (every Realistic biome, `worlds/realistic.json`) still places `dwell:proto_rock`, the same boulder (weight 2
+  of 10, with 1 m stones and 2 m blocks), under cliffs and steep rock. BUGS.md #232. Owner should see: no boulders
+  anywhere on a new 0.76 world, cliffs included. Folded into 0.76 (a worldgen change on that line). Asked how far:
+  "Drop the boulder piece": talus keeps its 1 m stones and 2 m blocks under cliffs; `proto_rock` leaves its mix.
+
+### 3. Water
+
+- "Ocean water not settling when affected on the surface, but creating big fountains and splashes and that move around
+  constantly (until I get far enough away?)." Owner should see: the sea disturbed (a block placed or broken at the
+  surface, a ship) settles back flat in seconds, no fountains or splashes moving about. BUGS.md #224.
+- "Water blocked/affected by blocks just above the surface of the water." Corrected, owner 2026-11-23: "I think I wrote
+  should instead of shouldn't. Currently if you place a block one block above sea level over the ocean, so it's almost
+  touching the water surface, but just above it not in it, it causes the water to be immediately affected, often
+  resulting in explosive fountains of water or acts like a dam." So: a block just above the water must not affect it.
+  With #224 (likely one cause). Owner should see: a block placed one row above the sea, not touching the water, leaves
+  the sea flat and still: no fountains, no damming.
+- Owner, 2026-11-23: "River chunks that have been back flooded (due to damming) seem to never load in higher detail they
+  seem stuck in low detail (unless you move really close to load in close high detail)." Owner should see: a dammed,
+  back-flooded river valley drawn at the land's detail at every distance. BUGS.md #231.
+- "A creative mode tool to create and remove water source blocks. (Maybe a way to see what's source?)" Owner should see:
+  a creative tool that adds or removes a water source, and a view that marks the sources.
+
+### 4. Blocks: damage, particles, new blocks
+
+- Owner, 2026-11-23: "Add this too, max grass growth to 3 blocks, 1.5m. And we need to correct the way these render
+  connecting vertically because it looks like 3 separate and non-connecting tall grass pieces stacked on top of each
+  other which looks bad." Changes the 2026-11-14 request ("it's supposed to be growing up to 2m": up to four ½ m cells,
+  `shared/worldgen/grass.json` `height.cells`) to at most three cells; and reopens BUGS.md #192 (2026-11-16: "it's
+  supposed to extend or stretch up"), whose fix (stalk cells under the top cell's blades) still reads as separate
+  stacked tufts. Owner should see: tall grass at most 1.5 m, a stand of any height reading as one plant, its blades
+  running unbroken from the ground to the tips.
+  Owner, 2026-11-23: "Also, tall grass should break over water and when there's no supporting stock down to a solid
+  block. Currently if water floods under it breaks the lower blocks but not the tall grass above the water." Owner
+  should see: water flooding under a tall grass stand takes the whole stand, no grass left floating over the water; a
+  stand's cell stays only while the stand under it runs down to a solid block. BUGS.md #228.
+
+- "Maybe planned already, but we should iron out which blocks should show damage (dirt) and which should follow the
+  shake rule (doors), and which should just break in one hit (leaves)." Owner should see: a table, every block's hit
+  rule (damage look, shake, one hit), for the owner to settle, then the game following it. Reconciled: block damage
+  data per block (docs/BLOCK_DAMAGE.md, `damage` in shared/blocks: `hit: "shake"` on doors and ladders, `fixedHits`).
+- "Scaled quantity of particles based on how much damage you're doing to a block, smaller particles on hits." and
+  "Particles on breaking a block (already exist, need bigger?)." Owner should see: a light hit throws a few small
+  particles, a heavy one more; breaking a block throws a bigger burst. Reconciled: the 2026-11-17 hit particles item
+  (halved, wood-inside coloured shards), above.
+- "Bars block" / "Add in wooden and iron bars". Owner should see: wooden bars and iron bars as placeable blocks (thin
+  bars, see-through, joining their neighbours like a fence). (Questions first: joining, collision, recipes.)
+- "Leafy leaves should fade like the leaf block when you get close to it." Owner should see: a tree's leaves dissolve
+  as the camera comes close, as a leaf block's do. BUGS.md #225.
+
+### 5. Builders
+
+- "When placing blocks from blueprints like slopes, should face the direction in the blueprint, regardless of the
+  facing player/npc facing direction. I noticed the NPCs were building roofs incorrectly because they were at different
+  angles when building the roof slopes on my custom house with thatch." Owner should see: builders putting up a
+  blueprint's thatch roof with every slope facing as in the blueprint. BUGS.md #226.
+
+### 6. Sky
+
+- "Is there moonlight and glow from a moon while on the moon and the sun?" A question: answer from the code, then queue
+  what is missing. Owner should see (if missing): standing on the moon or the sun, the other body lights the scene and
+  glows in the sky as it does from home.
+
+### 9. Inventory icons (needs discussion)
+
+- Owner, 2026-11-23: "Another item to queue is making all inventory item/block icons unique visually from other blocks,
+  and represent what they are. Possibly like a standardized 3/4's perspective for all blocks, then maybe a 2D one for 2D
+  billboard items like torches / grass. Needs more discussion." Owner should see: every hotbar and inventory icon
+  distinct from the others and reading as what it is: blocks in one standard three-quarter view, flat items (torches,
+  grass) drawn flat. Questions first (the owner's "needs more discussion").
+
+### 8. Far trees and far terrain
+
+- Owner, 2026-11-23: "#197 is not fixed still seeing all kinds of overlap with billboards and trees, likely not noticed
+  since trees grow and have many possible states and distances. We likely need better (non-visual) testing around
+  this." BUGS.md #197 reopened: first a non-visual invariant (every species, stage, variant and world day, at every
+  distance band: each tree drawn exactly once, full or impostor, both only in the fade, from the renderer's and the
+  mesher's own data) and a dev telemetry count of trees drawn both ways, then the fixes it finds. Owner should see: no
+  tree drawn as billboard and full tree at once, no trunk beside a billboard, at any distance or day.
+- BUGS.md #195, grey speckles at medium and far distances: part 1 fixed (rocks and talus no longer tint the far LOD);
+  waiting on a screenshot or spot from the owner.
+
+### 7. Bigger features (questions first)
+
+- "Splitscreen (UI for visibility/scale and graphics settings for 60fps will need tuning)". Owner should see: two players
+  on one screen, each with their own view and HUD, at 60 fps.
+- "In game menu to customize (paint faces on your character, given a solid set of colors) your character's look, hat
+  off or on. Can paint all vertices, including hair." Owner should see: an in-game menu to paint the character's faces
+  from a palette, hair included, and take the hat off or put it on, saved with the player. (docs/CHARACTERS.md.)
 
 Last updated: 2026-11-11 (0.52.108).
 
@@ -103,7 +530,11 @@ Last updated: 2026-11-11 (0.52.108).
   flame on top; breaking the wall drops it). Built (docs/LIGHTS.md "Wall torches").
   Sea depth, owner's answer (2026-11-18) to the options (today: median 19 m, never over 22 m, the core's limit; 12 m
   deep 750 m off a coast, 21 m at 1.5 km): "Sea level +40m and a steeper shelf." Owner should see: open sea about 60 m
-  deep, deep water a few hundred metres off the coast. A new compatibility line (worldgen and the sea-level constant).
+  deep, deep water a few hundred metres off the coast. A new compatibility line (worldgen and the sea-level constant). Built on 0.76 (CANNONS.md §18).
+  Main's CI, 2026-11-18: 0.73 failed `realistic_variety` on face A, one cold desert region of 1,188 km² (26.7 % of the
+  land; at most 18 %): 0.73's raise of the cold desert's rain limit (220 → 300 mm). It rides 0.76's line: back at 220
+  mm (the fallback-climate test's bar under it, 200 mm; the arid count's bar 25). Owner should see: on a new Realistic
+  world, no one cold desert covering a quarter of a continent.
   Owner, 2026-11-18: "We may need to generally deepen oceans which might mean we need to increase the stone layer
   depth/face depth." (For ships: a deeper sea, so a ship's keel and a sunk wreck have room; a worldgen change, a new
   compatibility line; questions first: how deep, everywhere or the open sea only.) Owner should see: oceans deep

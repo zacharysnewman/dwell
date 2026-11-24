@@ -16,6 +16,10 @@ export default defineConfig({
   // test can fail by timing alone; retried twice there, it fails only when it fails every time
   // (Playwright reports a pass on retry as flaky).
   retries: process.env.CI ? 2 : 0,
+  // Tests that fail only under CI's software renderer, by timing (CLAUDE.md "Known CI failures";
+  // owner, 2026-11-23: "skip or not run tests that are flaky in CI only, but still run locally as
+  // needed"): their titles end in `@gpu`; CI leaves them out, a local run (on the GPU) has them.
+  grepInvert: process.env.CI ? /@gpu/ : undefined,
   reporter: [['list']],
   globalSetup: './e2e/global-setup.ts',
   webServer: {

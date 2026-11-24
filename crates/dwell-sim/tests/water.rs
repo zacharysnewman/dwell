@@ -8,6 +8,10 @@ use dwell_protocol::*;
 use dwell_sim::server::SessionId;
 use dwell_world::{Chunk, ChunkCoord, FLAT_TOP_Y, M, chunk_hash, generate_flat_chunk};
 
+/// Seed 0's river sites were written for the sea at row 64 (32 m): their rows and heights move with
+/// the sea (row 1152, 576 m, since 0.76), as the terrain did.
+const UP: i32 = dwell_world::SEA_LEVEL - 64;
+const UP_M: f64 = UP as f64 * dwell_world::CELL_H;
 const G: i32 = FLAT_TOP_Y;
 
 fn join_streaming(f: &mut Fixture, id: SessionId) {
@@ -275,7 +279,7 @@ fn a_block_set_in_a_generated_rivers_bed_changes_nothing_else() {
             'find: for dx in -6..=6 {
                 for dz in -6..=6 {
                     let (x, z) = (px + dx, pz + dz);
-                    let Some(top) = (0..700).rev().find(|&y| {
+                    let Some(top) = (0..700 + UP).rev().find(|&y| {
                         let m = w.get_voxel(x, y, z);
                         m != dwell_world::M.air
                             && !dwell_blocks::try_info(m).is_some_and(|i| i.replaceable)
@@ -420,7 +424,7 @@ fn an_untouched_rivers_water_has_its_maps_current() {
         'find: for dx in -6..=6 {
             for dz in -6..=6 {
                 let (x, z) = (px + dx, pz + dz);
-                let Some(top) = (0..700).rev().find(|&y| {
+                let Some(top) = (0..700 + UP).rev().find(|&y| {
                     let m = w.get_voxel(x, y, z);
                     m != dwell_world::M.air
                         && !dwell_blocks::try_info(m).is_some_and(|i| i.replaceable)
@@ -460,6 +464,14 @@ fn an_untouched_rivers_water_has_its_maps_current() {
     assert!(checked >= 2, "{checked} rivers checked");
 }
 
+/// Seed 0's water row (face A) at column (x, z): the first row above its river there.
+fn seed0_river_row(x: i32, z: i32) -> i32 {
+    dwell_worldgen::BifacialTerrain::height_field(0)
+        .local(dwell_world::Face::A)
+        .column_at(x, z)
+        .water_row()
+}
+
 /// Owner, 2026-11-06: "damming should raise the water and does" (BUGS.md #38). Seed 0's river at
 /// the bench's dam site (`?at=2364.5,142,7443.5`), a stone wall 32 m across it at z 7452 (the
 /// browser's measurement: 2 cm in ~1.7 h of water time). The river is drawn flat between its
@@ -478,11 +490,14 @@ fn a_dam_across_a_generated_flat_reach_backs_the_river_up() {
         dwell_worldgen::generator_for(GENERATOR_TERRAIN, 0),
         Some(dwell_worldgen::air_test_for(GENERATOR_TERRAIN, 0)),
     );
+    // The river's water row at the site, from the height field: the wall and the rows loaded and
+    // scanned stand round it (the 576 m sea moved every height).
+    let r0 = seed0_river_row(2364, 7448);
     let (x0, x1, z0, z1) = (2349, 2380, 7452, 7453);
     // Loaded well around the site: the backwater runs up the river.
     for x in (x0 - 160..=x1 + 160).step_by(8) {
         for z in (z0 - 200..=z1 + 120).step_by(8) {
-            for y in (240..=320).step_by(8) {
+            for y in (r0 - 44..=r0 + 36).step_by(8) {
                 w.get_voxel(x, y, z);
             }
         }
@@ -499,7 +514,7 @@ fn a_dam_across_a_generated_flat_reach_backs_the_river_up() {
     let stone = dwell_blocks::require("dwell:stone");
     let mut old = Vec::new();
     for x in x0..=x1 {
-        for y in 262..=293 {
+        for y in r0 - 22..=r0 + 9 {
             for z in z0..=z1 {
                 old.push(([x, y, z], w.get_voxel(x, y, z)));
                 w.set_voxel(x, y, z, stone);
@@ -507,7 +522,7 @@ fn a_dam_across_a_generated_flat_reach_backs_the_river_up() {
         }
     }
     water.touch(old);
-    let player = [2364.5, 142.0, 7443.5];
+    let player = [2364.5, dwell_world::m_of_row(r0), 7443.5];
     // Twenty minutes of water time in ticks of 1 s.
     for _ in 0..1200 {
         water.tick(&mut w, &[player], 1.0);
@@ -544,7 +559,7 @@ fn dam_seed0_river(
     let (x0, x1, z1) = (2349, 2380, z0 + 1);
     for x in (x0 - 100..=x1 + 100).step_by(8) {
         for z in (z0 - 120..=z1 + 80).step_by(8) {
-            for y in (240..=320).step_by(8) {
+            for y in (240 + UP..=320 + UP).step_by(8) {
                 w.get_voxel(x, y, z);
             }
         }
@@ -572,7 +587,7 @@ fn dam_seed0_river(
         }
         water.touch(old);
     };
-    let player = [2364.5, 142.0, f64::from(z0) - 8.0];
+    let player = [2364.5, 142.0 + UP_M, f64::from(z0) - 8.0];
     build(&mut w, &mut water, top);
     for m in 0..low + raised {
         if m == low {
@@ -704,10 +719,13 @@ fn the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow() {
         dwell_worldgen::generator_for(GENERATOR_TERRAIN, 0),
         Some(dwell_worldgen::air_test_for(GENERATOR_TERRAIN, 0)),
     );
+    // The river's water row at the site, from the height field: the wall and the rows loaded and
+    // scanned stand round it (the 576 m sea moved every height).
+    let r0 = seed0_river_row(2364, 7448);
     let (x0, x1, z0, z1) = (2349, 2380, 7452, 7453);
     for x in (x0 - 100..=x1 + 100).step_by(8) {
         for z in (z0 - 120..=z1 + 160).step_by(8) {
-            for y in (240..=320).step_by(8) {
+            for y in (r0 - 44..=r0 + 36).step_by(8) {
                 w.get_voxel(x, y, z);
             }
         }
@@ -720,7 +738,7 @@ fn the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow() {
         let (mut cells, mut cols) = (0, 0);
         for z in z1 + 1..7526 {
             for x in x0 - 100..=x1 + 100 {
-                let n = (240..=320)
+                let n = (r0 - 44..=r0 + 36)
                     .filter(|&y| liquid(w.get_voxel_if_loaded([x, y, z])))
                     .count();
                 cells += n;
@@ -737,7 +755,7 @@ fn the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow() {
     let stone = dwell_blocks::require("dwell:stone");
     let mut old = Vec::new();
     for x in x0..=x1 {
-        for y in 262..=293 {
+        for y in r0 - 22..=r0 + 9 {
             for z in z0..=z1 {
                 old.push(([x, y, z], w.get_voxel(x, y, z)));
                 w.set_voxel(x, y, z, stone);
@@ -745,7 +763,7 @@ fn the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow() {
         }
     }
     water.touch(old);
-    let player = [2364.5, 142.0, 7443.5];
+    let player = [2364.5, dwell_world::m_of_row(r0), 7443.5];
     for _ in 0..600 {
         water.tick(&mut w, &[player], 1.0);
     }
@@ -757,7 +775,7 @@ fn the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow() {
         .count();
     eprintln!(
         "below the wall: {cells0} water cells in {cols0} columns → {cells} in {cols}; {awake} chunks awake there; {}",
-        water.report([2400, 278, 7490], 2)
+        water.report([2400, 278 + UP, 7490], 2)
     );
     assert_eq!(
         cells, 0,

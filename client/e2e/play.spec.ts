@@ -108,7 +108,7 @@ test('local mode: the predicted player walks forward', async ({ page }) => {
   expect(Math.abs((end?.feet[1] ?? 0) - start.feet[1])).toBeLessThan(0.05);
 });
 
-test('local mode streams terrain: Generated chunks, or every chunk explicitly on request', async ({
+test('local mode streams terrain: Generated chunks, or every chunk explicitly on request @gpu', async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -138,7 +138,7 @@ test('local mode streams terrain: Generated chunks, or every chunk explicitly on
   }
 });
 
-test('two clients on a native server see each other move', async ({ browser }) => {
+test('two clients on a native server see each other move @gpu', async ({ browser }) => {
   // Two pages stream and generate their terrain side by side on CI's few cores.
   test.setTimeout(120_000);
   // Separate contexts: separate device keys (a shared key would replace the first session). Closed

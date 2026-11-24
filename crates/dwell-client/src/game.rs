@@ -347,6 +347,24 @@ impl DayOverride {
     }
 }
 
+/// The portals' shafts' stand-in chunks (`Game::update_stand_ins`, BUGS.md #236).
+#[derive(Default)]
+struct StandIns {
+    /// The chunks wanted this frame.
+    wanted: Vec<Coord>,
+    /// Meshed, by chunk.
+    meshes: dwell_world::hash::HashMap<Coord, Box<ChunkMeshes>>,
+    /// Being meshed.
+    asked: std::collections::HashSet<Coord>,
+    /// Drawn in the scene now.
+    shown: std::collections::HashSet<Coord>,
+    /// Wanted chunks drawn by their own mesh, whatever the LOD draws there.
+    forced: std::collections::HashSet<Coord>,
+}
+
+/// Stand-in chunks sent to be meshed in a frame at most (a shaft is ~72 of them).
+const STAND_INS_PER_FRAME: usize = 8;
+
 pub type SceneRef<S> = Rc<RefCell<S>>;
 
 /// The streamer's and the LOD system's view of the scene.
@@ -836,6 +854,8 @@ pub struct Game<S: Scene> {
     unloads: std::collections::VecDeque<(f64, [i32; 3], f64)>,
     /// The world's portals: their axes (world x, z) and mote look (`set_world`).
     portals: (Vec<[f64; 2]>, &'static str),
+    /// The portals' shafts drawn from their data where their chunks aren't held (BUGS.md #236).
+    stand_ins: StandIns,
     predictor: Predictor,
     streamer: Streamer<S>,
     pool: PoolRef,
@@ -1341,6 +1361,7 @@ impl<S: Scene> Game<S> {
             region: RegionTools::new(),
             brush: BrushTool::new(),
             portals: (Vec::new(), ""),
+            stand_ins: StandIns::default(),
             prediction: EditPredictor::new(),
             character_lights: Default::default(),
             target_eye: None,
@@ -2091,6 +2112,13 @@ impl<S: Scene> Game<S> {
                 .as_ref()
                 .map_or(Some(Fade::Full), |g| g.lod.chunk_fade(c));
         }
+        // A portal shaft's stand-in is drawn whatever the LOD draws there: on the viewer's face
+        // it lies inside the rock (the LOD shows nothing there), and the other face's LOD isn't
+        // drawn at all (BUGS.md #236: hidden, the far half of the shaft and its arch showed sky).
+        let k = c.to_array();
+        if self.stand_ins.shown.contains(&k) || self.stand_ins.forced.contains(&k) {
+            return Some(Fade::Full);
+        }
         self.lod
             .as_ref()
             .map_or(Some(Fade::Full), |l| l.chunk_fade(c))
@@ -2671,6 +2699,12 @@ impl<S: Scene> Game<S> {
                 (Purpose::Chunk(c, _), Output::Failed(e)) => self.streamer.on_generate_failed(c, e),
                 (Purpose::Base(c), Output::Chunk { voxels, .. }) => {
                     self.streamer.on_generated_base(c, &voxels)
+                }
+                (Purpose::StandIn(c), Output::ChunkMesh(m)) => {
+                    self.stand_ins.asked.remove(&c);
+                    if self.stand_ins.wanted.contains(&c) {
+                        self.stand_ins.meshes.insert(c, m);
+                    }
                 }
                 (Purpose::ChunkMesh(c, token), Output::ChunkMesh(m)) => {
                     let bytes = (m.opaque.byte_len()
@@ -4005,6 +4039,75 @@ impl<S: Scene> Game<S> {
         &self.portals.0
     }
 
+    /// Draws the portals' shafts within reach of `eye` from their data where the chunks aren't
+    /// drawn (BUGS.md #236, the owner's pick: "The tube mesh", then "don't special case it"): each
+    /// stand-in chunk is generated and meshed once in a worker (`Job::StandIn`: as the world has
+    /// it, the far opening's arch included, lit as open sky in its air) and shown while its chunk
+    /// isn't drawable; the
+    /// chunk's own mesh replaces it, and it shows again once that chunk is dropped.
+    fn update_stand_ins(&mut self, eye: [f64; 3]) {
+        let wanted: Vec<Coord> = self
+            .streamer
+            .store()
+            .portals
+            .stand_ins(eye)
+            .into_iter()
+            .map(|c| c.to_array())
+            .collect();
+        let si = &mut self.stand_ins;
+        si.forced.retain(|c| wanted.contains(c));
+        let gone: Vec<Coord> = si
+            .shown
+            .iter()
+            .copied()
+            .filter(|c| !wanted.contains(c))
+            .collect();
+        for c in gone {
+            si.shown.remove(&c);
+            if !self.streamer.drawable(c) {
+                self.scene
+                    .borrow_mut()
+                    .set_chunk(ChunkCoord::from_array(c), None);
+            }
+        }
+        si.meshes.retain(|c, _| wanted.contains(c));
+        let mut submitted = 0;
+        for &c in &wanted {
+            // The chunk's own mesh replaces it, drawn even where the LOD would draw its section
+            // instead (loaded past the LOD's chunks, a section can't show the shaft: a gap of sky).
+            if self.streamer.drawable(c) {
+                si.shown.remove(&c);
+                si.forced.insert(c);
+                continue;
+            }
+            si.forced.remove(&c);
+            if let Some(m) = si.meshes.get(&c) {
+                if si.shown.insert(c) {
+                    self.scene
+                        .borrow_mut()
+                        .set_chunk(ChunkCoord::from_array(c), Some(m));
+                }
+            } else if !si.asked.contains(&c) && submitted < STAND_INS_PER_FRAME {
+                let (water_tops, cards, plants) = {
+                    let p = self.pool.borrow();
+                    (p.water_tops, p.cards, p.plants)
+                };
+                self.pool.borrow_mut().submit(
+                    Purpose::StandIn(c),
+                    crate::jobs::Job::StandIn {
+                        coord: ChunkCoord::from_array(c),
+                        water_tops,
+                        cards,
+                        plants,
+                    },
+                );
+                si.asked.insert(c);
+                submitted += 1;
+            }
+        }
+        si.wanted = wanted;
+    }
+
     /// The world's portals (BIFACIAL_WORLD.md §12): their axes and mote look, from the generator
     /// and seed the server announced, for the motes drawn in their shafts.
     /// `size`: the world's (BIG_MAP.md M2b, its `WorldSettings`), its disc, build volume and maps.
@@ -4019,6 +4122,23 @@ impl<S: Scene> Game<S> {
         // server's world holds, so the prediction pushes as the server does.
         self.streamer.store_mut().portals =
             dwell_worldgen::portal_shafts_for_sized(generator_version, world_seed, size);
+        // The light's sky test (BUGS.md #236): a chunk not held lets the sky in only where the
+        // generator knows it is all air. Under the sea's level, the 512 m core a portal's shaft
+        // runs through, that is known at once (never air); between the sea and the peaks a
+        // column's sky floor isn't computed here, so those read as open sky, as before.
+        let air =
+            dwell_worldgen::AirColumns::for_generator_sized(generator_version, world_seed, size);
+        let test: dwell_world::light::SkyTest =
+            std::sync::Arc::new(move |c| air.known(c).unwrap_or(true));
+        // And the portals' shafts see the sky down their length by their data, under the arch
+        // over each opening (owner, 2026-11-24: "the structure arches will mostly block the
+        // sky/light for the tube").
+        let shafts = self.streamer.store().portals.clone();
+        let sky: dwell_world::light::ShaftSky = std::sync::Arc::new(move |c| shafts.sky_cells(c));
+        if let Some(light) = self.streamer.store_mut().light_mut() {
+            light.set_sky_test(Some(test));
+            light.set_shaft_sky(Some(sky));
+        }
         self.world_seed = world_seed;
         self.world_bounds = dwell_world::WorldBounds::of(size);
         self.streamer.set_volume(*self.world_bounds.volume());
@@ -6010,6 +6130,8 @@ impl<S: Scene> Game<S> {
         let motes =
             crate::render::flames::portals_near(&self.portals.0, self.portals.1, camera_eye);
         self.scene.borrow_mut().set_portal_motes(motes);
+        // Their shafts' walls past the chunks held (BUGS.md #236).
+        self.update_stand_ins(camera_eye);
         // The falling pieces, where they are now (interpolated).
         // And the settled ones gliding into place, handed to the terrain once it draws them.
         let step = self

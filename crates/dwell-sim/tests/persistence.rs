@@ -170,7 +170,7 @@ fn an_edited_world_survives_a_server_restart() {
         f.send(1, place([-1, G - 1, 2], 2, M.sand));
         f.server.step();
         assert_eq!(f.server.world().get_voxel(-1, G, 2), M.sand);
-        f.move_to(1, 3.5, f64::from(G), 4.5);
+        f.move_to(1, 3.5, f64::from(G) * dwell_world::CELL_H, 4.5);
         f.server.step();
         assert_eq!(f.server.save_stats().dirty, 1);
         f.server.save_now();
@@ -418,7 +418,7 @@ fn a_worlds_blocks_beyond_the_build_are_in_its_servers_registry() {
         f.send(1, place([-1, G - 1, 2], 2, moss));
         f.server.step();
         assert_eq!(f.server.world().get_voxel(-1, G, 2), moss);
-        f.move_to(1, 3.5, f64::from(G), 4.5);
+        f.move_to(1, 3.5, f64::from(G) * dwell_world::CELL_H, 4.5);
         f.server.step();
         f.server.save_now();
         f.server.flush_store();

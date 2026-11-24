@@ -53,7 +53,7 @@ async function walk(page: Page, ms: number): Promise<void> {
   await page.waitForTimeout(300);
 }
 
-test('a spawn link puts the player back at its spawn when the world is opened again', async ({
+test('a spawn link puts the player back at its spawn when the world is opened again @gpu', async ({
   page,
 }) => {
   test.setTimeout(120_000);

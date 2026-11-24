@@ -2,7 +2,8 @@
 
 #[allow(unused_imports)]
 use super::{
-    Highlands, HydrologyParams, MouthRule, Orographic, Plates, Rain, Ranges, RiverPoint, RockBands, SmallPits,
+    Headwaters, Highlands, HydrologyParams, MouthRule, Orographic, Plates, Rain, Ranges, RiverPoint, RockBands,
+    SmallPits,
     Tectonics,
 };
 
@@ -41,8 +42,10 @@ pub static PROFILES: [HydrologyParams; 6] = [
         lake_min_depth: 2.0,
         small_pits: SmallPits::Breach,
         max_breach_depth: 8.0,
-        river_threshold: 0.4,
+        river_threshold: 0.15,
+        river_headwaters: Some(Headwaters { min_discharge: 0.01, width: 1.0, depth: 0.4 }),
         river_geometry: &[
+            RiverPoint { discharge: 0.15, width: 1.5, depth: 0.5 },
             RiverPoint { discharge: 0.4, width: 3.0, depth: 0.8 },
             RiverPoint { discharge: 5.0, width: 12.0, depth: 2.0 },
             RiverPoint { discharge: 50.0, width: 40.0, depth: 4.5 },
@@ -75,8 +78,10 @@ pub static PROFILES: [HydrologyParams; 6] = [
         lake_min_depth: 2.0,
         small_pits: SmallPits::Breach,
         max_breach_depth: 8.0,
-        river_threshold: 0.4,
+        river_threshold: 0.15,
+        river_headwaters: Some(Headwaters { min_discharge: 0.01, width: 1.0, depth: 0.4 }),
         river_geometry: &[
+            RiverPoint { discharge: 0.15, width: 1.5, depth: 0.5 },
             RiverPoint { discharge: 0.4, width: 3.0, depth: 0.8 },
             RiverPoint { discharge: 5.0, width: 12.0, depth: 2.0 },
             RiverPoint { discharge: 50.0, width: 40.0, depth: 4.5 },
@@ -109,8 +114,10 @@ pub static PROFILES: [HydrologyParams; 6] = [
         lake_min_depth: 2.0,
         small_pits: SmallPits::Breach,
         max_breach_depth: 8.0,
-        river_threshold: 0.4,
+        river_threshold: 0.15,
+        river_headwaters: Some(Headwaters { min_discharge: 0.01, width: 1.0, depth: 0.4 }),
         river_geometry: &[
+            RiverPoint { discharge: 0.15, width: 1.5, depth: 0.5 },
             RiverPoint { discharge: 0.4, width: 3.0, depth: 0.8 },
             RiverPoint { discharge: 5.0, width: 12.0, depth: 2.0 },
             RiverPoint { discharge: 50.0, width: 40.0, depth: 4.5 },
@@ -179,8 +186,10 @@ pub static PROFILES: [HydrologyParams; 6] = [
         lake_min_depth: 2.0,
         small_pits: SmallPits::Breach,
         max_breach_depth: 8.0,
-        river_threshold: 0.4,
+        river_threshold: 0.15,
+        river_headwaters: Some(Headwaters { min_discharge: 0.01, width: 1.0, depth: 0.4 }),
         river_geometry: &[
+            RiverPoint { discharge: 0.15, width: 1.5, depth: 0.5 },
             RiverPoint { discharge: 0.4, width: 3.0, depth: 0.8 },
             RiverPoint { discharge: 5.0, width: 12.0, depth: 2.0 },
             RiverPoint { discharge: 50.0, width: 40.0, depth: 4.5 },
@@ -249,8 +258,10 @@ pub static PROFILES: [HydrologyParams; 6] = [
         lake_min_depth: 2.0,
         small_pits: SmallPits::Breach,
         max_breach_depth: 8.0,
-        river_threshold: 0.4,
+        river_threshold: 0.15,
+        river_headwaters: Some(Headwaters { min_discharge: 0.01, width: 1.0, depth: 0.4 }),
         river_geometry: &[
+            RiverPoint { discharge: 0.15, width: 1.5, depth: 0.5 },
             RiverPoint { discharge: 0.4, width: 3.0, depth: 0.8 },
             RiverPoint { discharge: 5.0, width: 12.0, depth: 2.0 },
             RiverPoint { discharge: 50.0, width: 40.0, depth: 4.5 },
@@ -334,8 +345,10 @@ pub static PROFILES: [HydrologyParams; 6] = [
         lake_min_depth: 2.0,
         small_pits: SmallPits::Breach,
         max_breach_depth: 8.0,
-        river_threshold: 0.4,
+        river_threshold: 0.15,
+        river_headwaters: Some(Headwaters { min_discharge: 0.01, width: 1.0, depth: 0.4 }),
         river_geometry: &[
+            RiverPoint { discharge: 0.15, width: 1.5, depth: 0.5 },
             RiverPoint { discharge: 0.4, width: 3.0, depth: 0.8 },
             RiverPoint { discharge: 5.0, width: 12.0, depth: 2.0 },
             RiverPoint { discharge: 50.0, width: 40.0, depth: 4.5 },

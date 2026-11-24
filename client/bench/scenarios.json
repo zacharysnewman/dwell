@@ -421,7 +421,7 @@
         {
           "do": "shot",
           "name": "lake-day",
-          "at": [30006.5, 250, -8006.5],
+          "at": [30006.5, 794, -8006.5],
           "yaw": -45,
           "pitch": -50,
           "maxS": 20
@@ -429,7 +429,7 @@
         {
           "do": "shot",
           "name": "lake-close",
-          "at": [30000.5, 240, -8000.5],
+          "at": [30000.5, 784, -8000.5],
           "yaw": -45,
           "pitch": -65,
           "maxS": 20
@@ -441,7 +441,7 @@
         {
           "do": "shot",
           "name": "lake-night",
-          "at": [30006.5, 250, -8006.5],
+          "at": [30006.5, 794, -8006.5],
           "yaw": -45,
           "pitch": -50,
           "maxS": 20
@@ -514,7 +514,7 @@
         {
           "do": "shot",
           "name": "lake-night",
-          "at": [30006.5, 250, -8006.5],
+          "at": [30006.5, 794, -8006.5],
           "yaw": -45,
           "pitch": -50,
           "maxS": 20
@@ -641,7 +641,7 @@
         {
           "do": "shot",
           "name": "lake-20m",
-          "at": [30014.5, 250, -8014.5],
+          "at": [30014.5, 794, -8014.5],
           "yaw": -45,
           "pitch": -45,
           "maxS": 20
@@ -649,7 +649,7 @@
         {
           "do": "shot",
           "name": "lake-day",
-          "at": [30006.5, 250, -8006.5],
+          "at": [30006.5, 794, -8006.5],
           "yaw": -45,
           "pitch": -50,
           "maxS": 20
@@ -657,7 +657,7 @@
         {
           "do": "shot",
           "name": "lake-close",
-          "at": [30000.5, 240, -8000.5],
+          "at": [30000.5, 784, -8000.5],
           "yaw": -45,
           "pitch": -65,
           "maxS": 20
@@ -680,7 +680,7 @@
         {
           "do": "shot",
           "name": "lake-night",
-          "at": [30006.5, 250, -8006.5],
+          "at": [30006.5, 794, -8006.5],
           "yaw": -45,
           "pitch": -50,
           "maxS": 20
@@ -7700,6 +7700,51 @@
         {
           "do": "shot",
           "name": "after-respawn"
+        }
+      ]
+    },
+    {
+      "name": "portal-drop",
+      "notes": "A drop down a portal's 1.2 km shaft (0.76; owner, 2026-11-24: \"only getting 20-30 fps on that portal drop\"): seed 0's portal (?spawn=portal), the player walks off the rim into the hole and falls through the core to the far face and back up (the portal's lift). Records the frames of the whole crossing, with the shaft's stand-ins drawn (BUGS.md #236).",
+      "seed": 0,
+      "portal": true,
+      "settings": {
+        "timeOfDay": 0.45
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "look",
+          "yaw": 180,
+          "pitch": -30
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.0
+        },
+        {
+          "do": "wait",
+          "s": 20
+        },
+        {
+          "do": "record",
+          "name": "drop",
+          "budget": {
+            "frame.cpu.p95": 16.7,
+            "gpu.frame.p95": 16.7
+          },
+          "reportOnly": true
+        },
+        {
+          "do": "shot",
+          "name": "after-the-crossing"
         }
       ]
     },

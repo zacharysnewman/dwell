@@ -14,7 +14,7 @@ function row(menu: Locator, name: string): Locator {
     .filter({ has: menu.page().locator('.settings-name', { hasText: new RegExp(`^${name}$`) }) });
 }
 
-test('settings menu: opens from the corner, in panes, without fog sliders, and is kept', async ({
+test('settings menu: opens from the corner, in panes, without fog sliders, and is kept @gpu', async ({
   page,
 }) => {
   test.setTimeout(90_000);

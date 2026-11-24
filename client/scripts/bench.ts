@@ -169,6 +169,9 @@ function launch(o: Options): Promise<Browser> {
     // to 65.536 µs; `--enable-features=WebGPUDeveloperFeatures` does not lift that, checked
     // 2026-10-14).
     '--enable-webgpu-developer-features',
+    // Muted unless testing sound (owner, 2026-11-24: "mute the sound unless your doing sound
+    // testing"): DWELL_SOUND=1 keeps it.
+    ...(process.env.DWELL_SOUND ? [] : ['--mute-audio']),
     ...(o.unthrottled ? ['--disable-gpu-vsync', '--disable-frame-rate-limit'] : []),
   ];
   if (o.swiftshader) {

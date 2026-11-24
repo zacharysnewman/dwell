@@ -475,7 +475,7 @@ fn portal_drop(
     let mut p = Predictor::new(PlayerControllerConfig::default());
     p.on_snapshot(&mut client_world, &server.snapshot(0));
     let mut in_flight: VecDeque<PhysicsSnapshot> = VecDeque::new();
-    for seq in 1..=60 * 8 {
+    for seq in 1..=60 * 30 {
         // Facing 45° (between the monument's pillars), level: the look continued across the
         // midplane is the same (`FaceFrame::look_across` keeps the heading, mirrors the pitch).
         let input = quantize_input(
@@ -494,7 +494,10 @@ fn portal_drop(
         }
     }
     let c = server.players.controller(server.h);
-    assert!(c.ground.grounded, "still in the air after 8 s");
+    assert!(
+        c.ground.grounded,
+        "still in the air after 30 s (0.76: ~1.2 km shafts)"
+    );
     (*p.stats(), c.face)
 }
 

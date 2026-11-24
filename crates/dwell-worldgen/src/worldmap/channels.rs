@@ -538,31 +538,56 @@ fn lower_into_land(map: &WorldMap, course: &mut [Point]) {
     }
 }
 
-/// Sets the end of a joining river's course to the joined river's level `s` over its last
-/// `reach` m (both channels' half-widths and a margin: the joining channel's side reaches into
-/// the joined one beside its centreline), a point added where that stretch
-/// begins, so inside the joined channel both waters stand at one level; upstream of it, where the
-/// joining river lies lower than `s`, the joined river's water backs up into it at `s` (levels
-/// never rise downstream). Returns the index of the stretch's first point.
+/// Sets the end of a joining river's course to the joined river's level `s` within `reach` m of
+/// the junction (its last point; both channels' half-widths and a margin: the joining channel's
+/// side reaches into the joined one beside its centreline), measured straight, not along the
+/// course (0.76: a course overshooting the joined river and doubling back kept a point 3 m from the
+/// junction metres above it): from the earliest point within it over the course's last four
+/// reaches on, a point added where the course enters it there, so inside the
+/// joined channel both waters stand at one level; upstream of it, where the joining river lies
+/// lower than `s`, the joined river's water backs up into it at `s` (levels never rise
+/// downstream). Returns the index of the stretch's first point.
 fn meet_at_bank(course: &mut Vec<Point>, s: f64, reach: f64) -> usize {
-    let mut i = course.len() - 1;
+    let Some(&end) = course.last() else {
+        return 0;
+    };
+    let near = |p: &Point| (p.x - end.x).powi(2) + (p.z - end.z).powi(2) <= reach * reach;
+    // The earliest point near the junction over the course's last few reaches (a course may leave
+    // the reach and come back beside the junction: everything from that point on takes `s`).
+    let mut first = course.len() - 1;
     let mut along = 0.0;
-    let bank = loop {
-        if i == 0 {
-            break 0;
+    for i in (0..course.len() - 1).rev() {
+        let (a, b) = (course[i], course[i + 1]);
+        along += ((b.x - a.x).powi(2) + (b.z - a.z).powi(2)).sqrt();
+        if along > 4.0 * reach {
+            break;
         }
-        let (a, b) = (course[i - 1], course[i]);
-        let l = ((b.x - a.x).powi(2) + (b.z - a.z).powi(2)).sqrt();
-        if along + l > reach {
-            let t = 1.0 - (reach - along) / l;
-            let mut at = Point::lerp(a, b, t);
-            at.s = s;
-            course.insert(i, at);
-            break i;
+        if near(&a) {
+            first = i;
         }
-        along += l;
-        course[i - 1].s = s;
-        i -= 1;
+    }
+    for p in &mut course[first..] {
+        p.s = s;
+    }
+    let bank = if first == 0 {
+        0
+    } else {
+        // Where the segment into it enters the reach: |b − end + u (a − b)| = reach, u in (0, 1].
+        let (a, b) = (course[first - 1], course[first]);
+        let (dx, dz) = (b.x - end.x, b.z - end.z);
+        let (ex, ez) = (a.x - b.x, a.z - b.z);
+        let ee = ex * ex + ez * ez;
+        let de = dx * ex + dz * ez;
+        let dd = dx * dx + dz * dz - reach * reach;
+        let u = if ee > 0.0 {
+            ((-de + (de * de - ee * dd).max(0.0).sqrt()) / ee).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let mut at = Point::lerp(a, b, 1.0 - u);
+        at.s = s;
+        course.insert(first, at);
+        first
     };
     for p in course[..bank].iter_mut().rev() {
         if p.s >= s {
@@ -661,6 +686,64 @@ mod tests {
     /// BUGS.md #42: a course falling 1 m per km, held level for 200 m and then dropping what it
     /// owes: the level reach's mean fall is the course's round it, the drop's gentler than its
     /// own, and a reach of 0 leaves each segment its own fall.
+    /// 0.76 (`rivers_meet_at_one_level`, seed 7 face A at (−3042, 9053)): a joining river whose
+    /// course overshoots the joined one and doubles back to its end keeps a point 3 m from the
+    /// junction above the joined river's level, a wall of water, when the meeting stretch is
+    /// measured along the course. Every point within `reach` of the junction takes its level.
+    #[test]
+    fn a_river_doubling_back_to_its_junction_meets_at_one_level() {
+        // face-a-only: a course is face-local; the faces' maps are tested in `terrain.rs`.
+        let p = |x: f64, z: f64, s: f64| Point {
+            x,
+            z,
+            s,
+            w: 4.0,
+            d: 1.0,
+            q: 1.0,
+        };
+        let mut c = vec![
+            p(0.0, 0.0, 10.0),
+            p(10.0, 0.0, 9.0),
+            p(20.0, 0.0, 8.0),
+            p(24.0, 0.0, 7.8),
+            p(21.0, 3.0, 5.0), // the caller has set the end to the joined level
+        ];
+        let end = c[c.len() - 1];
+        let reach = 6.0;
+        let bank = meet_at_bank(&mut c, 5.0, reach);
+        for q in &c {
+            let r = ((q.x - end.x).powi(2) + (q.z - end.z).powi(2)).sqrt();
+            if r <= reach {
+                assert_eq!(
+                    q.s,
+                    5.0,
+                    "a point {r:.2} m from the junction at {:?}",
+                    (q.x, q.z)
+                );
+            }
+        }
+        // The stretch begins where the course leaves the junction's reach; upstream unchanged.
+        let b = c[bank];
+        let r = ((b.x - end.x).powi(2) + (b.z - end.z).powi(2)).sqrt();
+        assert!((r - reach).abs() < 1e-9 && b.s == 5.0, "{r} {}", b.s);
+        assert_eq!((c[0].s, c[1].s), (10.0, 9.0));
+        // Leaving the reach and coming back into it (the seed's own case): the point back beside
+        // the junction takes its level too.
+        let mut c = vec![
+            p(-20.0, 0.0, 10.0),
+            p(-4.0, 0.0, 9.0),
+            p(4.0, -8.0, 8.5),
+            p(0.0, 0.0, 5.0),
+        ];
+        let bank = meet_at_bank(&mut c, 5.0, reach);
+        assert!(c[bank..].iter().all(|q| q.s == 5.0), "{c:?}");
+        assert_eq!(c[0].s, 10.0);
+        assert!(
+            c.iter().any(|q| (q.x, q.z) == (-4.0, 0.0) && q.s == 5.0),
+            "{c:?}"
+        );
+    }
+
     #[test]
     fn a_level_reach_takes_its_courses_mean_fall() {
         // face-a-only: a course is face-local; the faces' maps are tested in `terrain.rs`

@@ -45,8 +45,7 @@ fn measure(world: u64, f: FaceFrame) -> Measured {
     let e = world_config(NAME).unwrap().expect("the Realistic world");
     let seed = face_seed(world, f.face);
     let map = Arc::new(
-        WorldMap::for_height(seed, e.height.expect("its height field"))
-            .with_worldgen(NAME)
+        WorldMap::for_height_with_worldgen(seed, e.height.expect("its height field"), NAME)
             .unwrap(),
     );
     let g = TerrainGenerator::with_map(seed, map.clone())
@@ -102,7 +101,9 @@ both_faces!(
                 // 0.69: borders are one wandering line, not a km-wide mingling of two biomes'
                 // ground, so fewer windows straddle one (3.4 before; 2.96 on face A).
                 let per = m.biomes.distinct_per_4km2();
-                assert!(per >= 2.8, "{face:?}: {per:.2} biomes per 4 km²");
+                // 2.75: face A measures 2.79 since the cold desert went back under 220 mm (0.76),
+                // which broke up the one region of a quarter of the land (2.8 before).
+                assert!(per >= 2.75, "{face:?}: {per:.4} biomes per 4 km²");
             }
         }
     }

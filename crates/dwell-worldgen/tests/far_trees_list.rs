@@ -17,9 +17,12 @@ const AT: (i32, i32) = (-18100, -6460);
 
 fn generator(f: FaceFrame) -> TerrainGenerator {
     let e = world_config(NAME).unwrap().expect("the starter's edit");
-    let map = WorldMap::for_height(face_seed(0, f.face), e.height.expect("its height field"))
-        .with_worldgen(NAME)
-        .unwrap();
+    let map = WorldMap::for_height_with_worldgen(
+        face_seed(0, f.face),
+        e.height.expect("its height field"),
+        NAME,
+    )
+    .unwrap();
     TerrainGenerator::with_map(face_seed(0, f.face), Arc::new(map))
         .with_biomes_and_geology(&e.biomes, e.map, e.geology)
         .with_vegetation(e.vegetation)

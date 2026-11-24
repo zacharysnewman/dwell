@@ -652,6 +652,8 @@ pub enum EditCheck {
     /// Place: the cell's medium isn't the block's (block data `medium`: an air plant into water, a
     /// water plant into air).
     WrongMedium,
+    /// Place: inside a portal's no-build zone (`PortalShafts::forbids`; owner, 2026-11-23).
+    Protected,
 }
 
 /// Extra reach the server allows over `REACH_DISTANCE`: its view of the player lags the client's.
@@ -944,6 +946,9 @@ pub fn check_block_edit(
         // (`VoxelWorld::bounds`, the world's size: BUGS.md #109).
         if !world.bounds.contains_cell(p) {
             return EditOutcome::fail(EditCheck::OutOfWorld);
+        }
+        if world.portals.forbids(p) {
+            return EditOutcome::fail(EditCheck::Protected);
         }
         let existing = world.get_voxel(p[0], p[1], p[2]);
         if targetable(existing) && !info(existing).replaceable && !molds(existing) {

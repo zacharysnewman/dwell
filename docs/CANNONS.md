@@ -356,3 +356,23 @@ No build platform is needed:
 - Test: `dwell-sim` `tests/ships.rs` `a_block_placed_on_open_water_floats_a_new_raft_one_by_the_shore_stays_land`
   (both faces: a raft, a join, a pier, a block built under water). Browser check: planks placed on the harbour lake.
 
+## 18. Deeper seas (0.76, 2026-11-18)
+
+Owner: "We may need to generally deepen oceans which might mean we need to increase the stone layer depth/face depth";
+"Show me options first"; then, to the options (today's sea median 19 m, never over 22 m: the ground stops at the
+core's top, 10 m over the midplane, and sea level was 32 m; 12 m deep 750 m off a coast): "Sea level +40m and a steeper
+shelf." Built: sea level 72 m (`shared/protocol/constants.json` `seaLevel` 144 rows), `terrain.json` `seaFloor` depth
+60 m over a shelf of 800 m, and the world map's floor (`worldmap::FLOOR`) the core's top instead of a fixed −40 m.
+Measured (`cargo run --release -p dwell-worldgen --example sea_depth -- 0 1 7`): the open sea median 59.8 m, at most
+62 m; deep water within about 250 m of a coast. The whole world stands 40 m higher over the midplane; a new
+compatibility line (0.76): worlds from 0.75 open in a 0.75 build.
+
+**The deep underground (0.76, 2026-11-23).** Owner: "Increase underground size up from 10m to 512m. This will give us
+lots of room for metal ore veins and future dungeons", with "the ocean floor depth increase going along with the
+underground depth increase (solid stone, no caves)"; folded into the same line, measured first. `coreLayers` 1024 rows
+(512 m) and `seaLevel` 1152 rows (576 m: the sea 64 m over the core, a whole chunk, and the flat worlds' top `flatTopY` with it, as on main where both were row 64), so the land and sea stand as they did
+over a core 502 m deeper. Measured (`cargo run --release -p dwell-worldgen --example core_cost`, and a local world in
+Chrome on the M1, seed 0): saves hold only edited chunks and streaming loads the same chunks round a player, so the
+browser read the same (load 4.6 s against 7.2 s, GPU frame p50 9.0 against 8.7 ms, run to run noise); a chunk wholly in
+the core is filled with stone at once (no portal near), 0.37 ms a chunk when one is dug to.
+

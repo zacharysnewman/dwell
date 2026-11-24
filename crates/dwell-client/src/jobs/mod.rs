@@ -46,6 +46,15 @@ pub enum Job {
         face: u8,
         layer: u8,
     },
+    /// A portal shaft's stand-in (BUGS.md #236): the chunk as generated, with its apron from its
+    /// generated neighbours, meshed lit as open sky in its air (`Output::ChunkMesh`). The flags as
+    /// [`Job::MeshChunk`]'s.
+    StandIn {
+        coord: ChunkCoord,
+        water_tops: bool,
+        cards: bool,
+        plants: u8,
+    },
     /// A chunk's greedy mesh from its padded voxels; `origin` is its minimum corner's world cell
     /// (plants are jittered by their world position).
     MeshChunk {
@@ -206,7 +215,12 @@ pub struct Runner {
     seed: Option<u64>,
     /// The other grids' generators, built at their first job.
     grids: std::sync::Mutex<GridGenerators>,
+    /// The chunks generated for stand-ins (`Job::StandIn`), kept for their neighbours' aprons.
+    stand_ins: std::sync::Mutex<dwell_world::hash::HashMap<ChunkCoord, std::sync::Arc<Chunk>>>,
 }
+
+/// Generated chunks a runner keeps for stand-ins' aprons, at most (64 KB each).
+const STAND_IN_CACHE: usize = 192;
 
 type GridGenerators = dwell_world::hash::HashMap<
     u8,
@@ -224,6 +238,7 @@ impl Runner {
             world: dwell_world::WorldBounds::DEFAULT,
             seed: None,
             grids: Default::default(),
+            stand_ins: Default::default(),
         }
     }
 
@@ -280,6 +295,7 @@ impl Runner {
             world: dwell_world::WorldBounds::of(size),
             seed: Some(world_seed),
             grids: Default::default(),
+            stand_ins: Default::default(),
         }
     }
 
@@ -289,6 +305,80 @@ impl Runner {
                 Ok(()) => Output::Done,
                 Err(e) => Output::Failed(e),
             },
+            Job::StandIn {
+                coord,
+                water_tops,
+                cards,
+                plants,
+            } => {
+                let Some(g) = &self.chunks else {
+                    return no_world();
+                };
+                let padded = {
+                    let mut cache = self.stand_ins.lock().expect("stand-in cache");
+                    if cache.len() > STAND_IN_CACHE {
+                        cache.clear();
+                    }
+                    let mut chunk_at = |c: ChunkCoord| {
+                        cache
+                            .entry(c)
+                            .or_insert_with(|| {
+                                let mut chunk = Chunk::default();
+                                g(c, &mut chunk);
+                                std::sync::Arc::new(chunk)
+                            })
+                            .clone()
+                    };
+                    let n = dwell_world::CHUNK_SIZE;
+                    let pad = n + 2;
+                    let mut out = vec![0u16; (pad * pad * pad) as usize];
+                    for dy in -1..=1 {
+                        for dz in -1..=1 {
+                            for dx in -1..=1 {
+                                let chunk = chunk_at(ChunkCoord::new(
+                                    coord.x + dx,
+                                    coord.y + dy,
+                                    coord.z + dz,
+                                ));
+                                let range = |d: i32| match d {
+                                    -1 => n - 1..n,
+                                    0 => 0..n,
+                                    _ => 0..1,
+                                };
+                                for ly in range(dy) {
+                                    for lz in range(dz) {
+                                        for lx in range(dx) {
+                                            let (px, py, pz) =
+                                                (lx + dx * n + 1, ly + dy * n + 1, lz + dz * n + 1);
+                                            out[(px + pad * (pz + pad * py)) as usize] =
+                                                chunk.get(lx, ly, lz);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    out
+                };
+                // Lit as open sky in its air (the shaft sees the sky by the portals' data, and the
+                // far opening and its arch stand under the open sky), dark in the rock.
+                let light = padded
+                    .iter()
+                    .map(|&m| if m == 0 { dwell_world::light::OPEN } else { 0 })
+                    .collect();
+                self.run(Job::MeshChunk {
+                    padded,
+                    light,
+                    mirror: dwell_world::face_of_chunk_y(coord.y) == dwell_world::Face::B,
+                    origin: [coord.x, coord.y, coord.z].map(|v| v * dwell_world::CHUNK_SIZE),
+                    cuts: Vec::new(),
+                    damage: Vec::new(),
+                    ground: None,
+                    water_tops,
+                    cards,
+                    plants,
+                })
+            }
             Job::Generate { coord } => {
                 let Some(g) = &self.chunks else {
                     return no_world();
@@ -721,6 +811,38 @@ mod tests {
             let _ = sited;
         }
     );
+
+    #[test]
+    fn a_stand_in_job_meshes_a_portals_shaft_as_generated() {
+        // face-a-only: a chunk of the shaft under face A's opening; the stand-ins' rows on both
+        // faces are tested in dwell-worldgen's portals.rs.
+        // BUGS.md #236: a portal's shaft past the chunks held, drawn as the world has it: the
+        // stand-in is the generated chunk meshed with its generated neighbours' apron, its shaft's
+        // walls drawn (it has geometry), and a mesher alone can't make one.
+        let size = dwell_protocol::world_size::WorldSize::DEFAULT;
+        let shafts = dwell_worldgen::portal_shafts_for_sized(GENERATOR_TERRAIN, 0, size);
+        let s = shafts.shafts[0];
+        let eye = [
+            s.axis[0],
+            dwell_world::MIDPLANE_M + s.top(dwell_world::Face::A),
+            s.axis[1],
+        ];
+        let coord = shafts.stand_ins(eye)[0];
+        let r = Runner::world(GENERATOR_TERRAIN, 0);
+        let job = Job::StandIn {
+            coord,
+            water_tops: false,
+            cards: false,
+            plants: 0,
+        };
+        let Output::ChunkMesh(m) = r.run(job.clone()) else {
+            panic!("a stand-in's mesh")
+        };
+        assert!(m.opaque.byte_len() > 0, "its shaft's walls");
+        let Output::Failed(_) = Runner::mesher().run(job) else {
+            panic!("a mesher has no world")
+        };
+    }
 
     #[test]
     fn generates_hashes_and_meshes_a_chunk() {

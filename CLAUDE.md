@@ -330,6 +330,12 @@ faster.
 
 ## Known CI failures (e2e, not caused by feature work)
 
+Since 0.76 (owner, 2026-11-23) the e2e tests below that fail only under CI's software renderer end their titles in
+`@gpu`: CI leaves them out (`grepInvert` in `client/playwright.config.ts`), a local run on the GPU runs them. Run the
+tagged ones locally before a merge that touches their area, and tag (or untag) a test here and in its title together.
+`play.spec`'s "local mode streams terrain" joined them (it passes on a GPU, 2026-11-24); `characters.spec`'s "another
+client sees your body walk…" was a real timing bug (its arms check waited 5 s; fixed), not a CI-only one.
+
 Check these before chasing an e2e failure:
 
 - `e2e/touch.spec.ts` "touch controls: stick, look, and jump": the jump peak has read short of the

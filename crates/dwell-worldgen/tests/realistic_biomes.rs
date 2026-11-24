@@ -50,11 +50,11 @@ fn edit() -> Edit {
 }
 
 fn map(e: &Edit, world: u64, f: FaceFrame) -> WorldMap {
-    WorldMap::for_height(
+    WorldMap::for_height_with_worldgen(
         face_seed(world, f.face),
         e.height.expect("its height field"),
+        NAME,
     )
-    .with_worldgen(NAME)
     .unwrap()
 }
 
@@ -426,7 +426,7 @@ dwell_world::both_faces!(
                 // On low ground (the alpine presets take the high cold and dry).
                 let tally = if h > 600.0 {
                     None
-                } else if (-0.5..=12.5).contains(&g.celsius) && rain < 240.0 {
+                } else if (-0.5..=12.5).contains(&g.celsius) && rain < 200.0 {
                     Some((&mut dry, cold))
                 } else if g.celsius >= 18.0 && rain >= 2500.0 {
                     Some((&mut hot, wet))

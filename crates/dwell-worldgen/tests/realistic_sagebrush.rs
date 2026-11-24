@@ -45,8 +45,7 @@ both_faces!(
             let e = world_config(NAME).unwrap().expect("the Realistic world");
             let talus = e.geology.erosion.talus_width;
             let map = Arc::new(
-                WorldMap::for_height(seed, e.height.expect("its height field"))
-                    .with_worldgen(NAME)
+                WorldMap::for_height_with_worldgen(seed, e.height.expect("its height field"), NAME)
                     .unwrap(),
             );
             let g = TerrainGenerator::with_map(seed, map)
@@ -131,8 +130,7 @@ fn realistic(world: u64, f: FaceFrame) -> TerrainGenerator {
     let seed = face_seed(world, f.face);
     let e = world_config(NAME).unwrap().expect("the Realistic world");
     let map = Arc::new(
-        WorldMap::for_height(seed, e.height.expect("its height field"))
-            .with_worldgen(NAME)
+        WorldMap::for_height_with_worldgen(seed, e.height.expect("its height field"), NAME)
             .unwrap(),
     );
     TerrainGenerator::with_map(seed, map)

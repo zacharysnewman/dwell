@@ -991,6 +991,15 @@ function tectonicsRs(g) {
   return `crate::tectonics::Tectonics { ${body} }`;
 }
 
+/** The sea floor's curve (`seaFloor.curve`, a whole number 1–4, 1 when left out): the depth rises
+ * as the distance's share of the shelf to that power, shallow by the shore then steep (owner,
+ * 2026-11-18: "Sea level +40m and a steeper shelf"). */
+function seaCurve(sf) {
+  const c = sf.curve ?? 1;
+  if (!Number.isInteger(c) || c < 1 || c > 4) fail(`terrain: seaFloor.curve must be a whole number 1 to 4 (got ${c})`);
+  return c;
+}
+
 /** The world's groups and one biome's, merged, as Rust: the base field's and the surface's. */
 function biomeFields(t) {
   const fields = [
@@ -998,6 +1007,7 @@ function biomeFields(t) {
     ["rise_half", rf(t.inland.halfDistance)],
     ["sea_floor", rf(-t.seaFloor.depth)],
     ["shelf", rf(t.seaFloor.shelf)],
+    ["shelf_curve", `${seaCurve(t.seaFloor)}`],
     ["hill_height", rf(t.hills.amplitude)],
     ["hill_wavelength", `${t.hills.wavelength}`],
     ["hill_octaves", `${t.hills.octaves}`],
@@ -1315,6 +1325,11 @@ const HYDROLOGY = {
     maxBreachDepth: [0, 1000],
   },
   rivers: { threshold: [{ above: 0 }, 1_000_000] },
+  headwaters: {
+    minDischarge: [0, 1_000_000],
+    width: [{ above: 0 }, 50],
+    depth: [{ above: 0 }, 10],
+  },
   mouths: {
     minDischarge: [0, 1_000_000],
     deltaMaxSlope: [0, 10],
@@ -1512,7 +1527,16 @@ export function validateHydrology(data) {
     checkGroup(`${at}: rivers`, p.rivers, HYDROLOGY.rivers, [
       "geometry",
       "mouths",
+      "headwaters",
     ]);
+    // A river's headwater (owner, 2026-11-17, BUGS.md #196: "rivers ... don't seem to come from the
+    // mountains"): each source traced up its largest feeder while the flow is at least
+    // `minDischarge`, a stream `width` × `depth` m. Optional: none, no headwaters.
+    if (p.rivers.headwaters !== undefined) {
+      checkGroup(`${at}: rivers.headwaters`, p.rivers.headwaters, HYDROLOGY.headwaters);
+      if (!(p.rivers.headwaters.minDischarge < p.rivers.threshold))
+        fail(`${at}: rivers.headwaters.minDischarge must be under rivers.threshold`);
+    }
     checkGroup(`${at}: rivers.mouths`, p.rivers.mouths, HYDROLOGY.mouths, [
       "rule",
     ]);
@@ -1611,7 +1635,8 @@ export function hydrologyRust(data) {
     "",
     "#[allow(unused_imports)]",
     "use super::{",
-    "    Highlands, HydrologyParams, MouthRule, Orographic, Plates, Rain, Ranges, RiverPoint, RockBands, SmallPits,",
+    "    Headwaters, Highlands, HydrologyParams, MouthRule, Orographic, Plates, Rain, Ranges, RiverPoint, RockBands,",
+    "    SmallPits,",
     "    Tectonics,",
     "};",
     "",
@@ -1693,6 +1718,10 @@ export function hydrologyRust(data) {
     rs.push(`        small_pits: SmallPits::${pascal(p.lakes.smallPits)},`);
     rs.push(`        max_breach_depth: ${rf(p.lakes.maxBreachDepth)},`);
     rs.push(`        river_threshold: ${rf(p.rivers.threshold)},`);
+    const hw = p.rivers.headwaters;
+    rs.push(
+      `        river_headwaters: ${hw ? `Some(Headwaters { min_discharge: ${rf(hw.minDischarge)}, width: ${rf(hw.width)}, depth: ${rf(hw.depth)} })` : "None"},`,
+    );
     rs.push("        river_geometry: &[");
     for (const g of p.rivers.geometry) {
       rs.push(
@@ -1734,12 +1763,15 @@ const MIDPLANE = {
     maxHeight: [0, 10_000],
     radius: [1, 16],
     clear: [0, 64],
+    noBuild: [0, 128],
+    standInM: [0, 1024],
   },
   rim: { width: [0, 8], height: [0, 8] },
   exit: {
     push: [0, 1000],
     depth: [0, 64],
     minRise: [0, 1000],
+    crest: [0, 20],
   },
 };
 
@@ -1802,10 +1834,18 @@ export function validateMidplane(
     "count",
     "rim",
     "ladder",
+    "lining",
     "motes",
     "monument",
     "exit",
   ]);
+  // The shaft's lining (owner, 2026-11-23: "Portals should be made of bedrock. With a no build
+  // zone."): a full block no edit may change, and the no-build zone over the shaft and its rim.
+  const lining = block("portals.lining", p.lining);
+  if (lining.shape !== "full" || !lining.indestructible)
+    fail(`portals.lining ${p.lining} must be a full, indestructible block`);
+  if (p.noBuild < p.radius + p.rim.width)
+    fail(`portals.noBuild must reach past the rim (radius + rim.width = ${p.radius + p.rim.width} m)`);
   if (!moteNames(loadMotes()).includes(p.motes))
     fail(
       `portals.motes ${JSON.stringify(p.motes)} is not a look in shared/look/motes.json`,
@@ -1835,20 +1875,24 @@ export function validateMidplane(
     (k) => !["$comment", "block", "wall"].includes(k),
   );
   if (le.length) fail(`portals.ladder: unknown ${le.join(", ")}`);
-  const ladder = block("portals.ladder.block", p.ladder.block);
-  if (ladder.climbable !== true)
-    fail(`portals.ladder.block ${p.ladder.block} must be climbable`);
   if (!(p.ladder.wall in LADDER_WALLS))
     fail(
       `portals.ladder.wall must be one of ${Object.keys(LADDER_WALLS).join(", ")}`,
     );
-  const facing = ladder.facingProperty;
-  if (!(
-    facing && ladder.properties?.[facing]?.includes(LADDER_WALLS[p.ladder.wall])
-  )) {
-    fail(
-      `portals.ladder.block ${p.ladder.block} has no ${facing ?? "facing"}=${LADDER_WALLS[p.ladder.wall]} state`,
-    );
+  // `block` null: no ladder (owner, 2026-11-23: "Lets get rid of the ladders on the portals");
+  // the wall still names the column the opening's height is taken from.
+  if (p.ladder.block !== null) {
+    const ladder = block("portals.ladder.block", p.ladder.block);
+    if (ladder.climbable !== true)
+      fail(`portals.ladder.block ${p.ladder.block} must be climbable`);
+    const facing = ladder.facingProperty;
+    if (!(
+      facing && ladder.properties?.[facing]?.includes(LADDER_WALLS[p.ladder.wall])
+    )) {
+      fail(
+        `portals.ladder.block ${p.ladder.block} has no ${facing ?? "facing"}=${LADDER_WALLS[p.ladder.wall]} state`,
+      );
+    }
   }
   const mo = p.monument;
   if (typeof mo !== "object" || mo === null || Array.isArray(mo))
@@ -2204,8 +2248,11 @@ export function midplaneRust(data) {
     readFileSync(join(here, "../protocol/constants.json"), "utf8"),
   ).cellHeight;
   const p = data.portals;
-  const ladder = registryBlocks().get(p.ladder.block);
-  const state = `${p.ladder.block}[${ladder.facingProperty}=${LADDER_WALLS[p.ladder.wall]}]`;
+  const ladder = p.ladder.block === null ? null : registryBlocks().get(p.ladder.block);
+  const state =
+    ladder === null
+      ? null
+      : `${p.ladder.block}[${ladder.facingProperty}=${LADDER_WALLS[p.ladder.wall]}]`;
   const rs = [
     `// ${midplaneHeader}`,
     "",
@@ -2230,7 +2277,10 @@ export function midplaneRust(data) {
     ["rim_block", JSON.stringify(p.rim.block)],
     ["rim_width", rf(p.rim.width)],
     ["rim_rows", `${p.rim.height / cell}`],
-    ["ladder", JSON.stringify(state)],
+    ["lining", JSON.stringify(p.lining)],
+    ["no_build", rf(p.noBuild)],
+    ["stand_in", rf(p.standInM)],
+    ["ladder", state === null ? "None" : `Some(${JSON.stringify(state)})`],
     [
       "wall",
       `[${{ north: "0, -1", east: "1, 0", south: "0, 1", west: "-1, 0" }[p.ladder.wall]}]`,
@@ -2246,7 +2296,7 @@ export function midplaneRust(data) {
     ["motes", JSON.stringify(p.motes)],
     [
       "exit",
-      `PortalExit { push: ${rf(p.exit.push)}, depth: ${rf(p.exit.depth)}, min_rise: ${rf(p.exit.minRise)} }`,
+      `PortalExit { push: ${rf(p.exit.push)}, depth: ${rf(p.exit.depth)}, min_rise: ${rf(p.exit.minRise)}, crest: ${rf(p.exit.crest)} }`,
     ],
   ];
   for (const [k, v] of fields) rs.push(`        ${k}: ${v},`);
@@ -2541,9 +2591,10 @@ export function validateGrass(data, blocks, decorations) {
     throw new Error(`grass.json: ${m}`);
   };
   if (typeof data !== "object" || data === null) fail("must be an object");
-  const keys = ["$comment", "block", "on", "onRamps", "decoration", "stages", "height", ...Object.keys(GRASS)];
+  const keys = ["$comment", "grows", "block", "on", "onRamps", "decoration", "stages", "height", ...Object.keys(GRASS)];
   const extra = Object.keys(data).filter((k) => !keys.includes(k));
   if (extra.length) fail(`unknown ${extra.join(", ")}`);
+  if (data.grows !== undefined && typeof data.grows !== "boolean") fail("grows must be true or false");
   if (typeof data.block !== "string" || !blocks.has(data.block))
     fail(`block ${JSON.stringify(data.block)} is not a block of the registry`);
   if (!Array.isArray(data.on) || data.on.length === 0)
@@ -2658,6 +2709,7 @@ export function grassRust(g) {
     "",
     "/// The build's tall grass growth (ADR 0075 T3c).",
     "pub const GRASS: GrassData = GrassData {",
+    `    grows: ${g.grows !== false},`,
     `    block: ${JSON.stringify(g.block)},`,
     `    on: &[${g.on.map((o) => JSON.stringify(o)).join(", ")}],`,
     `    on_ramps: ${g.onRamps === true},`,

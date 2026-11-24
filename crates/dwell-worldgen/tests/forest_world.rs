@@ -31,9 +31,12 @@ fn edit() -> Edit {
 }
 
 fn generator(e: &Edit, f: FaceFrame, seed: u64) -> TerrainGenerator {
-    let map = WorldMap::for_height(face_seed(seed, f.face), e.height.expect("its height field"))
-        .with_worldgen(NAME)
-        .unwrap();
+    let map = WorldMap::for_height_with_worldgen(
+        face_seed(seed, f.face),
+        e.height.expect("its height field"),
+        NAME,
+    )
+    .unwrap();
     TerrainGenerator::with_map(face_seed(seed, f.face), Arc::new(map))
         .with_biomes_and_geology(&e.biomes, e.map, e.geology)
         .with_vegetation(e.vegetation)

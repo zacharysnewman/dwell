@@ -6,6 +6,153 @@ pins it.
 
 ## Open
 
+### 237. The game's tab crashed ("Aw, Snap!", error code 11) after many reloads in one tab
+
+Found 2026-11-24 in Claude's automation Chrome on the 0.76 branch's dev build (the owner shared the screenshot): after
+~7 reloads of `?fresh=1&seed=0&spawn=portal` in one tab within ~30 minutes (each a fresh local world, flown down a
+portal's shaft with the spyglass), the next reload crashed the renderer (code 11: the renderer process died, not a
+Rust panic). A fresh browser loaded it fine. Suspects: memory kept across reloads in the tab (WebGPU buffers or the
+workers' WASM), or the new stand-in chunks (each job worker caches up to 192 generated chunks, ~12 MB). **Measured
+(2026-11-24):** no leak: 8 reloads of the portal world in one tab, the renderer process plateaus at 2.8–3.15 GB (the
+JS heap ~130–150 MB). Not the stand-ins: the default spawn holds the same (meshes 642 MB without a portal near, 593
+with). What a tab holds (`__dwell.memory()`), 0.76 against the live 0.75.20 on seed 0's spawn: core 263 / 180 MB,
+local server 219 / 189 MB, the 4 generation workers ~200 / ~166 MB each (the mesh workers ~30–40 MB), meshes 642 /
+591 MB: about 300 MB (~10%) more a tab on 0.76, its bigger world maps held in every worker. The crash was memory
+pressure (the owner's Chrome running the game too, builds alongside), not a leak. Left: ~3 GB a game tab is a lot on
+an 8 GB Mac; sharing the maps between the generation workers (or fewer of them) would be the lever. Open as a memory
+item after 0.76.
+
+
+### 236. Down a portal's shaft: the far face's sky shows through, and light comes in behind a falling player
+
+Owner, 2026-11-24 (the 0.76 branch's local build, a portal on seed 0): "It looks like the chunks aren't loading very
+far down for the portal, so I can just see the other world face's sky. And it seems like they might unload behind
+as I fall, allowing light to shine down into the hole as well. What are possible solutions." Suspects: the full-detail
+view is the server's sphere of 3 chunks (48 m) round the player, and the far view (LOD) can't draw a shaft a few
+metres wide through the 1.15 km core, so past ~48 m nothing is drawn and the far face's sky shows; and the light
+treats a chunk not held above a cell as open sky (`light.rs` `kind_of`: `open_above` when the chunk above is
+`NONE`; `unload` lets "cells below it take the open sky again"), so chunks dropped above a falling player relight
+the shaft as open sky. The owner picked "The tube mesh, plus #2 for lights?", then: "The possible problem I'm
+wanting to correct with #2 is the structure arches will mostly block the sky/light for the tube." **Fixed on the
+0.76 branch (2026-11-24):** (1) stand-in chunks down each shaft within `standInM` (96 m) of the eye, meshed from the
+portals' data where the chunks aren't drawable (`portals.rs` `a_shafts_stand_ins_are_open_where_its_chunks_are_and_
+solid_elsewhere`: every stand-in's open cells are the generated chunk's, the shaft's whole length); (2) the light's
+sky test: a chunk not held lets the sky in only where the generator knows it open (`light_tests.rs`
+`chunks_known_not_open_let_no_sky_into_a_shaft_under_them`, the old open sky its first assertion); (3) the shaft's
+cells see the sky by the portals' data, under the arch (`a_shaft_sees_the_sky_by_the_portals_data_under_a_roof`,
+dim under the roof before; natively seed 0's shaft at 482 m reads sky 15 with it, 0 without:
+`examples/shaft_light.rs`). Seen in the browser: from the rim, bedrock walls down to the far face's sky. Open until
+the owner's look.
+
+
+### 232. Boulders still appear in game after their removal
+
+Owner, 2026-11-23: "There shouldn't be boulders. These were supposed to be removed. But I've seen them in game
+still." The 0.74 line took the `boulders` placement out of every biome, but kept talus (rocks at cliff bases), whose
+`structures` include `dwell:proto_rock` (2 of 10) beside `talus_stone` and `talus_block`; talus is listed by every
+Realistic biome (`shared/worldgen/worlds/realistic.json`). Fix on the 0.76 line, with a test that no placement a
+world lists stands a boulder. **Fixed on the 0.76 branch (2026-11-23):** `dwell:proto_rock` out of talus's
+`structures` (talus keeps its 1 m stones and 2 m blocks, the owner's answer); `gen.test.mjs` "no placement a biome or
+world lists stands a boulder" failed before (talus) and passes after.
+
+### 230. "Finding a place to stand" takes up to 20 s
+
+Owner, 2026-11-23: "I've noticed it takes up to 20s. I think this benchmark may be wrong, I'm not sure. Could be for
+existing worlds it's longer." Measured before: ~2 s on a new world (the spawn search for a level patch near a river).
+To measure: new and reopened worlds, local and joined, in the browser and the Mac app. Owner should see: the wait about
+a second or less, on new and existing worlds. WORK_QUEUE "Q&A with the owner, 2026-11-23".
+Dropped 2026-11-23 (owner): "Actually can drop it, I'm getting <4/s spawn times."
+
+### 231. Back-flooded river chunks stay in low detail
+
+Owner, 2026-11-23: "River chunks that have been back flooded (due to damming) seem to never load in higher detail they
+seem stuck in low detail (unless you move really close to load in close high detail)." A dammed river's water spreads
+back over land (the water grid's edits); those chunks' far LOD sections seem never to refine, so they draw at low
+detail until the near chunks load. Suspect: the LOD's refinement of a section whose water changed after generation
+(its bounds or its edits not marking it for a finer level). Owner should see: a dammed, back-flooded river valley
+drawn at the same detail as the land round it at every distance. WORK_QUEUE "Owner's list, 2026-11-23" §3.
+
+### 229. The shake on a hit is barely visible, one face, one cell
+
+Owner, 2026-11-23 (doors, ladders, dynamite: 2 hits, a shake on the first): "Look is bad, it should work like the block
+damage does with showing blocks underneath. Do an actual good shake. The current one looks weird, only affects one
+face, and is barely detectable. Also, I think cannons should maybe be included in this. Also the shake should affect
+the "thing" as a whole, so not just the voxel of the door you hit, but the whole door." Owner should see: a door hit
+with a tool shaking whole and clearly, the blocks behind and under it showing (no culled faces), the same for ladders,
+dynamite and cannons. WORK_QUEUE "Q&A with the owner, 2026-11-23".
+
+### 228. Tall grass left floating over water when water floods under its stand
+
+Owner, 2026-11-23: "Also, tall grass should break over water and when there's no supporting stock down to a solid
+block. Currently if water floods under it breaks the lower blocks but not the tall grass above the water." A stand's
+cells each stand on the one under it (`needsSupport` below); the water's flooding takes the lower cells but not the
+cells above them. Owner should see: water flooding under a stand takes the whole stand; no grass cell stays without
+its stand running down to a solid block. WORK_QUEUE "Owner's list, 2026-11-23" §4.
+
+### 227. A player in a hull's dry air below the waterline swims as if in the sea
+
+Owner, 2026-11-23: "the general water plane that a dynamic object with air inside of it, shouldn't affect the player,
+buoyancy, walking/swimming etc within that air (obviously if it's flooded it should affect them still)." The
+controller's water reads the world's water cells alone. Owner should see: walking in a boat's dry inside below the
+waterline as on land, no underwater look or sound; swimming once it floods. With #221 (one rule: a hull's dry air
+overrides the world's water). WORK_QUEUE "Owner's list, 2026-11-23" §1.
+
+### 226. Builders lay a blueprint's slopes facing their own way, not the blueprint's
+
+Owner, 2026-11-23: "When placing blocks from blueprints like slopes, should face the direction in the blueprint,
+regardless of the facing player/npc facing direction. I noticed the NPCs were building roofs incorrectly because they
+were at different angles when building the roof slopes on my custom house with thatch." Owner should see: builders
+putting up a blueprint's thatch roof with every slope facing as in the blueprint. WORK_QUEUE "Owner's list, 2026-11-23" §5.
+
+### 225. A tree's leaves don't fade near the camera as a leaf block does
+
+Owner, 2026-11-23: "Leafy leaves should fade like the leaf block when you get close to it." Owner should see: a tree's
+leaves dissolve as the camera comes close. WORK_QUEUE "Owner's list, 2026-11-23" §4.
+
+### 224. The disturbed sea never settles: fountains and splashes keep moving
+
+Owner, 2026-11-23: "Ocean water not settling when affected on the surface, but creating big fountains and splashes and
+that move around constantly (until I get far enough away?)." Owner should see: the sea disturbed settles back flat in
+seconds. WORK_QUEUE "Owner's list, 2026-11-23" §3.
+
+Owner, 2026-11-23: "Currently if you place a block one block above sea level over the ocean, so it's almost touching
+the water surface, but just above it not in it, it causes the water to be immediately affected, often resulting in
+explosive fountains of water or acts like a dam." A repro: a block one row over the sea's surface. Owner should see: the
+sea untouched by a block above it, no fountains, no damming.
+
+### 223. Ladders and doors don't work on moving bodies
+
+Owner, 2026-11-23: "Ladders and Doors should work normally on dynamic objects." Owner should see: a ladder on a ship
+climbs, a door on a ship opens and closes with Use. WORK_QUEUE "Owner's list, 2026-11-23" §1.
+
+### 222. Moving bodies that already exist aren't synced to a joining player
+
+Owner, 2026-11-23: "Pre-Existing dynamic objects should be synced across the network." Owner should see: a player
+joining sees the rafts, boats and felled logs already in the world where the host does. WORK_QUEUE §1.
+
+### 221. Water shows inside a hull from below and above
+
+Owner, 2026-11-23: "Water inside of dynamic objects should not visible from underneath or above. It needs a dynamic
+clipping, not column-based, since dynamic objects don't align with columns." H3 part one (0.75.14, CANNONS.md §12)
+hides the lake in each hull's turned dry-air box (the four nearest); the owner still sees it. Owner should see: no
+water drawn in a hull's dry inside from any side, at any turn. WORK_QUEUE §1.
+
+### 220. Boats stop dead in still water instead of gliding on
+
+Owner, 2026-11-23: "Floating objects need more inertia, boats essentially never stop moving."; clarified: "in real water
+boats don't often come to a stop, they keep moving in the same direction for a while even without wind or a motor
+before the tide/currents exert enough force to move in that direction." The linear water drag (`water.drag` 0.15/s)
+stops a slow boat in seconds. Owner should see: a boat let go of keeps gliding, slowing gently over about a minute, and
+drifts with a current. WORK_QUEUE "Owner's list, 2026-11-23" §1.
+
+### 219. A Realistic snow line's edge reads speckled (small patches)
+
+Found 2026-11-18 (0.76's deeper seas moved the biome-border windows `realistic_bands` samples): on seed 4065579781 face
+A at (−21950, −8850), ~1,020 m above the sea, grass, snowy grass and stone meet in patches averaging 1,178 m² (the
+speckle bar was 1,500 m², WORK_QUEUE item 15: "speckled terrain looks gross"). The bar is 1,100 m² until this is looked
+at. Owner should see: a snow line on a Realistic mountainside as broad patches of snow and grass, not speckle. Check it
+in the browser: `?worldgen=test:realistic&seed=4065579781&fresh=1&at=-21950,1120,-8850`.
+
 ### 218. The ship's wheel always faced north
 
 Found 2026-11-18 (not reported): the mesher's style kept a block's facing only for the ladder look, so the wheel look
@@ -168,6 +315,15 @@ tree's box now covers its full-grown tree (`grown_bounds`, memoised by species a
 16 cells wider. Test: `leaf_tints` `a_full_grown_tree_lies_in_its_owners_box` (both faces; red with the generated
 boxes, green now).
 
+**Reopened 2026-11-23 (owner):** "#197 is not fixed still seeing all kinds of overlap with billboards and trees, likely
+not noticed since trees grow and have many possible states and distances. We likely need better (non-visual) testing
+around this." To do: a non-visual invariant over every species, growth stage, seed variant and world day, at every
+distance band: each tree is drawn exactly once, its full mesh (leaves and logs) or its impostor, both only within the
+fade, decided from the same data the renderer and the chunk mesher use (the hand-over distance, the tree's box, the
+far tile's stage); plus a counter in the dev telemetry of trees drawn both ways in a frame, read by a bench flight
+through a forest. Owner should see: flying over and through forests at any day, no tree drawn as billboard and full
+tree at once, no trunk beside a billboard.
+
 ### 196. Realistic's rivers don't start in the mountains
 
 Owner, 2026-11-16: "our rivers in realistic don't seem to come from the mountains, just random points in the world."
@@ -310,6 +466,10 @@ Owner, 2026-11-16: "I see the tall grass is like stacking when it grows but that
 extend or stretch up. That looks really bad stacked with gaps." (Photo: tall grass two and three cells high drawn as
 separate short tufts one over another, gaps between them.) Owner should see: tall grass that grows taller as one
 stand, its blades stretching up, no stacked tufts or gaps.
+Reopened 2026-11-23 (owner): "we need to correct the way these render connecting vertically because it looks like 3
+separate and non-connecting tall grass pieces stacked on top of each other which looks bad." The stalk cells under the
+top cell's blades still read as three stacked pieces. With it, the stand's maximum goes from 2 m to 1.5 m ("max grass
+growth to 3 blocks, 1.5m"). WORK_QUEUE "Owner's list, 2026-11-23" §4.
 
 ### 191. A fallen tree's logs settle out of line
 
@@ -1202,6 +1362,57 @@ the first ladder went there (it now waits for the cell).
 
 
 ## Fixed
+
+### 235. A held Place built a quarter slower on a page whose clock runs a little fast
+
+Found 2026-11-24 by `game_local.rs` `a_held_place_builds_at_the_datas_rate_at_sixty_five_and_three_frames_a_second`
+on the 0.76 line: at 5 fps it built 3 pieces a frame for the data's 4 (15 a second, not 20). Not the height itself:
+after the heavier 0.76 join the client predicted ticks ~2% fast (61.2 a second) while catching up its clock, and the
+held stroke's pace (`BuildDrag::aim_at`) was capped at one piece, so the tick crossing a piece lost its overshoot:
+three ticks fell 2% short and every piece waited for a fourth. **Fixed on the 0.76 branch (2026-11-24):** the
+crossing call keeps its overshoot (a stroke already holding a piece still keeps just one: no burst after a block).
+Red → green: `build_drag.rs` `a_held_stroke_keeps_the_rate_when_ticks_come_a_little_fast` (16 a second before) and
+the game_local test.
+
+### 233. A 1.16 m step in the ground near a confluence (0.76's river data, seed 7 face B)
+
+Found 2026-11-23 by `no_seam_where_river_valleys_meet::b` (terrain.rs) once 0.76's rivers from the mountains (river
+threshold 0.15 and headwaters, `shared/worldgen/hydrology.json`) were in: two dry columns at (13106, −8864) and
+(13107, −8864) step 1.05 m and 1.14 m against the slope either side (590.77 → 589.61 m, then flat 589.51 m). Not
+a terrain volume (the column's `base`, its height before a volume, equals its height), and every channel's hit at
+the unwarped point (distance, half-width, level, valley) changes smoothly across the step (`examples/seam_probe.rs 7
+13102 13110 -8864`); the old river data has none there. Suspects: the carve's own inputs at the meander-warped
+point, a branch of the valley/levee rules switching there, or the map's height field round the new small rivers. **Fixed on the 0.76 branch (2026-11-24):** the levee. A
+column's levee is the highest of every channel near, and a channel counts only within its valley's reach. A steep
+tributary's segment 43 m off (#21152, its water at 22.1 m against the main river's 16.0) still held the ground up at
+16.77 m there, over the land, and one column on it dropped out of the reach: its levee vanished at once (16.77 →
+15.51). Each channel's raise now fades out over the last quarter of its reach (`terrain.rs`); the ground falls
+smoothly across x 13102–13110. Red → green: `no_seam_where_river_valleys_meet::b`.
+
+### 234. Blasts and water behave differently with the ground at 576 m (0.76's sea level)
+
+Found 2026-11-23: with the sea level and the flat worlds' top at row 1152 (576 m) instead of row 64 (32 m), on the
+same flat-world fixtures: one loosened piece directly under a buried blast moves up at 1.05 m/s instead of resting
+(`explosives.rs` `the_loosen_shell_past_the_radius_becomes_pieces_given_no_impulse`; it rests with the old constants,
+and with the 20-row core and the new sea level it moves: the height, not the core); a flush charge's debris doesn't
+settle in 20 s and a blast's heap keeps one body moving after 12 s (`explosives.rs`, `collapse.rs`); a lake cut open
+leaves water at its far corner (`water.rs` `a_lake_cut_open_drains_on_after_its_player_leaves`). Ruled out: Rapier's
+precision (f64), the water's levels as f32, the build volume (50 000 cells), the sea level (the piece moves with the
+flat top at row 1152 and the sea back at row 64: the flat ground's height, `FLAT_TOP_Y`, is the trigger). Suspect: something that reads a height
+or row against a fixed number (a chunk or section index, a level offset) in the blast or the water. Also two water
+tests need new sites: seed 0's dam site at (2349–2380, 7452) no longer backs up (its river changed with 0.76's
+rivers). **Fixed on the 0.76 branch (2026-11-24):** not the height itself: three precision and ordering edges that
+the old ground (row 64) happened to miss. (1) Parry keeps a voxel's contact points within 1 cm of it (its
+`test_voxel`, the voxel grown by 1e-2), and a piece was drawn in by exactly 1 cm (`PIECE_SKIN`): in a pit one cell
+wide the rounding of where the pit lay kept a wall's bogus point and threw the piece up at ~1 m/s, at most heights
+(2035 of 2400 rows at x 0, in 16-cell bands along x) and not row 61. `PIECE_SKIN` 1.5 cm (2 cm let a surface blast's
+heap rattle 36% longer); `physics.rs` `a_piece_in_a_one_cell_pit_rests_wherever_the_pit_lies` (544 of 544 pits
+threw their piece before). (2) A piece settling took cells a neighbour still moving lay in, sealing it in the rock
+(the flush charge's crater floor: in place for 10 s, jittering until the 30 s backstop); now a moving piece the
+settled cells reach into settles in the same pass (the flush and heap tests, red before). (3) The water's face law
+formed surfaces as floor + depth in f32, good to 6e-5 m at 577 m, under a film's depth (`DRY` 1e-4): the lake's far
+corner never drained. Now measured from the higher floor (`water::tests`
+`the_face_law_moves_a_film_alike_at_any_height`, red before). The dam-site tests: seed 0's river still runs through the site (course 76, 5.4 m wide), 576 m higher; their wall and scanned rows were fixed numbers under it, now taken from the river's water row in the height field.
 
 ### 207. A break's hits went by the tool held when the server applied it, not when it was made (found 2026-11-17; fixed after 0.73.14)
 

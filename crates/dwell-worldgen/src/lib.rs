@@ -54,6 +54,11 @@ pub use terrain::TerrainGenerator;
 
 /// The block the structure sandbox (`GENERATOR_SANDBOX`) is made of, by name (block data
 /// `"indestructible": true`, so its ground stays to build on).
+/// The lowest the ground stands (m, face-local over the midplane): 1 m over the stone core's top,
+/// so the deepest sea's bed lies on the core and never floods its stone (0.76's deeper seas; owner,
+/// 2026-11-18: "Sea level +40m and a steeper shelf").
+pub const GROUND_MIN_M: f64 = dwell_world::MIDPLANE_M + dwell_world::CORE_M + 1.0;
+
 pub const SANDBOX_FLOOR: &str = "dwell:sandbox_floor";
 
 /// The sandbox's layers: the flat world, all floor block.
@@ -192,7 +197,18 @@ pub fn portal_shafts_for_sized(
             top: [top(dwell_world::Face::A, s), top(dwell_world::Face::B, s)],
         })
         .collect();
+    // The stand-ins reach over the far opening and across as far as its monument (its arch).
+    let rim = f64::from(p.rules.rim_rows) * dwell_world::CELL_H;
+    let (over, across) = p.monument.as_ref().map_or((rim, 0.0), |m| {
+        let [x, y, z] = m.size;
+        (
+            rim + f64::from(y) * dwell_world::CELL_H,
+            f64::from(x.max(z)) / 2.0 + 1.0,
+        )
+    });
     dwell_world::portal_shafts::PortalShafts::new(shafts, p.rules.exit)
+        .with_no_build(f64::from(p.rules.no_build))
+        .with_stand_ins(f64::from(p.rules.stand_in), over, across)
 }
 
 /// A dev spawn by a portal (`?spawn=portal`, BIFACIAL_WORLD.md §6): on face `face`'s rim over the

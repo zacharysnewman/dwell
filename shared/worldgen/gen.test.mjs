@@ -1,7 +1,7 @@
 // The terrain data's validation and generation (decorations, the height field, placements and the hydrology profiles) (node --test shared/worldgen/gen.test.mjs).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -387,6 +387,8 @@ test('a bad hydrology profile fails with its name, the key and the problem', () 
     [(p) => p.rivers.geometry.reverse(), /medium: rivers\.geometry discharges must increase/],
     [(p) => (p.rivers.geometry[1].width = 1), /widths and depths must not decrease/],
     [(p) => (p.rivers.mouths = {}), /medium: rivers\.mouths\.minDischarge/],
+    [(p) => (p.rivers.headwaters.minDischarge = 1), /medium: rivers\.headwaters\.minDischarge must be under rivers\.threshold/],
+    [(p) => (p.rivers.headwaters.width = 0), /medium: rivers\.headwaters\.width/],
     [(p) => (p.biomes = []), /medium: unknown biomes/],
   ];
   for (const [edit, message] of cases) {
@@ -431,15 +433,17 @@ test('portal rules changed by data alone are emitted', () => {
   const m = loadMidplane();
   m.portals.count = [2, 2];
   m.portals.radius = 4;
-  m.portals.ladder.wall = 'east';
+  m.portals.ladder = { block: 'dwell:ladder', wall: 'east' };
   m.portals.rim = { block: 'dwell:sand', width: 2, height: 1 };
   m.bedrock.thickness = 2.5;
-  m.portals.exit = { push: 12.5, depth: 3, minRise: 9 };
+  m.portals.exit = { push: 12.5, depth: 3, minRise: 9, crest: 4 };
   const rs = midplaneRust(validateMidplane(m, blocks));
-  assert.match(rs, /exit: PortalExit \{ push: 12\.5, depth: 3\.0, min_rise: 9\.0 \},/);
+  assert.match(rs, /exit: PortalExit \{ push: 12\.5, depth: 3\.0, min_rise: 9\.0, crest: 4\.0 \},/);
   assert.match(rs, /count_min: 2,/);
   assert.match(rs, /radius: 4\.0,/);
-  assert.match(rs, /ladder: "dwell:ladder\[facing=west\]",/);
+  assert.match(rs, /ladder: Some\("dwell:ladder\[facing=west\]"\),/);
+  // The build's: no ladder (owner, 2026-11-23).
+  assert.match(midplaneRust(validateMidplane(loadMidplane(), blocks)), /ladder: None,/);
   assert.match(rs, /wall: \[1, 0\],/);
   assert.match(rs, /rim_block: "dwell:sand",/);
   assert.match(rs, /rim_rows: 2,/);
@@ -1410,4 +1414,25 @@ test('a surface block without ramps fails naming it and where it is placed', () 
   // A fixture biome placing a block with no ramps (torch stands in for a new terrain block).
   const biome = { name: 'test:new_ground', bands: [{ name: 'only', ground: 'dwell:torch', under: 'dwell:dirt', rock: 'dwell:stone', shoreBlock: 'dwell:sand' }] };
   assert.throws(() => validateSurfaceRamps(surfaceBlocks({ biomes: [biome], worlds: [] })), /biome test:new_ground band only ground: dwell:torch .* no ramps/);
+});
+
+test('no placement a biome or world lists stands a boulder (owner, 2026-11-23, BUGS.md #232)', () => {
+  // "There shouldn't be boulders. These were supposed to be removed." The loose `boulders`
+  // placement was unlisted in 0.74; talus kept `dwell:proto_rock`, the same boulder, until 0.76.
+  const dir = dirname(fileURLToPath(import.meta.url));
+  const read = (p) => JSON.parse(readFileSync(join(dir, p), 'utf8'));
+  const listed = new Set();
+  const take = (b) => (b?.placements ?? []).forEach((n) => listed.add(n));
+  for (const w of ['archipelago', 'forest', 'realistic', 'starter', 'tall_peak']) {
+    for (const b of read(`worlds/${w}.json`).biomes ?? []) take(b);
+  }
+  take(read('biomes/default.json'));
+  for (const f of readdirSync(join(dir, 'biomes/presets'))) take(read(`biomes/presets/${f}`));
+  assert.ok(listed.has('talus'), 'talus is listed (the test sees the lists)');
+  const placements = read('placements.json').placements;
+  for (const name of listed) {
+    const p = placements.find((e) => e.name === name);
+    assert.ok(p, `${name} is a placement`);
+    assert.ok(!('dwell:proto_rock' in (p.structures ?? {})), `${name} stands a boulder (dwell:proto_rock)`);
+  }
 });

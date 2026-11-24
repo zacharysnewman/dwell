@@ -4,16 +4,10 @@
 
 use std::path::{Path, PathBuf};
 
-const INPUTS: &[&str] = &[
-    "src/base.rs",
-    "src/noise.rs",
-    "src/island.rs",
-    "src/terrain.gen.rs",
-    "src/hydrology",
-    "src/worldmap/codec.rs",
-    "src/worldmap/mod.rs",
-    "../../shared/protocol/constants.json",
-];
+/// Every source of the crate (a Realistic map also reads the plates, the geology and the world
+/// configs, and their generated data lives in `src`; 2026-11-23: the narrower list let a cached
+/// Realistic map outlive a change to the plates) and the world's constants.
+const INPUTS: &[&str] = &["src", "../../shared/protocol/constants.json"];
 
 fn files(p: &Path, out: &mut Vec<PathBuf>) {
     if p.is_dir() {

@@ -1086,3 +1086,38 @@ fn a_read_outside_the_controllers_window_is_the_generated_chunk() {
         "after it: the ground again"
     );
 }
+
+#[test]
+fn nothing_is_built_in_a_portals_no_build_zone() {
+    // face-a-only: the zone is a column's distance from a portal's axis, every row alike (the
+    // portal_shafts unit test checks rows on both faces); this checks the place check obeys it.
+    use dwell_world::portal_shafts::{PortalShafts, Shaft};
+    let eye = [0.5, 1.62, 0.5];
+    let dirt = s("dwell:dirt");
+    let mut world = ground();
+    assert_eq!(
+        check(&mut world, place([0, -1, 2], 2, dirt), eye, &[]).check,
+        EditCheck::Ok
+    );
+    let mut world = ground();
+    // A portal 7 m off the placed cell with a 7.5 m zone (owner, 2026-11-23: "With a no build zone").
+    world.portals = PortalShafts::new(
+        vec![Shaft {
+            axis: [0.5, 9.5],
+            radius: 2.5,
+            top: [0.0, 0.0],
+        }],
+        Default::default(),
+    )
+    .with_no_build(7.5);
+    assert_eq!(
+        check(&mut world, place([0, -1, 2], 2, dirt), eye, &[]).check,
+        EditCheck::Protected,
+        "a block 7 m from the axis"
+    );
+    // Breaking there is still allowed (the shaft's own wall is bedrock).
+    assert_eq!(
+        check(&mut world, brk([0, -1, 2], 2), eye, &[]).check,
+        EditCheck::Ok
+    );
+}

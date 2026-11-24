@@ -235,6 +235,20 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             w.u8(1);
             [*level, *i, *k].into_iter().for_each(|v| w.i32(v));
         }
+        Job::StandIn {
+            coord,
+            water_tops,
+            cards,
+            plants,
+        } => {
+            w.u8(15);
+            [coord.x, coord.y, coord.z]
+                .into_iter()
+                .for_each(|v| w.i32(v));
+            w.u8(u8::from(*water_tops));
+            w.u8(u8::from(*cards));
+            w.u8(*plants);
+        }
         Job::TownCell { face, i, k } => {
             w.u8(14);
             w.u8(*face);
@@ -548,6 +562,12 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
             i: r.i32()?,
             k: r.i32()?,
         },
+        15 => Job::StandIn {
+            coord: ChunkCoord::new(r.i32()?, r.i32()?, r.i32()?),
+            water_tops: r.u8()? == 1,
+            cards: r.u8()? == 1,
+            plants: r.u8()?,
+        },
         14 => Job::TownCell {
             face: r.u8()?,
             i: r.i32()?,
@@ -857,6 +877,12 @@ mod tests {
                 face: 1,
                 i: -3,
                 k: 2,
+            },
+            Job::StandIn {
+                coord: ChunkCoord { x: 0, y: -1, z: 0 },
+                water_tops: true,
+                cards: false,
+                plants: 2,
             },
             Job::LodBounds {
                 level: 3,

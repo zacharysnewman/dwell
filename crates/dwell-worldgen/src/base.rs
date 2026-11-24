@@ -157,14 +157,11 @@ impl BaseField {
         let base = if coast > 0.0 {
             h.inland_rise * (coast / (coast + h.rise_half))
         } else {
-            h.sea_floor * clamp01(-coast * (1.0 / h.shelf))
+            h.sea_floor * shelf_share(clamp01(-coast * (1.0 / h.shelf)), h.shelf_curve)
         };
         let land = smooth_step(h.hill_fade_from, h.hill_fade_to, coast);
         let relief = base + land * h.hill_height * 2.0 * hills + h.bump_height * 2.0 * bumps;
-        Some(
-            (dwell_world::SEA_LEVEL_M as f32 + relief)
-                .max((dwell_world::MIDPLANE_M + dwell_world::CORE_M) as f32),
-        )
+        Some((dwell_world::SEA_LEVEL_M as f32 + relief).max(crate::GROUND_MIN_M as f32))
     }
 
     /// A Realistic world's height (m, face-local) at (x, z) over its plates' `coast` distance
@@ -201,13 +198,12 @@ impl BaseField {
         let base = if coast > 0.0 {
             h.inland_rise * (coast / (coast + h.rise_half))
         } else {
-            h.sea_floor * clamp01(-coast * (1.0 / h.shelf))
+            h.sea_floor * shelf_share(clamp01(-coast * (1.0 / h.shelf)), h.shelf_curve)
         };
         let land = smooth_step(h.hill_fade_from, h.hill_fade_to, coast);
         let relief =
             base + land * vary * h.hill_height * 2.0 * hills + vary * h.bump_height * 2.0 * bumps;
-        (dwell_world::SEA_LEVEL_M as f32 + relief)
-            .max((dwell_world::MIDPLANE_M + dwell_world::CORE_M) as f32)
+        (dwell_world::SEA_LEVEL_M as f32 + relief).max(crate::GROUND_MIN_M as f32)
     }
 
     /// A Realistic world's warped sample point (plates.json `variety.relief.warp`; noise lattice m).
@@ -280,4 +276,10 @@ impl BaseField {
         let land = smooth_step(self.h.hill_fade_from, self.h.hill_fade_to, coast);
         f64::from(land) * r.swell_height * 2.0 * f64::from(swell)
     }
+}
+
+/// `t` to the power `curve` (the sea floor's shelf curve, a whole number), by multiplication, so
+/// native and WASM agree bit for bit.
+fn shelf_share(t: f32, curve: u32) -> f32 {
+    (1..curve.max(1)).fold(t, |p, _| p * t)
 }

@@ -172,9 +172,12 @@ test('another client sees your body walk, sprint, crouch and jump, and you see y
       })
       .toBe(true);
     await call(a, 'd.select(0)');
-    // A's arms, holding the hotbar's block.
+    // A's arms, holding the hotbar's block. Their mesh arrives a few seconds after the join (5 s
+    // was too short on a GPU too, 2026-11-24).
     await expect
-      .poll(async () => (await call<{ arms: boolean }>(a, 'd.renderStats()')).arms)
+      .poll(async () => (await call<{ arms: boolean }>(a, 'd.renderStats()')).arms, {
+        timeout: 20_000,
+      })
       .toBe(true);
     await call(a, 'd.look(0, -20)');
     await shot(a, 'a-first-person');
