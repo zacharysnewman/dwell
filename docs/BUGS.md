@@ -14,7 +14,8 @@ same flat-world fixtures: one loosened piece directly under a buried blast moves
 and with the 20-row core and the new sea level it moves: the height, not the core); a flush charge's debris doesn't
 settle in 20 s and a blast's heap keeps one body moving after 12 s (`explosives.rs`, `collapse.rs`); a lake cut open
 leaves water at its far corner (`water.rs` `a_lake_cut_open_drains_on_after_its_player_leaves`). Ruled out: Rapier's
-precision (f64), the water's levels as f32, the build volume (50 000 cells). Suspect: something that reads a height
+precision (f64), the water's levels as f32, the build volume (50 000 cells), the sea level (the piece moves with the
+flat top at row 1152 and the sea back at row 64: the flat ground's height, `FLAT_TOP_Y`, is the trigger). Suspect: something that reads a height
 or row against a fixed number (a chunk or section index, a level offset) in the blast or the water. Also two water
 tests need new sites: seed 0's dam site at (2349–2380, 7452) no longer backs up (its river changed with 0.76's
 rivers). Open; blocks 0.76's merge (red tests).
