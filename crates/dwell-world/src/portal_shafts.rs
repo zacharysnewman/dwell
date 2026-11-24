@@ -177,7 +177,6 @@ mod tests {
         crest: 3.0,
     };
 
-    // face-a-only: the lift reads a face's opening by `Shaft::top`; face B's is tested alike below.
     #[test]
     fn no_block_is_placed_in_a_portals_no_build_zone() {
         // both-faces: the zone is a column's distance from an axis, at every row of both faces.
@@ -193,6 +192,7 @@ mod tests {
 
     #[test]
     fn the_lift_tops_a_rising_body_out_three_metres_over_the_opening() {
+        // both-faces: each face's opening by `Shaft::top`, in turn.
         let p = shafts();
         let g = 20.0f32;
         for face in [Face::A, Face::B] {
