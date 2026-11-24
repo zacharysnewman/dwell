@@ -345,8 +345,20 @@ fn run_boxes(line: &[[f64; 2]]) -> Vec<[f64; 4]> {
         .map(|k0| {
             let k1 = (k0 + RUN).min(line.len() - 1);
             line[k0..=k1].iter().fold(
-                [f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY],
-                |b, v| [b[0].min(v[0]), b[1].min(v[1]), b[2].max(v[0]), b[3].max(v[1])],
+                [
+                    f64::INFINITY,
+                    f64::INFINITY,
+                    f64::NEG_INFINITY,
+                    f64::NEG_INFINITY,
+                ],
+                |b, v| {
+                    [
+                        b[0].min(v[0]),
+                        b[1].min(v[1]),
+                        b[2].max(v[0]),
+                        b[3].max(v[1]),
+                    ]
+                },
             )
         })
         .collect()
@@ -1115,7 +1127,11 @@ mod tests {
             let boxes = run_boxes(&line);
             for _ in 0..500 {
                 let p = [next(), next()];
-                assert_eq!(to_line_boxed(p, &line, &boxes), to_line(p, &line), "{n} vertices at {p:?}");
+                assert_eq!(
+                    to_line_boxed(p, &line, &boxes),
+                    to_line(p, &line),
+                    "{n} vertices at {p:?}"
+                );
             }
             // On the line's own vertices and segment midpoints (distance 0 and ties).
             for w in line.windows(2) {

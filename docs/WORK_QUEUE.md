@@ -117,7 +117,15 @@ context) at a time with a choice to table it as well as the other options?" Answ
   and never going to be used again." Planned: one folder per worldgen version (a hash of the worldgen code and data)
   under the build's `target/`; a run that opens the cache deletes every other version's folder first, so only the
   live version's maps are ever on disk (a few MB a seed); `cargo clean` removes it all. Owner should see: the cache
-  never growing past the current version's maps. Owner should see: the full worldgen suite done in
+  never growing past the current version's maps.
+  **Built (2026-11-23, at the owner's reminder):** in the existing native map cache (`worldmap::cache`, the temp
+  directory's `dwell-world-maps`) rather than a second one under `target/`, so one rule covers both: the first
+  time a process opens the directory it deletes every map another build made (it held 751 MB, 109 maps of three
+  old builds, never read again; after: only this build's 81). The fingerprint now covers all of `dwell-worldgen`'s
+  sources (the old list missed the plates and geology a Realistic map reads). Maps with a world config go through
+  `WorldMap::for_height_with_worldgen` (keyed by seed, config and height field; 34 test call sites), read back
+  byte-identical (`tests/map_cache.rs`). `realistic_snowy_leaves` runs its 4 seeds on threads (240 s → 150 s
+  alone). The worldgen suite, 4 binaries at a time: 1000 s before → 533 s cold, 504 s warm. Owner should see: the full worldgen suite done in
   about 2 minutes, its results unchanged.
 - **Snow-line speckle (#219):** owner: "I'm not sure if it looks bad, snowy mountains seem pretty rare in our current
   generation rules." Then: "Send me a screenshot" of the spot (seed 4065579781, Realistic, (−21950, −8850)).

@@ -30,8 +30,7 @@ fn generator(seed: u64, strength: Option<f64>) -> TerrainGenerator {
     if let Some(s) = strength {
         e.geology.strength = s;
     }
-    let map = WorldMap::for_height(seed, e.height.expect("its height field"))
-        .with_worldgen(NAME)
+    let map = WorldMap::for_height_with_worldgen(seed, e.height.expect("its height field"), NAME)
         .unwrap();
     let def = dwell_worldgen::volume::terrain_volume().expect("the build's terrain volume");
     TerrainGenerator::with_map(seed, Arc::new(map))
@@ -205,8 +204,7 @@ fn generator_058(seed: u64) -> TerrainGenerator {
     e.geology.notched = dwell_worldgen::geology::Notched::None;
     e.geology.ledge = 0.0;
     e.geology.tread_relief = 0.0;
-    let map = WorldMap::for_height(seed, e.height.expect("its height field"))
-        .with_worldgen(NAME)
+    let map = WorldMap::for_height_with_worldgen(seed, e.height.expect("its height field"), NAME)
         .unwrap();
     let def = dwell_worldgen::volume::terrain_volume().expect("the build's terrain volume");
     TerrainGenerator::with_map(seed, Arc::new(map))

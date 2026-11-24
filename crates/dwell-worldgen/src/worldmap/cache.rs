@@ -4,7 +4,10 @@
 //! on its own thread). A native process also keeps a copy on disk (`set_cache_dir`, or
 //! `$DWELL_MAP_CACHE`, or the temp directory), so a server restarting, or each test process of a
 //! suite, reads it instead of computing it again. Two threads asking for the same seed wait for
-//! one computation.
+//! one computation. The first time a process opens a cache directory it deletes every map another
+//! build made there (another fingerprint: never read again), so the directory holds only this
+//! build's maps (owner, 2026-11-23: "the stored data gets cleared when it's outdated and never
+//! going to be used again").
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -64,6 +67,48 @@ pub fn for_seed_sized(seed: u64, size: WorldSize) -> Arc<WorldMap> {
             Arc::new(m)
         })
         .clone()
+}
+
+/// The map of face seed `seed` with world config `worldgen` (`WorldMap::with_worldgen`'s text: a
+/// test world's, the Realistic world's) over a ground described by `ground` (its height field's
+/// `Debug` text: `WorldMap::for_height_with_worldgen`), read from the disk cache, else `build()`
+/// (and kept there). For tests and tools that build such a map themselves: not kept in the
+/// process's maps.
+pub fn for_worldgen(
+    seed: u64,
+    worldgen: &str,
+    ground: &str,
+    build: impl FnOnce() -> WorldMap,
+) -> WorldMap {
+    let text = worldgen.trim();
+    let key = worldgen_key(seed, text, ground);
+    if let Some(m) = disk::read_worldgen(&key, seed, text) {
+        return m;
+    }
+    let m = build();
+    if m.seed == seed && m.worldgen_text() == text {
+        disk::write_as(&m, &key);
+    }
+    m
+}
+
+/// Deletes the maps another build left in cache directory `d` (see the module's note); returns how
+/// many. Run by the cache itself the first time a process opens a directory.
+#[cfg(not(target_family = "wasm"))]
+pub fn sweep(d: &std::path::Path) -> usize {
+    disk::sweep(d)
+}
+
+/// The cache key of a seed's map with world config `text` over `ground`: [`key`] and their hash.
+pub fn worldgen_key(seed: u64, text: &str, ground: &str) -> String {
+    let h = text
+        .bytes()
+        .chain([0])
+        .chain(ground.bytes())
+        .fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+            (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
+        });
+    format!("{}-w{h:016x}", key(seed))
 }
 
 /// Whether a map for `seed` is ready in this process (installed or computed).
@@ -187,8 +232,47 @@ mod disk {
             .unwrap_or_else(|| std::env::temp_dir().join("dwell-world-maps"))
     }
 
+    /// The cache directory, its other builds' maps swept out the first time this process opens it.
+    fn opened() -> PathBuf {
+        static SWEPT: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+        let d = dir();
+        let mut swept = SWEPT.lock().expect("swept dirs");
+        if !swept.contains(&d) {
+            sweep(&d);
+            swept.push(d.clone());
+        }
+        d
+    }
+
+    /// Deletes the maps (and unfinished writes) in `d` another build made: every `.dwmap` or
+    /// `.tmp` file whose key starts with another fingerprint. This build's own, and any other file,
+    /// are left. Returns how many were deleted.
+    pub fn sweep(d: &std::path::Path) -> usize {
+        let ours = format!("{FINGERPRINT:016x}-");
+        let Ok(entries) = std::fs::read_dir(d) else {
+            return 0;
+        };
+        let mut gone = 0;
+        for e in entries.flatten() {
+            let name = e.file_name();
+            let Some(name) = name.to_str() else { continue };
+            let ours_or_other = name.ends_with(".dwmap") || name.ends_with(".tmp");
+            let keyed = name.len() > 17
+                && name.as_bytes()[16] == b'-'
+                && name[..16].bytes().all(|b| b.is_ascii_hexdigit());
+            if ours_or_other
+                && keyed
+                && !name.starts_with(&ours)
+                && std::fs::remove_file(e.path()).is_ok()
+            {
+                gone += 1;
+            }
+        }
+        gone
+    }
+
     fn path(seed: u64, size: WorldSize) -> PathBuf {
-        dir().join(format!("{}.dwmap", key_sized(seed, size)))
+        opened().join(format!("{}.dwmap", key_sized(seed, size)))
     }
 
     pub fn read(seed: u64, size: WorldSize) -> Option<WorldMap> {
@@ -198,15 +282,27 @@ mod disk {
             .filter(|m| m.seed == seed && m.size == size)
     }
 
+    pub fn read_worldgen(key: &str, seed: u64, text: &str) -> Option<WorldMap> {
+        let p = opened().join(format!("{key}.dwmap"));
+        let bytes = std::fs::read(p).ok()?;
+        codec::decode(&bytes)
+            .ok()
+            .filter(|m| m.seed == seed && m.size.is_default() && m.worldgen_text() == text)
+    }
+
     pub fn write(m: &WorldMap) {
-        let d = dir();
+        write_as(m, &key_sized(m.seed, m.size));
+    }
+
+    /// Writes `m` as `<key>.dwmap` (through a temporary file, so a reader never sees half of it).
+    pub fn write_as(m: &WorldMap, key: &str) {
+        let d = opened();
         if std::fs::create_dir_all(&d).is_err() {
             return;
         }
-        let target = path(m.seed, m.size);
+        let target = d.join(format!("{key}.dwmap"));
         let tmp = d.join(format!(
-            "{}.{}.tmp",
-            key_sized(m.seed, m.size),
+            "{key}.{}.tmp",
             std::process::id() as u64 ^ (std::thread::current().id().as_u64_hash())
         ));
         if std::fs::write(&tmp, codec::encode(m)).is_ok() && std::fs::rename(&tmp, &target).is_err()
@@ -235,4 +331,8 @@ mod disk {
         None
     }
     pub fn write(_m: &WorldMap) {}
+    pub fn read_worldgen(_key: &str, _seed: u64, _text: &str) -> Option<WorldMap> {
+        None
+    }
+    pub fn write_as(_m: &WorldMap, _key: &str) {}
 }

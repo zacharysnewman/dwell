@@ -124,8 +124,7 @@ pub fn province_window(g: &TerrainGenerator, cx: i32, cz: i32, step: i32) -> (f6
 fn generator(seed: u64) -> (TerrainGenerator, Arc<WorldMap>) {
     let e = world_config(NAME).unwrap().expect("the Realistic world");
     let map = Arc::new(
-        WorldMap::for_height(seed, e.height.expect("its height field"))
-            .with_worldgen(NAME)
+        WorldMap::for_height_with_worldgen(seed, e.height.expect("its height field"), NAME)
             .unwrap(),
     );
     let g = TerrainGenerator::with_map(seed, map.clone())
@@ -443,4 +442,3 @@ both_faces!(
         );
     }
 );
-

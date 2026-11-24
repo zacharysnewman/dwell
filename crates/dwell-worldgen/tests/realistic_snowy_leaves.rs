@@ -22,13 +22,14 @@ const SEEDS: [u64; 4] = [1, 7, 42, 2_741_893_632];
 
 both_faces!(
     fn trees_at_the_snow_line_have_snowy_leaves(f: FaceFrame) {
-        let (mut on_snow, mut snowy_on_snow, mut low, mut snowy_low) = (0, 0, 0, 0);
-        for world in SEEDS {
+        // The seeds on threads of their own (the suite's longest test: ~5 min a seed after
+        // another), their counts summed for the same checks.
+        let per_seed = |world: u64| {
+            let (mut on_snow, mut snowy_on_snow, mut low, mut snowy_low) = (0, 0, 0, 0);
             let e = world_config(NAME).unwrap().expect("the Realistic world");
             let seed = face_seed(world, f.face);
             let map = Arc::new(
-                WorldMap::for_height(seed, e.height.expect("its height field"))
-                    .with_worldgen(NAME)
+                WorldMap::for_height_with_worldgen(seed, e.height.expect("its height field"), NAME)
                     .unwrap(),
             );
             let g = TerrainGenerator::with_map(seed, map)
@@ -68,7 +69,15 @@ both_faces!(
                     }
                 }
             }
-        }
+            [on_snow, snowy_on_snow, low, snowy_low]
+        };
+        let [on_snow, snowy_on_snow, low, snowy_low] = std::thread::scope(|s| {
+            let runs = SEEDS.map(|world| s.spawn(move || per_seed(world)));
+            runs.into_iter().fold([0; 4], |t, r| {
+                let c = r.join().expect("a seed's run");
+                [t[0] + c[0], t[1] + c[1], t[2] + c[2], t[3] + c[3]]
+            })
+        });
         eprintln!(
             "{:?}: on snow {snowy_on_snow} snowy of {on_snow}; below the band on grass {snowy_low} snowy of {low}",
             f.face

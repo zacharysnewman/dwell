@@ -23,8 +23,7 @@ fn generator(seed: u64) -> TerrainGenerator {
     let e = world_config(NAME)
         .unwrap()
         .expect("the Realistic world's edit");
-    let map = WorldMap::for_height(seed, e.height.expect("its height field"))
-        .with_worldgen(NAME)
+    let map = WorldMap::for_height_with_worldgen(seed, e.height.expect("its height field"), NAME)
         .unwrap();
     TerrainGenerator::with_map(seed, Arc::new(map))
         .with_biomes_and_geology(&e.biomes, e.map, e.geology)

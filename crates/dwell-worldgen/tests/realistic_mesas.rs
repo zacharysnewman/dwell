@@ -69,8 +69,7 @@ fn census(world: u64, f: FaceFrame) -> Census {
     let wall_m = e.geology.erosion.wall;
     let talus = e.geology.erosion.talus_width;
     let map = Arc::new(
-        WorldMap::for_height(seed, e.height.expect("its height field"))
-            .with_worldgen(NAME)
+        WorldMap::for_height_with_worldgen(seed, e.height.expect("its height field"), NAME)
             .unwrap(),
     );
     let g = [generator(seed, &map, true), generator(seed, &map, false)];

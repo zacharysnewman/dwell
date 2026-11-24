@@ -1591,7 +1591,10 @@ level inside their shore with banks round them, and pick their surface by `bands
 noisy, slope-aware snow line, rock where the landform is steep over a hillside's window (generator 24), the soil mantling the slopes so terrace risers show dirt, sand at the shore and under water), all data in
 `shared/worldgen/terrain.json`. **Where the map lives:** one per face seed per process
 (`worldmap::cache`); natively computed on two threads (~1.2 s for both faces) and kept on disk
-(`$DWELL_MAP_CACHE`, else the temp directory); in the browser built in two job workers
+(`$DWELL_MAP_CACHE`, else the temp directory; a map with a world config, the Realistic tests',
+through `WorldMap::for_height_with_worldgen`, keyed by the seed, the config and the height field; the first
+time a process opens the directory it deletes every map another build left there, so it holds only this
+build's, owner 2026-11-23); in the browser built in two job workers
 (`buildMap`), kept in IndexedDB (`client/src/world/worldMaps.ts`, `dwell-world-maps`, the 8 most
 recent) and installed in every WASM instance (the page, the job workers, the local world's server)
 before its generator is made, while the loading screen lists "Shaping the world map" with the faces ready (§6.3, *The start's stages*). A map's
@@ -1600,7 +1603,8 @@ the drainage: ~60 MB a face for the starter world) is likewise built once per ma
 (`terrain::shared_biomes`, keyed by the map's `Arc` and seed) and shared by every generator made of it (a
 job worker makes four: 0.52.68, BUGS.md #70). The bytes
 (`worldmap::codec`) are lossless, end in a checksum and carry the build's map fingerprint
-(`build.rs`, over the inputs' sources and data) and a generation-settings hash slot (constant until
+(`build.rs`, over every source of `dwell-worldgen`, its generated data included, and the world's
+constants: since 2026-11-23, when a narrower list could let a cached Realistic map outlive a change to the plates) and a generation-settings hash slot (constant until
 per-world settings); a seed's map digest is pinned and checked natively and under WASM. The
 prototype's viewer (`examples/hydrology`) and a terrain view (`examples/terrain_view`) remain.
 

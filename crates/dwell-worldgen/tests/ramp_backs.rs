@@ -58,9 +58,12 @@ both_faces!(
             let seed = face_seed(world, f.face);
             let default = BifacialTerrain::height_field(world).local(f.face).clone();
             let map = Arc::new(
-                WorldMap::for_height(seed, e.height.expect("its height field"))
-                    .with_worldgen("test:realistic")
-                    .unwrap(),
+                WorldMap::for_height_with_worldgen(
+                    seed,
+                    e.height.expect("its height field"),
+                    "test:realistic",
+                )
+                .unwrap(),
             );
             let realistic = TerrainGenerator::with_map(seed, map)
                 .with_biomes_and_geology(&e.biomes, e.map, e.geology)

@@ -151,6 +151,23 @@ impl WorldMap {
         map
     }
 
+    /// [`WorldMap::for_height`] then [`WorldMap::with_worldgen`]`(text)`, through the disk cache
+    /// (`cache::for_worldgen`, keyed by the seed, the text and `h`): computed once per build, then
+    /// read back byte-identical (the Realistic tests; 5–7 s a map against ~30 ms).
+    pub fn for_height_with_worldgen(
+        seed: u64,
+        h: crate::terrain::HeightField,
+        text: &str,
+    ) -> Result<Self, String> {
+        // A bad config fails here as `with_worldgen` would, before the cache is asked.
+        crate::config::world_config(text)?;
+        Ok(cache::for_worldgen(seed, text, &format!("{h:?}"), || {
+            Self::for_height(seed, h)
+                .with_worldgen(text)
+                .expect("a config that parsed")
+        }))
+    }
+
     /// [`WorldMap::for_height`] for a Realistic world over a given plate tectonics (R2; tests: a
     /// fixture layout or rules changed by data).
     pub fn for_plates(
