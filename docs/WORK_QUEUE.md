@@ -134,6 +134,10 @@ context) at a time with a choice to table it as well as the other options?" Answ
 - **Metal ore veins:** owner: "Always at the surface, and veins 1-5 blocks thick, up to 25m long." Each vein starts at
   the surface (an outcrop to spot) and runs down at a sweeping angle; density "Common" (several per 100 m). Owner should
   see: silvery, shiny outcrops easy to find, each a vein 1–5 blocks thick running down up to 25 m.
+  Shape, owner 2026-11-23 ("For ore veins we haven't discussed the kind of curve they should generate in?"): the path's
+  curve "Prototype first" and the thickness along it "Try them in the prototype": a docs/prototypes page with the vein's
+  path (a smooth arc, an S-curve, a wandering path) and its thickness profile (tapering, swelling, even) as controls, the
+  owner picking there. Line: "Ship 0.76 now, veins next line" (the veins on the line after the prototype).
   Drops: "Raw ore, pickaxe only" (breaks like hard stone with a pickaxe, none by hand; drops raw metal ore, kept for
   smelting later: iron bars and metal tools use it once smelting exists).
 - **Character painting:** "Pause menu: 'Character'" (opened from the pause menu in any world; the look saved per
