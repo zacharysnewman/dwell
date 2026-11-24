@@ -11,10 +11,10 @@ pins it.
 Found 2026-11-23 by `no_seam_where_river_valleys_meet::b` (terrain.rs) once 0.76's rivers from the mountains (river
 threshold 0.15 and headwaters, `shared/worldgen/hydrology.json`) were in: two dry columns at (13106, −8864) and
 (13107, −8864) step 1.05 m and 1.14 m against the slope either side (590.77 → 589.61 m, then flat 589.51 m). Not
-the river carve: the column's `base` equals its height, and every channel's hit (distance, half-width, level,
-valley) changes smoothly across the step (`examples/seam_probe.rs 7 13102 13110 -8864`). The step is in the base
-ground before the rivers cut it; the old river data has none there. Suspect: the map's height field round the new
-small rivers (the map's own carving on its 100 m grid) or a shaping pass over it. Open; blocks 0.76's merge (a red
+a terrain volume (the column's `base`, its height before a volume, equals its height), and every channel's hit at
+the unwarped point (distance, half-width, level, valley) changes smoothly across the step (`examples/seam_probe.rs 7
+13102 13110 -8864`); the old river data has none there. Suspects: the carve's own inputs at the meander-warped
+point, a branch of the valley/levee rules switching there, or the map's height field round the new small rivers. Open; blocks 0.76's merge (a red
 test) unless the owner says otherwise.
 
 ### 232. Boulders still appear in game after their removal

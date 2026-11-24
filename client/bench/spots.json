@@ -1,10 +1,10 @@
 {
-  "$comment": "Saved camera spots (docs/DEV_TOOLS.md \"Screenshots of a place\"; scripts/spots.ts): <world>:<place> → the world (test:<fixture> or terrain), seed, time of day, and the camera: at [x, y, z] (the eye) or above [x, z, height over the ground there], yaw (0 = +Z, 90 = +X), pitch, face. An above spot's openY is the height its page opens at (over the ground). The starter's are its tour's (cargo test --release -p dwell-worldgen --test starter_world tour -- --ignored --nocapture, 2026-11-11). Shoot one: npm run bench -- --spot starter:broadleaf. The `at` eyes were raised 542 m with 0.76's sea level (574 m, over the 512 m core).",
+  "$comment": "Saved camera spots (docs/DEV_TOOLS.md \"Screenshots of a place\"; scripts/spots.ts): <world>:<place> → the world (test:<fixture> or terrain), seed, time of day, and the camera: at [x, y, z] (the eye) or above [x, z, height over the ground there], yaw (0 = +Z, 90 = +X), pitch, face. An above spot's openY is the height its page opens at (over the ground). The starter's are its tour's (cargo test --release -p dwell-worldgen --test starter_world tour -- --ignored --nocapture, 2026-11-11). Shoot one: npm run bench -- --spot starter:broadleaf. The `at` eyes were raised 544 m with 0.76's sea level (576 m, over the 512 m core).",
   "spots": {
     "starter:lava-lake": {
       "notes": "The starter's lava lake on its youngest hotspot island's summit (shared/worldgen/worlds/starter.json lavaVents; VOLCANOES.md §6.2)",
       "world": "test:starter",
-      "at": [30006.5, 792, -8006.5],
+      "at": [30006.5, 794, -8006.5],
       "yaw": -45,
       "pitch": -50
     },
@@ -12,7 +12,7 @@
       "notes": "The starter's lava lake by night: its glow and its light on the summit",
       "world": "test:starter",
       "time": 0.95,
-      "at": [30006.5, 792, -8006.5],
+      "at": [30006.5, 794, -8006.5],
       "yaw": -45,
       "pitch": -50
     },
@@ -83,56 +83,56 @@
     "starter:arch-1": {
       "notes": "Through the first arch on the mesa's fins (feature_spots: span 12 m, rise 9 m; ADR 0074 B8, 0.52.66)",
       "world": "test:starter",
-      "at": [19336.4, 653.1, -3027.2],
+      "at": [19336.4, 655.1, -3027.2],
       "yaw": -45,
       "pitch": 0
     },
     "starter:arch-2": {
       "notes": "Through a mesa arch on a high bench (feature_spots: span 14 m, rise 10 m)",
       "world": "test:starter",
-      "at": [14596.2, 829.9, -2286.9],
+      "at": [14596.2, 831.9, -2286.9],
       "yaw": 0,
       "pitch": 0
     },
     "starter:arch-3": {
       "notes": "Through a mesa arch (feature_spots: span 10 m, rise 9 m)",
       "world": "test:starter",
-      "at": [15733.6, 769.6, -1579.0],
+      "at": [15733.6, 771.6, -1579.0],
       "yaw": 45,
       "pitch": 0
     },
     "starter:mesa-walls": {
       "notes": "The red mesa's walls, 430 m of relief in view (tour: mesa with relief), looking down its canyon",
       "world": "test:starter",
-      "at": [16000.5, 1142, 1500.5],
+      "at": [16000.5, 1144, 1500.5],
       "yaw": 0,
       "pitch": -12
     },
     "starter:rainier-summit": {
       "notes": "On the tall cone's highest point (feature_spots: 4839 m, off the cone's centre), looking across the broken rim toward the centre (ADR 0075 T5)",
       "world": "test:starter",
-      "at": [-7278.5, 5392, -5566.5],
+      "at": [-7278.5, 5394, -5566.5],
       "yaw": 50,
       "pitch": -25
     },
     "starter:rainier-flank": {
       "notes": "The tall cone from 8 km east at 3000 m: cleavers, cirques, the snow and ice caps (ADR 0075 T5)",
       "world": "test:starter",
-      "at": [1500.5, 3542, -5200.5],
+      "at": [1500.5, 3544, -5200.5],
       "yaw": -90,
       "pitch": 4
     },
     "starter:glacier-edge": {
       "notes": "The alpine tundra's glacier ice edge on the cone's south flank, ground at 3175 m (feature_spots: glacier_ice with bare ground 60 m east)",
       "world": "test:starter",
-      "at": [-5700.5, 3732, -9400.5],
+      "at": [-5700.5, 3734, -9400.5],
       "yaw": 90,
       "pitch": -15
     },
     "starter:tundra-snowline": {
       "notes": "The alpine tundra's own snow line (T3b snow; feature_spots: snow with bare ground 60 m east). An exact eye: as an above spot the bench found ground at 1200 m, 72 m under the column's top (1272 m), and shot from inside the hill.",
       "world": "test:starter",
-      "at": [-16700.5, 1824, -16100.5],
+      "at": [-16700.5, 1826, -16100.5],
       "yaw": 90,
       "pitch": -15
     },

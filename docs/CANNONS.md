@@ -370,7 +370,7 @@ compatibility line (0.76): worlds from 0.75 open in a 0.75 build.
 **The deep underground (0.76, 2026-11-23).** Owner: "Increase underground size up from 10m to 512m. This will give us
 lots of room for metal ore veins and future dungeons", with "the ocean floor depth increase going along with the
 underground depth increase (solid stone, no caves)"; folded into the same line, measured first. `coreLayers` 1024 rows
-(512 m) and `seaLevel` 1148 rows (574 m: the sea 62 m over the core as before), so the land and sea stand as they did
+(512 m) and `seaLevel` 1152 rows (576 m: the sea 64 m over the core, a whole chunk, and the flat worlds' top `flatTopY` with it, as on main where both were row 64), so the land and sea stand as they did
 over a core 502 m deeper. Measured (`cargo run --release -p dwell-worldgen --example core_cost`, and a local world in
 Chrome on the M1, seed 0): saves hold only edited chunks and streaming loads the same chunks round a player, so the
 browser read the same (load 4.6 s against 7.2 s, GPU frame p50 9.0 against 8.7 ms, run to run noise); a chunk wholly in
