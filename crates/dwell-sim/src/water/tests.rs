@@ -1613,3 +1613,40 @@ dwell_world::both_faces!(
         }
     }
 );
+
+#[test]
+fn the_face_law_moves_a_film_alike_at_any_height() {
+    // face-a-only: the law takes face-local heights; it has no face of its own.
+    // BUGS.md #234: as surfaces (floor + depth) in f32 a column 577 m up is good to 6e-5 m, under a
+    // film's depth (`DRY`), and a far corner of a lake cut open never drained at 0.76's flat top.
+    // Red before: the same water across a face flowed differently at 577 m than at 32 m.
+    let s = Settings::default();
+    let flow = |floor: f32, step: f32, da: f32, db: f32| {
+        face(
+            &s,
+            floor + step,
+            da,
+            floor,
+            db,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            false,
+            0.05,
+        )
+    };
+    for (step, da, db) in [
+        (0.0, 3e-4, 1.5e-4),
+        (0.0, 2.5e-4, 0.0),
+        (0.5, 2e-4, 0.5),
+        (0.0, 0.012, 0.0101),
+    ] {
+        let low = flow(32.0, step, da, db);
+        let high = flow(577.0, step, da, db);
+        assert!(
+            (low - high).abs() <= 1e-3 * low.abs().max(1e-9),
+            "step {step}, depths {da}/{db}: {low} m²/s at 32 m, {high} at 577 m"
+        );
+    }
+}

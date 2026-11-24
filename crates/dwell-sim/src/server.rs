@@ -88,6 +88,9 @@ const INPUT_BUFFER: usize = 2; // jitter buffer depth (ticks)
 /// prediction once we report half a second queued (its `BUFFER_HOLD`, 30) and nudges its tick
 /// rate for smaller drift, so only a client that ignores both reaches this.
 const MAX_BUFFERED_INPUTS: usize = 60;
+/// How far (m) a moving piece must reach into a cell, past each face, before a settling piece
+/// can't take it (BUGS.md #234): pieces resting against one another touch their neighbours' cells.
+const SETTLE_CLEARANCE_M: f64 = 0.05;
 /// How long a player spawned at home waits for its client to say it can be on the world's spawn
 /// grid (its capabilities) before it stays home (MOON_WORLD.md §8).
 const GRID_SPAWN_GRACE_TICKS: u32 = 10 * SIM_HZ;
@@ -5497,7 +5500,15 @@ impl Server {
         let mut rebake = TickChanges::default();
         let mut gone = Vec::new();
         let mut placed: Vec<([i32; 3], u8)> = Vec::new();
-        for i in due {
+        // By id: a settle removes its piece, moving the others' indices.
+        let mut queue: Vec<u32> = due.iter().map(|&i| self.felling.pieces[i].id).collect();
+        let mut next = 0;
+        while next < queue.len() {
+            let id = queue[next];
+            next += 1;
+            let Some(i) = self.felling.pieces.iter().position(|p| p.id == id) else {
+                continue;
+            };
             // A cell is taken by a block there, or by a player for a block that blocks a body (a
             // leaf may land where a player stands: players pass through leaves). A log settling
             // where leaves are crushes them (the body lay through them, on what is under them):
@@ -5515,6 +5526,41 @@ impl Server {
             let settled = self
                 .felling
                 .settle(&mut self.world, &mut self.physics, i, &taken);
+            // A moving piece the settled cells reach into settles with it, in this pass (BUGS.md
+            // #234: a heap's pieces baked round a neighbour still rocking sealed it in the rock,
+            // where it jittered on until the 30 s backstop). One merely resting against them
+            // (within `SETTLE_CLEARANCE_M`) moves on.
+            let boxes: Vec<(DVec3, DVec3)> = settled
+                .cells
+                .iter()
+                .filter(|&&(_, m)| info(m).solid && !info(m).passable)
+                .map(|&(c, _)| {
+                    let lo = DVec3::new(
+                        f64::from(c[0]),
+                        dwell_world::m_of_row(c[1]),
+                        f64::from(c[2]),
+                    );
+                    let hi = lo + DVec3::new(1.0, dwell_world::CELL_H, 1.0);
+                    let m = DVec3::splat(SETTLE_CLEARANCE_M);
+                    (lo + m, hi - m)
+                })
+                .collect();
+            if let Some(&first) = boxes.first() {
+                let all = boxes
+                    .iter()
+                    .fold(first, |(lo, hi), &(l, h)| (lo.min(l), hi.max(h)));
+                for p in &self.felling.pieces {
+                    if queue.contains(&p.id) || !crate::felling::body_kind(p.kind).settles {
+                        continue;
+                    }
+                    let shapes = self.physics.shapes_of(&[p.body]);
+                    if shapes.overlaps_box(all.0, all.1)
+                        && boxes.iter().any(|&(lo, hi)| shapes.overlaps_box(lo, hi))
+                    {
+                        queue.push(p.id);
+                    }
+                }
+            }
             for &(c, m) in &settled.cells {
                 // Settling into a liquid's cell, a block that can stand flooded does (BUGS.md
                 // #213: a cannonball rests on the bed with the water still round it).

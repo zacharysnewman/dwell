@@ -6,20 +6,6 @@ pins it.
 
 ## Open
 
-### 234. Blasts and water behave differently with the ground at 576 m (0.76's sea level)
-
-Found 2026-11-23: with the sea level and the flat worlds' top at row 1152 (576 m) instead of row 64 (32 m), on the
-same flat-world fixtures: one loosened piece directly under a buried blast moves up at 1.05 m/s instead of resting
-(`explosives.rs` `the_loosen_shell_past_the_radius_becomes_pieces_given_no_impulse`; it rests with the old constants,
-and with the 20-row core and the new sea level it moves: the height, not the core); a flush charge's debris doesn't
-settle in 20 s and a blast's heap keeps one body moving after 12 s (`explosives.rs`, `collapse.rs`); a lake cut open
-leaves water at its far corner (`water.rs` `a_lake_cut_open_drains_on_after_its_player_leaves`). Ruled out: Rapier's
-precision (f64), the water's levels as f32, the build volume (50 000 cells), the sea level (the piece moves with the
-flat top at row 1152 and the sea back at row 64: the flat ground's height, `FLAT_TOP_Y`, is the trigger). Suspect: something that reads a height
-or row against a fixed number (a chunk or section index, a level offset) in the blast or the water. Also two water
-tests need new sites: seed 0's dam site at (2349–2380, 7452) no longer backs up (its river changed with 0.76's
-rivers). Open; blocks 0.76's merge (red tests).
-
 ### 233. A 1.16 m step in the ground near a confluence (0.76's river data, seed 7 face B)
 
 Found 2026-11-23 by `no_seam_where_river_valleys_meet::b` (terrain.rs) once 0.76's rivers from the mountains (river
@@ -1348,6 +1334,31 @@ the first ladder went there (it now waits for the cell).
 
 
 ## Fixed
+
+### 234. Blasts and water behave differently with the ground at 576 m (0.76's sea level)
+
+Found 2026-11-23: with the sea level and the flat worlds' top at row 1152 (576 m) instead of row 64 (32 m), on the
+same flat-world fixtures: one loosened piece directly under a buried blast moves up at 1.05 m/s instead of resting
+(`explosives.rs` `the_loosen_shell_past_the_radius_becomes_pieces_given_no_impulse`; it rests with the old constants,
+and with the 20-row core and the new sea level it moves: the height, not the core); a flush charge's debris doesn't
+settle in 20 s and a blast's heap keeps one body moving after 12 s (`explosives.rs`, `collapse.rs`); a lake cut open
+leaves water at its far corner (`water.rs` `a_lake_cut_open_drains_on_after_its_player_leaves`). Ruled out: Rapier's
+precision (f64), the water's levels as f32, the build volume (50 000 cells), the sea level (the piece moves with the
+flat top at row 1152 and the sea back at row 64: the flat ground's height, `FLAT_TOP_Y`, is the trigger). Suspect: something that reads a height
+or row against a fixed number (a chunk or section index, a level offset) in the blast or the water. Also two water
+tests need new sites: seed 0's dam site at (2349–2380, 7452) no longer backs up (its river changed with 0.76's
+rivers). **Fixed on the 0.76 branch (2026-11-24):** not the height itself: three precision and ordering edges that
+the old ground (row 64) happened to miss. (1) Parry keeps a voxel's contact points within 1 cm of it (its
+`test_voxel`, the voxel grown by 1e-2), and a piece was drawn in by exactly 1 cm (`PIECE_SKIN`): in a pit one cell
+wide the rounding of where the pit lay kept a wall's bogus point and threw the piece up at ~1 m/s, at most heights
+(2035 of 2400 rows at x 0, in 16-cell bands along x) and not row 61. `PIECE_SKIN` 1.5 cm (2 cm let a surface blast's
+heap rattle 36% longer); `physics.rs` `a_piece_in_a_one_cell_pit_rests_wherever_the_pit_lies` (544 of 544 pits
+threw their piece before). (2) A piece settling took cells a neighbour still moving lay in, sealing it in the rock
+(the flush charge's crater floor: in place for 10 s, jittering until the 30 s backstop); now a moving piece the
+settled cells reach into settles in the same pass (the flush and heap tests, red before). (3) The water's face law
+formed surfaces as floor + depth in f32, good to 6e-5 m at 577 m, under a film's depth (`DRY` 1e-4): the lake's far
+corner never drained. Now measured from the higher floor (`water::tests`
+`the_face_law_moves_a_film_alike_at_any_height`, red before). The dam-site tests still need a new site.
 
 ### 207. A break's hits went by the tool held when the server applied it, not when it was made (found 2026-11-17; fixed after 0.73.14)
 
