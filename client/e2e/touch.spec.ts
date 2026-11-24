@@ -38,7 +38,7 @@ async function touch(
   });
 }
 
-test('touch controls: stick, look, and jump', async ({ page }) => {
+test('touch controls: stick, look, and jump @gpu', async ({ page }) => {
   // CI's software rendering is slow: the steps before the jump alone take ~20 s there. The flat
   // world, as the other touch tests use: on the generated terrain CI drew this page at ~1 fps by
   // the jump (frames 0.8-1.7 s), at the client's 1 s catch-up (game.rs MAX_TICKS_PER_FRAME), and a

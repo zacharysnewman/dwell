@@ -91,7 +91,10 @@ context) at a time with a choice to table it as well as the other options?" Answ
   config); the tagged ones are those CLAUDE.md lists as failing only under CI's software renderer (#30, #51, #34, #49,
   touch), and the two unknown specs only if the GPU check passes them; run locally before a merge touching their area;
   CLAUDE.md's "Known CI failures" kept in step with the tag. Owner should see: CI green but for real failures, the
-  tagged tests still run on a GPU locally.
+  tagged tests still run on a GPU locally. **Done on the 0.76 branch (2026-11-24):** the GPU check: `play.spec` "local
+  mode streams terrain" passes (CI-only, tagged); `characters.spec` "another client sees your body walk…" failed on
+  the GPU too, its arms check's 5 s wait too short for the arms' mesh (fixed: 20 s, passes in 8.5 s). Eight tests tagged
+  `@gpu`; CI's config leaves them out.
 - **Worldgen tests share one Realistic map (owner, 2026-11-23):** "That's a long running tasks why does it take 15+
   minutes?" Measured: `cargo test -p dwell-worldgen` 16+ min serially and 16.7 min (1000 s) four binaries at a time;
   each `realistic_*` binary (about 15) builds the whole Realistic world map itself, 95–281 s each

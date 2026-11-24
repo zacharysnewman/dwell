@@ -121,7 +121,7 @@ async function jump(page: Page): Promise<void> {
     .toBe(true);
 }
 
-test('towering: held Place while standing on the spot builds a block under the feet each jump', async ({
+test('towering: held Place while standing on the spot builds a block under the feet each jump @gpu', async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -178,7 +178,7 @@ async function tower(page: Page): Promise<number> {
   return (await state(page))?.feet[1] ?? 0;
 }
 
-test('bridging help: Place over the edge with nothing targeted builds on ahead as the player walks', async ({
+test('bridging help: Place over the edge with nothing targeted builds on ahead as the player walks @gpu', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -203,7 +203,7 @@ test('bridging help: Place over the edge with nothing targeted builds on ahead a
   expect((await state(page))?.feet[1] ?? 0).toBeGreaterThan(top - 0.1);
 });
 
-test('bridging help in Flat mode paints the floor at the level stood on, joined to it', async ({
+test('bridging help in Flat mode paints the floor at the level stood on, joined to it @gpu', async ({
   page,
 }) => {
   test.setTimeout(120_000);
