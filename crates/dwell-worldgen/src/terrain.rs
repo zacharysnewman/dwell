@@ -1867,6 +1867,12 @@ impl TerrainGenerator {
     /// nearest of 8 directions at three distances (a third, two thirds, all of `reach`) where the
     /// column is a wall or steep rock (0.69, talus).
     pub fn cliff_factor(&self, x: i64, z: i64, reach: f64) -> f64 {
+        self.cliff_factor_within(x, z, reach, &|_| false)
+    }
+
+    /// [`Self::cliff_factor`], 0 as soon as the rings left can give at most a factor `b` with
+    /// `fails(b)` (after ring k none nearer: at most ring k + 1's (1 − k/3)²).
+    fn cliff_factor_within(&self, x: i64, z: i64, reach: f64, fails: &dyn Fn(f64) -> bool) -> f64 {
         const DIRS: [(f64, f64); 8] = [
             (1.0, 0.0),
             (0.707, 0.707),
@@ -1900,12 +1906,15 @@ impl TerrainGenerator {
             return 0.0; // on the wall itself: no boulder
         }
         for k in 1..=3 {
+            let t = 1.0 - f64::from(k - 1) / 3.0;
+            if k > 1 && fails(t * t) {
+                return 0.0;
+            }
             let r = reach * f64::from(k) / 3.0;
             if DIRS
                 .iter()
                 .any(|(dx, dz)| rock(x + (dx * r).round() as i64, z + (dz * r).round() as i64))
             {
-                let t = 1.0 - f64::from(k - 1) / 3.0;
                 return t * t;
             }
         }
@@ -3741,25 +3750,18 @@ impl TerrainGenerator {
     /// Planter `i`'s density at (x, z) from the biomes' `trees` by their weights (ADR 0074 B5; 1
     /// where it does not vary), and by the volcanoes' states.
     pub fn tree_density_at(&self, i: usize, x: i64, z: i64) -> f32 {
-        // The volcanoes' (plates.json `uplift.volcanism`): none on an active cone, more with a
-        // dormant one's age.
-        let volcanic = self
-            .plate_tectonics()
-            .map_or(1.0, |t| t.volcano_trees(x as f64, z as f64) as f32);
-        // A rule sparse on the erosion's standing tops (`tops`, 0.68: sagebrush on the floors).
-        let tops = self.planters.get(i).map_or(1.0, |p| p.rule().tops);
-        let on_top = tops < 1.0
-            && self
-                .erosion_at(x, z)
-                .is_some_and(|(s, margin, _)| s > 0.5 && margin > 0.0);
-        let tops = if on_top { tops } else { 1.0 };
-        // Talus at cliff feet (`cliffReach`, 0.69): only near a rock wall.
-        let reach = self.planters.get(i).map_or(0.0, |p| p.rule().cliff_reach);
-        let cliff = if reach > 0.0 {
-            self.cliff_factor(x, z, f64::from(reach)) as f32
-        } else {
-            1.0
-        };
+        self.tree_density_within(i, x, z, &|_| false)
+    }
+
+    /// [`Self::tree_density_at`], 0 as soon as the biomes' density `d` alone has `fails(d)`: the
+    /// cliffs', the tops' and the volcanoes' factors are each at most 1, so the density is at most
+    /// `d` and fails too (`placements::Factor`); the talus's cliff search, the dearest part, is then
+    /// never run for a candidate its roll already turns down.
+    fn tree_density_within(&self, i: usize, x: i64, z: i64, fails: &dyn Fn(f32) -> bool) -> f32 {
+        // The factors in order of what most often zeroes the product, each asked only while it is
+        // above 0 (the product is multiplied in the same order as ever, so it is bit-identical): the
+        // biomes' density first (0 where no biome with weight lists the rule), the cliffs' next, the
+        // volcanoes' (the dearest) last.
         // Bleed across borders (`bleed`, 0.69): the biomes' density read at a point moved by a
         // fine noise, so each side's plants reach raggedly into the other.
         let bleed = self
@@ -3783,7 +3785,35 @@ impl TerrainGenerator {
         } else {
             (x, z)
         };
-        cliff * tops * volcanic * self.biome_tree_density_at(i, bx, bz)
+        let biome = self.biome_tree_density_at(i, bx, bz);
+        if biome == 0.0 || fails(biome) {
+            return 0.0;
+        }
+        // Talus at cliff feet (`cliffReach`, 0.69): only near a rock wall.
+        let reach = self.planters.get(i).map_or(0.0, |p| p.rule().cliff_reach);
+        let cliff = if reach > 0.0 {
+            // The rest is at most cliff × biome (each other factor at most 1).
+            let fails = |c: f64| fails(c as f32 * biome);
+            self.cliff_factor_within(x, z, f64::from(reach), &fails) as f32
+        } else {
+            1.0
+        };
+        if cliff == 0.0 {
+            return 0.0;
+        }
+        // A rule sparse on the erosion's standing tops (`tops`, 0.68: sagebrush on the floors).
+        let tops = self.planters.get(i).map_or(1.0, |p| p.rule().tops);
+        let on_top = tops < 1.0
+            && self
+                .erosion_at(x, z)
+                .is_some_and(|(s, margin, _)| s > 0.5 && margin > 0.0);
+        let tops = if on_top { tops } else { 1.0 };
+        // The volcanoes' (plates.json `uplift.volcanism`): none on an active cone, more with a
+        // dormant one's age.
+        let volcanic = self
+            .plate_tectonics()
+            .map_or(1.0, |t| t.volcano_trees(x as f64, z as f64) as f32);
+        cliff * tops * volcanic * biome
     }
 
     fn biome_tree_density_at(&self, i: usize, x: i64, z: i64) -> f32 {
@@ -4184,14 +4214,18 @@ impl TerrainGenerator {
             .collect();
         let height = |x: i64, z: i64| ground(x as i32, z as i32).map(|g| g.height);
         let climate = self.climate_rules();
-        let factor = |i: usize, x: i32, z: i32| -> f32 {
+        let factor = |i: usize, x: i32, z: i32, fails: &dyn Fn(f32) -> bool| -> f32 {
             let (x, z) = (i64::from(x), i64::from(z));
             let c = if climate {
                 self.climate_factor(kinds[i], x, z, &height)
             } else {
                 1.0
             };
-            c * self.tree_density_at(i, x, z)
+            // 0 whatever the density (each factor is finite and at least 0): don't ask it.
+            if c == 0.0 {
+                return 0.0;
+            }
+            c * self.tree_density_within(i, x, z, &|d| fails(c * d))
         };
         let factor: Option<&placements::Factor<'_>> =
             (climate || self.tree_density.1).then_some(&factor);
@@ -4288,6 +4322,20 @@ impl TerrainGenerator {
         if self.world().chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside
             || volume == Overlap::Outside
         {
+            return;
+        }
+        // Wholly inside the stone core (0.76: 512 m of it under each face), over the bedrock, inside
+        // the disc and the build volume, and no portal's shaft near: all stone, no columns read.
+        let core = (MIDPLANE_Y + MIDPLANE.bedrock_rows, MIDPLANE_Y + CORE_LAYERS);
+        if y0 >= core.0
+            && y0 + S <= core.1
+            && volume == Overlap::Inside
+            && self.world().chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Inside
+            && self
+                .portals_near((x0, z0), (x0 + S - 1, z0 + S - 1))
+                .is_none_or(|(_, p)| p.is_empty())
+        {
+            chunk.voxels_mut().fill(M.stone);
             return;
         }
         let cols = self.chunk_columns(x0, z0);

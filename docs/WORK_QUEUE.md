@@ -97,15 +97,30 @@ context) at a time with a choice to table it as well as the other options?" Answ
   each `realistic_*` binary (about 15) builds the whole Realistic world map itself, 95–281 s each
   (`realistic_snowy_leaves` 281 s, `realistic_shrubs` 214 s, `realistic_talus` 197 s). Proposed: build the map once
   per seed and data and share it (cached on disk, keyed by the seed and a hash of the worldgen data, rebuilt when
-  either changes), so the suite runs in ~2 min. Owner: "Queue that." Owner should see: the full worldgen suite done in
+  either changes), so the suite runs in ~2 min. Owner: "Queue that." Then: "This caching seems good to prioritize:
+  caching it on disk keyed by seed and data": done first, before the rest of 0.76's fixes. **Measured
+  first (2026-11-23), my ~2 min estimate was wrong:** a Realistic map builds in 5–7 s and reads back from disk in
+  30 ms (byte-identical), but `realistic_snowy_leaves` takes 240 s alone and its 8 map builds are ~25 s of it; a CPU
+  sample puts nearly all the rest in tree placement (`trees_in` → `Planter::candidate_with` → `tree_density_at`:
+  the biome mix, plate provinces and noise recomputed per candidate) over the tests' wide sweeps (127 × 127 patches
+  × 4 seeds × 2 faces). The map cache alone saves ~10–20 %. Asked what to do: "Speed up tree placement": each
+  patch's biome mix and density worked out once, not per candidate, the same trees (pinned by the goldens); it speeds
+  the game's chunk loads too; the map cache after, if still worth it. Owner should see: the worldgen suite much
+  faster, and chunks loading at least as fast, with the same trees. **First pass (2026-11-23), exact (the
+  same trees: a hash of 964 trees over 200 Realistic patches unchanged, `examples/trees_cost.rs`):** tree placement
+  3.09 s → 2.25 s (−27 %): a candidate's density stops at its biomes' share when that already fails its roll (the
+  cliffs', tops' and volcanoes' factors are each at most 1), and talus's cliff search stops after a ring once the
+  rings left can't pass it; plate boundaries' distance skips runs of segments by box. What's left is the column
+  itself (95 % of placement time): the plate provinces ~40 %, the biome mix ~38 %; candidates' ground and slope
+  ~55 % of column reads, talus's cliff search ~37 %. Owner should see: the full worldgen suite done in
   about 2 minutes, its results unchanged.
 - **Snow-line speckle (#219):** owner: "I'm not sure if it looks bad, snowy mountains seem pretty rare in our current
   generation rules." Then: "Send me a screenshot" of the spot (seed 4065579781, Realistic, (−21950, −8850)).
 - **The 512 m underground:** "Measure first": the world's size, generation and load time at 512 m before building.
 - **Order (owner, 2026-11-23, by the Q&A):**
   0. 0.76 in flight: deep seas; the 512 m underground (measured first); rivers from the mountains. With it: the quick
-     GPU check of the two unknown e2e specs and the `@gpu` tag for CI-only flaky tests. Then the worldgen tests sharing
-     one Realistic map (queued 2026-11-23, after 0.76 merges).
+     GPU check of the two unknown e2e specs and the `@gpu` tag for CI-only flaky tests. First (owner, 2026-11-23, "good to
+     prioritize"): the worldgen tests share one Realistic map, cached on disk by seed and data.
   1. Builders, a quick fix (#226: blueprint slopes facing the blueprint's way) ("Early, as a quick fix").
   2. Section 1, Moving bodies.
   3. Section 8, Far trees and far terrain.

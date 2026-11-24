@@ -331,6 +331,51 @@ fn to_line(p: [f64; 2], line: &[[f64; 2]]) -> f64 {
     project(p, line, &[]).0
 }
 
+/// Segments per run of [`run_boxes`].
+const RUN: usize = 16;
+
+/// A polyline's runs of [`RUN`] segments (run `r` holds segments `r·RUN ..`, each from vertex `k`
+/// to `k + 1`), each bounded by its vertices' box [min x, min z, max x, max z].
+fn run_boxes(line: &[[f64; 2]]) -> Vec<[f64; 4]> {
+    if line.len() < 2 {
+        return Vec::new();
+    }
+    (0..line.len() - 1)
+        .step_by(RUN)
+        .map(|k0| {
+            let k1 = (k0 + RUN).min(line.len() - 1);
+            line[k0..=k1].iter().fold(
+                [f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY],
+                |b, v| [b[0].min(v[0]), b[1].min(v[1]), b[2].max(v[0]), b[3].max(v[1])],
+            )
+        })
+        .collect()
+}
+
+/// [`to_line`] skipping the runs whose box lies farther than the nearest segment found so far:
+/// the same distance (the minimum over the same segments; a run is skipped only when its box is
+/// farther by a margin over the rounding, so no segment it holds could be nearer).
+fn to_line_boxed(p: [f64; 2], line: &[[f64; 2]], boxes: &[[f64; 4]]) -> f64 {
+    if line.len() < 2 || boxes.is_empty() {
+        return to_line(p, line);
+    }
+    let mut best = f64::INFINITY;
+    for (r, b) in boxes.iter().enumerate() {
+        let dx = (b[0] - p[0]).max(p[0] - b[2]).max(0.0);
+        let dz = (b[1] - p[1]).max(p[1] - b[3]).max(0.0);
+        let far = (dx * dx + dz * dz).sqrt();
+        if far > best + 1e-6 * (1.0 + best) {
+            continue;
+        }
+        let k0 = r * RUN;
+        let k1 = (k0 + RUN).min(line.len() - 1);
+        for k in k0..k1 {
+            best = best.min(to_segment(p, line[k], line[k + 1]).0);
+        }
+    }
+    best
+}
+
 /// `p` against a polyline: its distance (m), the arc length (m) of its nearest point along the
 /// line (with `lengths`, the cumulative length at each vertex; 0 without), and its signed distance
 /// (> 0 on the line's left).
@@ -393,6 +438,9 @@ pub struct Line {
     pub lengths: Vec<Vec<f64>>,
     /// Each polyline's rift segments (none unless the pair has a rift).
     pub segments: Vec<Vec<RiftSegment>>,
+    /// Each polyline's runs of [`RUN`] segments bounded by a box ([`run_boxes`]), so a point's
+    /// distance skips the runs that can't hold its nearest segment.
+    boxes: Vec<Vec<[f64; 4]>>,
     seed: u32,
 }
 
@@ -587,6 +635,7 @@ impl PlateTectonics {
             under: b.subducting_plate(),
             pair,
             scale: Self::scale_of(u, b),
+            boxes: polylines.iter().map(|pl| run_boxes(pl)).collect(),
             polylines,
             lengths,
             segments,
@@ -681,7 +730,8 @@ impl PlateTectonics {
                 let d = line
                     .polylines
                     .iter()
-                    .map(|pl| to_line([x, z], pl))
+                    .zip(&line.boxes)
+                    .map(|(pl, boxes)| to_line_boxed([x, z], pl, boxes))
                     .fold(f64::INFINITY, f64::min);
                 (line, d)
             })
@@ -1045,6 +1095,35 @@ mod tests {
         let f = FIXTURES.iter().find(|f| f.name == name).unwrap();
         let plates = f.plates.map(Plate::from).to_vec();
         PlateTectonics::new(PlateLayout::of_plates(&PLATES, plates), &UPLIFT)
+    }
+
+    #[test]
+    fn the_boxed_distance_to_a_line_is_the_plain_one() {
+        // face-a-only: plane geometry in plate space, the same on either face.
+        let mut h = 0x9E37_79B9u32;
+        let mut next = || {
+            h = crate::noise::mix32(h);
+            f64::from(h) / f64::from(u32::MAX) * 40_000.0 - 20_000.0
+        };
+        for n in [1, 2, 3, 15, 16, 17, 33, 200] {
+            // A wandering line, and one doubling back on itself (runs' boxes overlapping).
+            let mut line = vec![[next(), next()]];
+            for _ in 1..n {
+                let [x, z] = *line.last().unwrap();
+                line.push([x + next() * 0.05, z + next() * 0.05]);
+            }
+            let boxes = run_boxes(&line);
+            for _ in 0..500 {
+                let p = [next(), next()];
+                assert_eq!(to_line_boxed(p, &line, &boxes), to_line(p, &line), "{n} vertices at {p:?}");
+            }
+            // On the line's own vertices and segment midpoints (distance 0 and ties).
+            for w in line.windows(2) {
+                for p in [w[0], [(w[0][0] + w[1][0]) / 2.0, (w[0][1] + w[1][1]) / 2.0]] {
+                    assert_eq!(to_line_boxed(p, &line, &boxes), to_line(p, &line));
+                }
+            }
+        }
     }
 
     #[test]
