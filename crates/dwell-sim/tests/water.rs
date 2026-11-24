@@ -464,6 +464,14 @@ fn an_untouched_rivers_water_has_its_maps_current() {
     assert!(checked >= 2, "{checked} rivers checked");
 }
 
+/// Seed 0's water row (face A) at column (x, z): the first row above its river there.
+fn seed0_river_row(x: i32, z: i32) -> i32 {
+    dwell_worldgen::BifacialTerrain::height_field(0)
+        .local(dwell_world::Face::A)
+        .column_at(x, z)
+        .water_row()
+}
+
 /// Owner, 2026-11-06: "damming should raise the water and does" (BUGS.md #38). Seed 0's river at
 /// the bench's dam site (`?at=2364.5,142,7443.5`), a stone wall 32 m across it at z 7452 (the
 /// browser's measurement: 2 cm in ~1.7 h of water time). The river is drawn flat between its
@@ -482,11 +490,14 @@ fn a_dam_across_a_generated_flat_reach_backs_the_river_up() {
         dwell_worldgen::generator_for(GENERATOR_TERRAIN, 0),
         Some(dwell_worldgen::air_test_for(GENERATOR_TERRAIN, 0)),
     );
+    // The river's water row at the site, from the height field: the wall and the rows loaded and
+    // scanned stand round it (the 576 m sea moved every height).
+    let r0 = seed0_river_row(2364, 7448);
     let (x0, x1, z0, z1) = (2349, 2380, 7452, 7453);
     // Loaded well around the site: the backwater runs up the river.
     for x in (x0 - 160..=x1 + 160).step_by(8) {
         for z in (z0 - 200..=z1 + 120).step_by(8) {
-            for y in (240 + UP..=320 + UP).step_by(8) {
+            for y in (r0 - 44..=r0 + 36).step_by(8) {
                 w.get_voxel(x, y, z);
             }
         }
@@ -503,7 +514,7 @@ fn a_dam_across_a_generated_flat_reach_backs_the_river_up() {
     let stone = dwell_blocks::require("dwell:stone");
     let mut old = Vec::new();
     for x in x0..=x1 {
-        for y in 262 + UP..=293 + UP {
+        for y in r0 - 22..=r0 + 9 {
             for z in z0..=z1 {
                 old.push(([x, y, z], w.get_voxel(x, y, z)));
                 w.set_voxel(x, y, z, stone);
@@ -511,7 +522,7 @@ fn a_dam_across_a_generated_flat_reach_backs_the_river_up() {
         }
     }
     water.touch(old);
-    let player = [2364.5, 142.0 + UP_M, 7443.5];
+    let player = [2364.5, dwell_world::m_of_row(r0), 7443.5];
     // Twenty minutes of water time in ticks of 1 s.
     for _ in 0..1200 {
         water.tick(&mut w, &[player], 1.0);
@@ -708,10 +719,13 @@ fn the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow() {
         dwell_worldgen::generator_for(GENERATOR_TERRAIN, 0),
         Some(dwell_worldgen::air_test_for(GENERATOR_TERRAIN, 0)),
     );
+    // The river's water row at the site, from the height field: the wall and the rows loaded and
+    // scanned stand round it (the 576 m sea moved every height).
+    let r0 = seed0_river_row(2364, 7448);
     let (x0, x1, z0, z1) = (2349, 2380, 7452, 7453);
     for x in (x0 - 100..=x1 + 100).step_by(8) {
         for z in (z0 - 120..=z1 + 160).step_by(8) {
-            for y in (240 + UP..=320 + UP).step_by(8) {
+            for y in (r0 - 44..=r0 + 36).step_by(8) {
                 w.get_voxel(x, y, z);
             }
         }
@@ -724,7 +738,7 @@ fn the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow() {
         let (mut cells, mut cols) = (0, 0);
         for z in z1 + 1..7526 {
             for x in x0 - 100..=x1 + 100 {
-                let n = (240 + UP..=320 + UP)
+                let n = (r0 - 44..=r0 + 36)
                     .filter(|&y| liquid(w.get_voxel_if_loaded([x, y, z])))
                     .count();
                 cells += n;
@@ -741,7 +755,7 @@ fn the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow() {
     let stone = dwell_blocks::require("dwell:stone");
     let mut old = Vec::new();
     for x in x0..=x1 {
-        for y in 262 + UP..=293 + UP {
+        for y in r0 - 22..=r0 + 9 {
             for z in z0..=z1 {
                 old.push(([x, y, z], w.get_voxel(x, y, z)));
                 w.set_voxel(x, y, z, stone);
@@ -749,7 +763,7 @@ fn the_river_below_a_dam_across_seed0s_river_dries_to_the_next_inflow() {
         }
     }
     water.touch(old);
-    let player = [2364.5, 142.0 + UP_M, 7443.5];
+    let player = [2364.5, dwell_world::m_of_row(r0), 7443.5];
     for _ in 0..600 {
         water.tick(&mut w, &[player], 1.0);
     }

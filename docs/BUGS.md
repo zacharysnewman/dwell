@@ -1358,7 +1358,7 @@ threw their piece before). (2) A piece settling took cells a neighbour still mov
 settled cells reach into settles in the same pass (the flush and heap tests, red before). (3) The water's face law
 formed surfaces as floor + depth in f32, good to 6e-5 m at 577 m, under a film's depth (`DRY` 1e-4): the lake's far
 corner never drained. Now measured from the higher floor (`water::tests`
-`the_face_law_moves_a_film_alike_at_any_height`, red before). The dam-site tests still need a new site.
+`the_face_law_moves_a_film_alike_at_any_height`, red before). The dam-site tests: seed 0's river still runs through the site (course 76, 5.4 m wide), 576 m higher; their wall and scanned rows were fixed numbers under it, now taken from the river's water row in the height field.
 
 ### 207. A break's hits went by the tool held when the server applied it, not when it was made (found 2026-11-17; fixed after 0.73.14)
 
