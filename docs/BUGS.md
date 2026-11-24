@@ -1324,6 +1324,17 @@ the first ladder went there (it now waits for the cell).
 
 ## Fixed
 
+### 235. A held Place built a quarter slower on a page whose clock runs a little fast
+
+Found 2026-11-24 by `game_local.rs` `a_held_place_builds_at_the_datas_rate_at_sixty_five_and_three_frames_a_second`
+on the 0.76 line: at 5 fps it built 3 pieces a frame for the data's 4 (15 a second, not 20). Not the height itself:
+after the heavier 0.76 join the client predicted ticks ~2% fast (61.2 a second) while catching up its clock, and the
+held stroke's pace (`BuildDrag::aim_at`) was capped at one piece, so the tick crossing a piece lost its overshoot:
+three ticks fell 2% short and every piece waited for a fourth. **Fixed on the 0.76 branch (2026-11-24):** the
+crossing call keeps its overshoot (a stroke already holding a piece still keeps just one: no burst after a block).
+Red → green: `build_drag.rs` `a_held_stroke_keeps_the_rate_when_ticks_come_a_little_fast` (16 a second before) and
+the game_local test.
+
 ### 233. A 1.16 m step in the ground near a confluence (0.76's river data, seed 7 face B)
 
 Found 2026-11-23 by `no_seam_where_river_valleys_meet::b` (terrain.rs) once 0.76's rivers from the mountains (river

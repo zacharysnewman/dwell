@@ -643,9 +643,11 @@ fn a_region_fill_comes_back_from_the_server_and_undo_restores_it() {
     rig.game.as_mut().unwrap().region.enabled = region_edits;
     // A cell clear of the player, ahead of the feet. The spawn is a resurrection shrine's stand
     // point since 0.58.0 (#873, docs/SHRINES.md): its stone dais lies toward +z (yaw 0), so the
-    // player looks the other way, at the ground, which is not stone.
+    // player looks the other way, at the ground. What that ground is depends on the seed's terrain
+    // (0.76: rock up a mountainside), so the fill takes the hotbar's stone, or its dirt (slot 4) where the
+    // ground is stone already.
     rig.input.look.yaw = 180.0;
-    rig.input.look.pitch = -40.0;
+    rig.input.look.pitch = -60.0;
     assert!(rig.run_until(30, |r| {
         r.game.as_ref().unwrap().debug_state().target.is_some()
     }));
@@ -660,8 +662,12 @@ fn a_region_fill_comes_back_from_the_server_and_undo_restores_it() {
     let game = rig.game.as_mut().unwrap();
     let before = game.voxel(x, y, z);
     let stone = dwell_blocks::require("dwell:stone");
-    assert_ne!(before, stone);
-    game.interaction.select(0); // stone
+    let (slot, fill) = if before == stone {
+        (3, dwell_blocks::require("dwell:dirt"))
+    } else {
+        (0, stone)
+    };
+    game.interaction.select(slot);
     assert!(!game.tool(ToolAction::CornerA, rig.now));
     assert_eq!(
         rig.scene.borrow().region_boxes.len(),
@@ -675,7 +681,7 @@ fn a_region_fill_comes_back_from_the_server_and_undo_restores_it() {
     );
     assert!(game.tool(ToolAction::Fill, rig.now), "the fill is sent");
     assert!(
-        rig.run_until(60, |r| r.game.as_mut().unwrap().voxel(x, y, z) == stone),
+        rig.run_until(60, |r| r.game.as_mut().unwrap().voxel(x, y, z) == fill),
         "the server's modification arrives"
     );
     let now = rig.now;

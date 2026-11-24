@@ -398,7 +398,9 @@ impl Pool {
             "queued": [self.queued[0].len(), self.queued[1].len()],
             "inFlight": self.in_flight,
             "capacity": [self.jobs.capacity(false), self.jobs.capacity(true)],
-            "focus": self.focus,
+            // To the centimetre: an f32 position widened to f64 is 15 digits at 928 m, which
+            // serde_json's parser doesn't read back to the same bits (the report's round trip).
+            "focus": self.focus.map(|f| f.map(|v| (v * 100.0).round() / 100.0)),
             "nearJobsM": NEAR_JOBS_M,
             "slowFrameScale": self.frame_scale,
             "workers": self.jobs.memory().len(),
