@@ -248,6 +248,9 @@ First in this section (owner, 2026-11-23, to share a ship "in a generic way"): c
   resulting in explosive fountains of water or acts like a dam." So: a block just above the water must not affect it.
   With #224 (likely one cause). Owner should see: a block placed one row above the sea, not touching the water, leaves
   the sea flat and still: no fountains, no damming.
+- Owner, 2026-11-23: "River chunks that have been back flooded (due to damming) seem to never load in higher detail they
+  seem stuck in low detail (unless you move really close to load in close high detail)." Owner should see: a dammed,
+  back-flooded river valley drawn at the land's detail at every distance. BUGS.md #231.
 - "A creative mode tool to create and remove water source blocks. (Maybe a way to see what's source?)" Owner should see:
   a creative tool that adds or removes a water source, and a view that marks the sources.
 

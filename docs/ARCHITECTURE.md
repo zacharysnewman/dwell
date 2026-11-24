@@ -1614,9 +1614,10 @@ its precision decisions stand):
   midplane and is carried across it by the flip band (*Bifacial world* below).
 - **The midplane** `MIDPLANE_Y` = 0 (D9): the origin of generation, the disc's halfway plane and
   the build sphere's centre. **Face A** is y ≥ 0, **face B** its mirror image below. Heights in the
-  terrain are face-local (`h`, from the midplane): sea level `SEA_LEVEL` = 72 m (32 m until 0.76: owner, 2026-11-18, "Sea level +40m and a steeper shelf", for ships) and the stone core of
-  `CORE_LAYERS` = 10 m per face (never carved by generation, so the disc is at least 20 m thick;
-  on ½ m cells these are rows 144 and 20, with metre twins `SEA_LEVEL_M`, `CORE_M`) are interim constants until Phase 17 moves them into the terrain definition. There is no
+  terrain are face-local (`h`, from the midplane): sea level `SEA_LEVEL` = 574 m (32 m until 0.76: owner, 2026-11-18, "Sea level +40m and a steeper shelf", for ships;
+  2026-11-23, the underground "from 10m to 512m") and the stone core of
+  `CORE_LAYERS` = 512 m per face (never carved by generation, so the disc is at least 1 km thick;
+  on ½ m cells these are rows 1148 and 1024, with metre twins `SEA_LEVEL_M`, `CORE_M`) are interim constants until Phase 17 moves them into the terrain definition. There is no
   void below the world; the core's first rows either side of the midplane are **bedrock** (since
   generator version 20, below).
 - **The build volume** (`dwell_world::bounds`, `BuildVolume`, `inside_build_volume`): one predicate
@@ -1651,7 +1652,7 @@ its precision decisions stand):
   cheap. The client keeps positions as f64 and the renderer draws camera-relative (§5). The player
   controller suites and the netcode tests run both at the origin and ~49 km from it, near the rim
   (`DWELL_ORIGIN_X=far`), with the same results; the golden trace is held bit-exactly in the
-  origin frame (local y 0 at sea level, 72 m above the midplane since 0.76), natively and in WASM.
+  origin frame (local y 0 at sea level, 574 m above the midplane since 0.76), natively and in WASM.
 - **Scale of terrain:** (prototype content, §6.1) since generator version 12 (Phase 15) **one
   island** 20–30 km in radius at the origin (*Interim island layout* below), land up to ~500 m above
   sea level (since generator version 16) and a sea floor ~20 m deep (never below the core), and open
@@ -2088,7 +2089,7 @@ follow. **The Textures tab (B6, 0.52.42):** the painterly materials and palette 
    −20 m over 2.5 km; small bumps (±5 m, a 128 m three-octave fBm) everywhere. The parameters are data,
    `shared/worldgen/terrain.json` (`HeightField`, generated into `terrain.gen.rs` by
    `shared/worldgen/gen.mjs`, range-checked, stale-checked and node-tested in CI). Heights over the
-   island span about 0–500 m above sea level (sea level is face-local 72 since 0.76, over the 10-layer core; the open sea about 60 m deep over it, the world map's floor `FLOOR` the core's top).
+   island span about 0–500 m above sea level (sea level is face-local 574 m since 0.76, over the 512 m core; the open sea about 60 m deep over it, the world map's floor `FLOOR` the core's top).
    **Generator version 19** (½ m cells, ADR 0042, adopted 2026-10-20) keeps v16's height field on ½ m cells, its tops shaped by the stored ramps (`HALF_HEIGHT_GRID.md` §4), with v17's flooded shores and v18's pines (two ½ m cells per structure layer). **Steps**
    (`steps` in `terrain.json`) can snap heights to whole `height` metres where a 4 m lattice cell
    rises at least `fromSlope`; `height` is 0 (off), and the generation rule (V2,
@@ -4378,7 +4379,7 @@ in the code yet.
 | `POSITION_FIXED_SCALE` | 256 per m | Fixed-point wire positions (`i32`, ±8 388 km at 3.9 mm, §8.3) |
 | `POS64_LIMIT` | 33 554 432 m | Range decoders accept for `pos64` positions (§8.3) |
 | `FLY_SPEED_MAX_LEVEL` / `FLY_SPEED_SHIFT` | 11 / 4 | Flight speed slider: highest level (2^5.5 × `fly.speed`, 362 m/s; 2026-10-26, was 20: terrain generation couldn't keep up from level 12) and its bit position in `PlayerInput.buttons` (§9.1). No flight ceiling (Phase 16, D3; PLAYER_CONTROLLER.md §6.7 has the other flight tunables) |
-| `SEA_LEVEL` | 144 rows (72 m; 64 rows before 0.76) | Water fill height, face-local (interim: the terrain definition's in Phase 17); metre twin `SEA_LEVEL_M` |
+| `SEA_LEVEL` | 1148 rows (574 m; 64 rows before 0.76) | Water fill height, face-local (interim: the terrain definition's in Phase 17); metre twin `SEA_LEVEL_M` |
 | `VIEW_RADIUS_CHUNKS` | 3 | Radius of the sphere of chunks streamed around each player |
 | `RENDER_RADIUS_CHUNKS` | 12 | Radius within which a client may request chunks to draw at full detail (§6.3, §6.6) |
 | `CHUNK_REQUESTS_PER_SECOND` | 256 | Per-client `ChunkRequest` rate limit (chunks) |

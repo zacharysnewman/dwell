@@ -14,6 +14,15 @@ To measure: new and reopened worlds, local and joined, in the browser and the Ma
 a second or less, on new and existing worlds. WORK_QUEUE "Q&A with the owner, 2026-11-23".
 Dropped 2026-11-23 (owner): "Actually can drop it, I'm getting <4/s spawn times."
 
+### 231. Back-flooded river chunks stay in low detail
+
+Owner, 2026-11-23: "River chunks that have been back flooded (due to damming) seem to never load in higher detail they
+seem stuck in low detail (unless you move really close to load in close high detail)." A dammed river's water spreads
+back over land (the water grid's edits); those chunks' far LOD sections seem never to refine, so they draw at low
+detail until the near chunks load. Suspect: the LOD's refinement of a section whose water changed after generation
+(its bounds or its edits not marking it for a finer level). Owner should see: a dammed, back-flooded river valley
+drawn at the same detail as the land round it at every distance. WORK_QUEUE "Owner's list, 2026-11-23" §3.
+
 ### 229. The shake on a hit is barely visible, one face, one cell
 
 Owner, 2026-11-23 (doors, ladders, dynamite: 2 hits, a shake on the first): "Look is bad, it should work like the block

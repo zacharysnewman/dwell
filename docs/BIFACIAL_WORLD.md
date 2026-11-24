@@ -34,8 +34,8 @@ back to back.
 (`MIDPLANE_Y`, chunk row boundary 0/−1), also the origin of generation and the centre of the
 **build sphere** (`bounds`: radius 50 km, ARCHITECTURE.md §6.3), whose equator is the rim. Face A is
 y ≥ 0; face B's voxel at y is the face-local voxel `h = −1 − y` (`MIRROR_SUM` = −1), its chunk row
-`cy` the face-local row `−1 − cy`, so face B's sea surface is y = −72 (sea level `h` = 72 on both
-faces; 32 before 0.76). Each face has a **core of 10 stone layers** (`h` 0–9, `CORE_LAYERS`) that generation never
+`cy` the face-local row `−1 − cy`, so face B's sea surface is y = −574 (sea level `h` = 574 on both
+faces, over a 512 m core; 32 over 10 m before 0.76). Each face has a **core of 10 stone layers** (`h` 0–9, `CORE_LAYERS`) that generation never
 carves (but for a portal's shaft, §12), so the disc is at least 20 layers thick; since Phase 48 its
 first rows from the midplane are the indestructible bedrock (§12); the core anchor zone (`CORE_ANCHOR_LAYERS` = 8,
 Phase 20) lies within it. The chunk rows run from −1 563 to 1 562 (the sphere's height, symmetric
