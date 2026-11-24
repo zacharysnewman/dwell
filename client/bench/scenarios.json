@@ -7704,6 +7704,47 @@
       ]
     },
     {
+      "name": "portal-drop",
+      "notes": "A drop down a portal's 1.2 km shaft (0.76; owner, 2026-11-24: \"only getting 20-30 fps on that portal drop\"): seed 0's portal (?spawn=portal), the player walks off the rim into the hole and falls through the core to the far face and back up (the portal's lift). Records the frames of the whole crossing, with the shaft's stand-ins drawn (BUGS.md #236).",
+      "seed": 0,
+      "portal": true,
+      "settings": {
+        "timeOfDay": 0.45
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "look",
+          "yaw": 180,
+          "pitch": -30
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "hold",
+          "code": "KeyW",
+          "s": 1.0
+        },
+        {
+          "do": "wait",
+          "s": 20
+        },
+        {
+          "do": "record",
+          "name": "drop",
+          "budget": {
+            "frame.cpu.p95": 16.7,
+            "gpu.frame.p95": 16.7
+          },
+          "reportOnly": true
+        }
+      ]
+    },
+    {
       "name": "portal-a",
       "notes": "A portal between the faces (BIFACIAL_WORLD.md \u00a712, shared/worldgen/midplane.json): seed 7's nearest the centre (axis column -4872, 20185), the player on face A's rim over its ladder (?spawn=portal). Shots: the opening from above, the shaft looked down from over its axis, the midplane from inside the shaft, then the climb down the ladder looking down and holding forward: just above the midplane, across it (the look continued: up face B's ladder), and at face B's opening.",
       "seed": 7,
