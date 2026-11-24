@@ -182,6 +182,12 @@ struct P {
     i: u16,
 }
 
+/// Whether a chunk the map doesn't hold lets the open sky through (it is known to be all air, over
+/// its column's sky floor): the light's sky enters a held chunk's top from such a chunk only. None:
+/// every chunk not held is open sky (as before 0.76). BUGS.md #236: chunks dropped above a player
+/// falling down a portal's 1.2 km shaft read as open sky and lit the shaft behind them.
+pub type SkyTest = std::sync::Arc<dyn Fn(ChunkCoord) -> bool + Send + Sync>;
+
 /// The flood light of the chunks the client holds.
 pub struct LightMap {
     slots: Vec<Slot>,
@@ -198,6 +204,8 @@ pub struct LightMap {
     writes: u64,
     /// A chunk's load being lit a slice at a time ([`Self::begin_load`], [`Self::resume`]).
     pending: Option<Box<Pending>>,
+    /// Which chunks not held let the sky through ([`SkyTest`]; none: all of them).
+    sky_test: Option<SkyTest>,
 }
 
 /// A chunk's load in progress (docs/BUGS.md #72): its passes, each a channel's removal then
@@ -254,7 +262,31 @@ impl LightMap {
             tunables,
             writes: 0,
             pending: None,
+            sky_test: None,
         }
+    }
+
+    /// Sets which chunks not held let the sky through ([`SkyTest`]). Light already spread stays
+    /// as it is; what is lit or relit from then on follows it.
+    pub fn set_sky_test(&mut self, test: Option<SkyTest>) {
+        self.sky_test = test;
+    }
+
+    /// Whether chunk `c`, not held, lets the open sky through.
+    fn open(&self, c: ChunkCoord) -> bool {
+        self.sky_test.as_ref().is_none_or(|t| t(c))
+    }
+
+    /// The chunk face-locally above chunk `c`.
+    fn chunk_above(c: ChunkCoord) -> ChunkCoord {
+        let up = if up_of_y(c.y * N) > 0 { 1 } else { -1 };
+        ChunkCoord::new(c.x, c.y + up, c.z)
+    }
+
+    /// What a cell of chunk `c`, not held, reads as: [`OPEN`] where it lets the sky through, else
+    /// dark.
+    fn outside(&self, c: ChunkCoord) -> u8 {
+        if self.open(c) { OPEN } else { 0 }
     }
 
     /// How many cell writes the updates have made (a cell cleared and refilled is two): the
@@ -307,7 +339,13 @@ impl LightMap {
         for k in 0..8 {
             let d = [k & 1, (k >> 1) & 1, (k >> 2) & 1];
             let c: [i32; 3] = std::array::from_fn(|a| base[a] + d[a]);
-            let v = self.get(c).unwrap_or(OPEN);
+            let v = self.get(c).unwrap_or_else(|| {
+                self.outside(ChunkCoord::new(
+                    c[0].div_euclid(N),
+                    c[1].div_euclid(N),
+                    c[2].div_euclid(N),
+                ))
+            });
             if v == 0 {
                 continue;
             }
@@ -326,7 +364,8 @@ impl LightMap {
     }
 
     /// The chunk's light with a one-cell apron (the mesher's padded layout: x fastest, then z,
-    /// then y, each −1..=32), cells of chunks not held [`OPEN`].
+    /// then y, each −1..=32), cells of chunks not held [`OPEN`] where they let the sky through
+    /// ([`SkyTest`]), else dark.
     pub fn padded(&self, coord: ChunkCoord) -> Vec<u8> {
         let pad = N + 2;
         let mut out = vec![OPEN; (pad * pad * pad) as usize];
@@ -334,10 +373,11 @@ impl LightMap {
             for dz in -1..=1 {
                 for dx in -1..=1 {
                     let c = ChunkCoord::new(coord.x + dx, coord.y + dy, coord.z + dz);
-                    let Some(&s) = self.index.get(&c) else {
+                    let slot = self.index.get(&c).map(|&s| &self.slots[s as usize]);
+                    let fill = slot.is_none().then(|| self.outside(c));
+                    if fill == Some(OPEN) {
                         continue;
-                    };
-                    let slot = &self.slots[s as usize];
+                    }
                     let range = |d: i32| match d {
                         -1 => N - 1..N,
                         0 => 0..N,
@@ -349,8 +389,10 @@ impl LightMap {
                             let pz = lz + dz * N + 1;
                             for lx in range(dx) {
                                 let px = lx + dx * N + 1;
-                                out[(px + pad * (pz + pad * py)) as usize] =
-                                    slot.get(local(lx, ly, lz));
+                                out[(px + pad * (pz + pad * py)) as usize] = match slot {
+                                    Some(slot) => slot.get(local(lx, ly, lz)),
+                                    None => 0,
+                                };
                             }
                         }
                     }
@@ -424,7 +466,7 @@ impl LightMap {
             Kind::Mixed => {
                 let coord = self.slots[s as usize].coord;
                 let up = if up_of_y(coord.y * N) > 0 { 2 } else { 3 };
-                if self.slots[s as usize].near[up] == NONE {
+                if self.slots[s as usize].near[up] == NONE && self.open(Self::chunk_above(coord)) {
                     add.extend(border(s, up));
                 }
                 if let Some(chunk) = voxels.get(&coord) {
@@ -654,7 +696,9 @@ impl LightMap {
         let coord = slot.coord;
         let up = up_of_y(coord.y * N);
         let above = slot.near[if up > 0 { 2 } else { 3 }];
-        let open_above = above == NONE || {
+        let open_above = if above == NONE {
+            self.open(Self::chunk_above(coord))
+        } else {
             let a = &self.slots[above as usize];
             a.cells.is_none() && a.uniform == pack(LIGHT_MAX, 0)
         };
@@ -711,6 +755,9 @@ impl LightMap {
         let mut from: [Vec<(P, usize, u8)>; 2] = [Vec::new(), Vec::new()];
         for &s in &gone {
             let near = self.slots[s as usize].near;
+            // Its place lets the sky through once it goes, or (known not open: under a column's
+            // sky floor) it doesn't, and what came straight down through it goes with it.
+            let open = self.open(self.slots[s as usize].coord);
             for (d, &n) in near.iter().enumerate() {
                 if n == NONE || is_gone(&gone, n) {
                     continue;
@@ -739,9 +786,9 @@ impl LightMap {
                         };
                         // Full sky light under the chunk (it filters nothing) takes the open sky
                         // now at the same level.
-                        let stays = below && ch == Channel::Sky && lv == LIGHT_MAX;
+                        let stays = open && below && ch == Channel::Sky && lv == LIGHT_MAX;
                         let may_clear = lv > 0 && lv <= reach && !stays;
-                        let may_gain = below && ch == Channel::Sky && lv < LIGHT_MAX;
+                        let may_gain = open && below && ch == Channel::Sky && lv < LIGHT_MAX;
                         if may_clear || may_gain {
                             from[k].push((q, d, ov));
                         }
@@ -963,6 +1010,9 @@ impl LightMap {
             Channel::Block => e,
             Channel::Sky => {
                 if f >= LIGHT_MAX || self.above_slot(p).is_some() {
+                    return 0;
+                }
+                if !self.open(Self::chunk_above(self.slots[p.slot as usize].coord)) {
                     return 0;
                 }
                 let d = if self.up(p) > 0 { 3 } else { 2 };
