@@ -172,6 +172,11 @@ context) at a time with a choice to table it as well as the other options?" Answ
      whether players get the same rule (today `lift_buried_players` lifts a player inside the ground at once).
      Owner should see: a block or log trapped inside rock floats straight up out of it, then lands and settles,
      instead of shaking in place.
+- **Respawn hand-over on a mountainside (found 2026-11-24, 0.76):** with the LOD, a preloaded respawn on seed 1's new
+  mountainside spawn keeps the loading screen 10 frames (0.15 s; 130 without the preload): its ring is drawable,
+  but 9 of 81 chunks count ready until the LOD hands its sections over, all at once on the 10th frame. In the old
+  valley spawn it opened on the first. To look at: why the hand-over waits ~9 frames. Owner should see: respawning
+  opens the view at once, on any terrain.
 - **Game browsers muted (owner, 2026-11-24):** "Kill any open game browsers and ensure when you open them you mute
   the sound unless your doing sound testing." Done: bench, shots, panoramas and look-shot launch with
   `--mute-audio` unless `DWELL_SOUND=1`; the DevTools browser too. Owner should see: no game sound from browsers
