@@ -144,6 +144,9 @@ context) at a time with a choice to table it as well as the other options?" Answ
   I meant by skin color." So skin is its own colour, chosen once for every skin face together (not painted face by
   face); the rest (hair, clothes, hat) painted face by face. Owner should see: a skin colour picker that recolours all
   the character's skin at once, beside the face-by-face painting of everything else.
+  Owner, 2026-11-23: "We should also put let's make hair separate too like skin." So hair is its own colour too, all
+  at once; the clothes and the hat painted face by face. Owner should see: skin and hair colour pickers that each
+  recolour all of it at once, beside the face-by-face painting of the clothes and hat.
 - **Splitscreen:** "Up to 4 players", "Local and online" (each a full player, in a local, friend or dedicated world).
   Owner should see: two to four players on one screen, each with their own view and HUD, playing locally or joined to
   a friend's world, at 60 fps with tuned visibility and settings.
