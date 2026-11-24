@@ -2809,23 +2809,28 @@ impl TerrainGenerator {
                 // is a broad bank, never a ridge; none where the river is at the sea's level (its
                 // water is the sea's: the land beside it is a shore, open to both). By every
                 // channel near, the highest, as the valleys are by every channel: the nearest
-                // alone stepped where it changed between two rivers at different levels.
-                let levee_of = |r: &worldmap::Hit| {
+                // alone stepped where it changed between two rivers at different levels. Each
+                // channel's raise fades out over the last quarter of its valley's reach, where the
+                // channels near stop counting it: a steep tributary's levee 43 m out, cut off
+                // there, stepped the ground 1.16 m (BUGS.md #233).
+                let ground = h;
+                let raise_of = |r: &worldmap::Hit| {
                     let edge = (r.d - r.half).max(0.0);
-                    (r.level > CELL_H).then(|| {
-                        r.level + S.river_bank - (edge - 1.0).max(0.0) * S.river_levee_fall
-                    })
+                    if r.level <= CELL_H {
+                        return 0.0;
+                    }
+                    let levee =
+                        r.level + S.river_bank - (edge - 1.0).max(0.0) * S.river_levee_fall;
+                    let reach = r.valley.max(1e-6);
+                    let keep = 1.0 - smooth01((edge - 0.75 * reach) / (0.25 * reach));
+                    (levee - ground).max(0.0) * keep
                 };
-                let mut levee = levee_of(r);
+                let mut raise = raise_of(r);
                 map.channels
                     .each_near(warped.0, warped.1, min_half, min_width, |_, o| {
-                        if let Some(l) = levee_of(&o) {
-                            levee = Some(levee.map_or(l, |m: f64| m.max(l)));
-                        }
+                        raise = raise.max(raise_of(&o));
                     });
-                if let Some(levee) = levee {
-                    h = h.max(levee);
-                }
+                h = ground + raise;
             }
         }
         // The waterline: dry ground beside a river's or lake's water stands a row over its top,

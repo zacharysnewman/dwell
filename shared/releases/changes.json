@@ -4,8 +4,11 @@
     {
       "version": "0.76.0",
       "changes": [
-        "A new compatibility line: deeper seas. Sea level 40 m higher, the open sea about 60 m deep, deep water close off the coast",
-        "Ships have room to sail and sink: wrecks settle far below the surface",
+        "A new compatibility line: deeper seas. The open sea is about 60 m deep, with deep water close off the coast, room for ships to sail and wrecks to sink",
+        "The ground runs 512 m down to the bedrock",
+        "Rivers rise as thin streams up in the mountains and run all the way to the sea",
+        "Portals are lined with bedrock and nothing can be built round them; no ladders: drop in and you're carried up and out of the far side's hole",
+        "No more boulders at the foot of cliffs; blasted rubble no longer gets stuck shaking in the rock",
         "New worlds only: worlds from 0.75 open in a 0.75 build"
       ]
     },

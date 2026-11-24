@@ -163,6 +163,19 @@ context) at a time with a choice to table it as well as the other options?" Answ
   6. Then: "Sky question, character painting, inventory icons, split screen": section 6 (the moonlight question), the
      character painting (section 7), section 9 (inventory icons), the splitscreen (section 7).
   The snow-line screenshot (#219) goes to the owner when work resumes.
+  7. **Pieces stuck in the ground (owner, 2026-11-24, after BUGS.md #234):** "We could also have a rule for physics
+     objects that are fully stuck inside the ground, instead of colliding repeatedly have their collider disabled and
+     are moved at a constant velocity upward, until they fully enter air again, collider reenabled and allowed to
+     settle. This can be added to the end of the queue, because I'm not sure what the effect of this will be on small
+     1m wide holes. Or if players count for this." Open questions for its start: what counts as fully stuck (every
+     corner inside solid cells, or held there for some time); whether a piece snug in a hole one cell wide counts;
+     whether players get the same rule (today `lift_buried_players` lifts a player inside the ground at once).
+     Owner should see: a block or log trapped inside rock floats straight up out of it, then lands and settles,
+     instead of shaking in place.
+- **Game browsers muted (owner, 2026-11-24):** "Kill any open game browsers and ensure when you open them you mute
+  the sound unless your doing sound testing." Done: bench, shots, panoramas and look-shot launch with
+  `--mute-audio` unless `DWELL_SOUND=1`; the DevTools browser too. Owner should see: no game sound from browsers
+  Claude opens.
 - **Copying a body as a blueprint:** "Aim at it with the copy tool": with the region copy tool, aiming at a moving body
   and copying takes the whole body onto the clipboard in its original rotation (saved and exported from the Structures
   panel). Pasting it: "A moving body again" (it floats if over water).

@@ -266,6 +266,8 @@ async function main(): Promise<void> {
       '--disable-background-timer-throttling',
       '--disable-renderer-backgrounding',
       '--disable-backgrounding-occluded-windows',
+      // Muted unless testing sound (DWELL_SOUND=1; owner, 2026-11-24).
+      ...(process.env.DWELL_SOUND ? [] : ['--mute-audio']),
     ],
   });
   try {

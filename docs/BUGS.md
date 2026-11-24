@@ -6,17 +6,6 @@ pins it.
 
 ## Open
 
-### 233. A 1.16 m step in the ground near a confluence (0.76's river data, seed 7 face B)
-
-Found 2026-11-23 by `no_seam_where_river_valleys_meet::b` (terrain.rs) once 0.76's rivers from the mountains (river
-threshold 0.15 and headwaters, `shared/worldgen/hydrology.json`) were in: two dry columns at (13106, −8864) and
-(13107, −8864) step 1.05 m and 1.14 m against the slope either side (590.77 → 589.61 m, then flat 589.51 m). Not
-a terrain volume (the column's `base`, its height before a volume, equals its height), and every channel's hit at
-the unwarped point (distance, half-width, level, valley) changes smoothly across the step (`examples/seam_probe.rs 7
-13102 13110 -8864`); the old river data has none there. Suspects: the carve's own inputs at the meander-warped
-point, a branch of the valley/levee rules switching there, or the map's height field round the new small rivers. Open; blocks 0.76's merge (a red
-test) unless the owner says otherwise.
-
 ### 232. Boulders still appear in game after their removal
 
 Owner, 2026-11-23: "There shouldn't be boulders. These were supposed to be removed. But I've seen them in game
@@ -1334,6 +1323,21 @@ the first ladder went there (it now waits for the cell).
 
 
 ## Fixed
+
+### 233. A 1.16 m step in the ground near a confluence (0.76's river data, seed 7 face B)
+
+Found 2026-11-23 by `no_seam_where_river_valleys_meet::b` (terrain.rs) once 0.76's rivers from the mountains (river
+threshold 0.15 and headwaters, `shared/worldgen/hydrology.json`) were in: two dry columns at (13106, −8864) and
+(13107, −8864) step 1.05 m and 1.14 m against the slope either side (590.77 → 589.61 m, then flat 589.51 m). Not
+a terrain volume (the column's `base`, its height before a volume, equals its height), and every channel's hit at
+the unwarped point (distance, half-width, level, valley) changes smoothly across the step (`examples/seam_probe.rs 7
+13102 13110 -8864`); the old river data has none there. Suspects: the carve's own inputs at the meander-warped
+point, a branch of the valley/levee rules switching there, or the map's height field round the new small rivers. **Fixed on the 0.76 branch (2026-11-24):** the levee. A
+column's levee is the highest of every channel near, and a channel counts only within its valley's reach. A steep
+tributary's segment 43 m off (#21152, its water at 22.1 m against the main river's 16.0) still held the ground up at
+16.77 m there, over the land, and one column on it dropped out of the reach: its levee vanished at once (16.77 →
+15.51). Each channel's raise now fades out over the last quarter of its reach (`terrain.rs`); the ground falls
+smoothly across x 13102–13110. Red → green: `no_seam_where_river_valleys_meet::b`.
 
 ### 234. Blasts and water behave differently with the ground at 576 m (0.76's sea level)
 
