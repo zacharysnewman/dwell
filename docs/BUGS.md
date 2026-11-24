@@ -6,6 +6,16 @@ pins it.
 
 ## Open
 
+### 237. The game's tab crashed ("Aw, Snap!", error code 11) after many reloads in one tab
+
+Found 2026-11-24 in Claude's automation Chrome on the 0.76 branch's dev build (the owner shared the screenshot): after
+~7 reloads of `?fresh=1&seed=0&spawn=portal` in one tab within ~30 minutes (each a fresh local world, flown down a
+portal's shaft with the spyglass), the next reload crashed the renderer (code 11: the renderer process died, not a
+Rust panic). A fresh browser loaded it fine. Suspects: memory kept across reloads in the tab (WebGPU buffers or the
+workers' WASM), or the new stand-in chunks (each job worker caches up to 192 generated chunks, ~12 MB). To check: the
+bench's reload loop with the tab's memory sampled each reload. Open.
+
+
 ### 236. Down a portal's shaft: the far face's sky shows through, and light comes in behind a falling player
 
 Owner, 2026-11-24 (the 0.76 branch's local build, a portal on seed 0): "It looks like the chunks aren't loading very
