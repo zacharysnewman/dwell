@@ -386,7 +386,7 @@ fn the_general_power_path_is_bit_identical_everywhere() {
     assert_eq!(m.digest(), DIGEST_1234_GENERAL, "{:#018x}", m.digest());
 }
 
-const DIGEST_1234_GENERAL: u64 = 0x30bc_5a43_e66a_5de0;
+const DIGEST_1234_GENERAL: u64 = 0x93fa_734f_6d5f_1dc8;
 
 // ---- The uplift layer ---------------------------------------------------------------------------
 

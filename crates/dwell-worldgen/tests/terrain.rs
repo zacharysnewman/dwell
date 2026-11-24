@@ -1984,9 +1984,10 @@ fn existing_seeds_spawn_where_they_did() {
     // Since 0.58 the spawn is the shrine nearest the search's point (tests/shrines.rs): the pin is
     // the search's, which is unchanged.
     for (seed, a, b) in [
-        // 0.76's deeper seas moved the rivers the search prefers.
-        (0u64, [6466.5, 145.5, 7942.5], [7456.5, -191.5, -2175.5]),
-        (7, [1350.5, 137.0, 10250.5], [-10557.5, -109.5, 2158.5]),
+        // 0.76: the deeper seas, the 512 m core (the sea 576 m up) and the rivers from the
+        // mountains moved the rivers the search prefers (`examples/spawn_pins` prints these).
+        (0u64, [6498.5, 643.0, 9158.5], [7456.5, -695.5, -2175.5]),
+        (7, [872.5, 684.0, 7928.5], [-10311.5, -638.5, 1344.5]),
     ] {
         let t = dwell_worldgen::BifacialTerrain::new(seed);
         assert_eq!(

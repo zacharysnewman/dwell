@@ -338,7 +338,8 @@ fn the_flat_worlds_lod_equals_the_downsample_of_its_chunks() {
     }
     let mut cells = LodCells::new();
     assert_eq!(
-        generate_flat_lod(section_at(2, 0, 200, 0), &mut cells),
+        // 200 rows over the flat ground's top (row 200 itself until 0.76, under its 1152 since).
+        generate_flat_lod(section_at(2, 0, i64::from(FLAT_TOP_Y) + 200, 0), &mut cells),
         LodKind::Empty
     );
     assert_eq!(
