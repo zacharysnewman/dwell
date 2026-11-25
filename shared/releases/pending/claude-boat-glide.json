@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "Boats let go of keep gliding, slowing gently over about a minute, and are carried along by a river's current little by little",
-    "The status lines at the top left show every figure, wrapping instead of cutting off, and now the game's memory use"
-  ]
-}
