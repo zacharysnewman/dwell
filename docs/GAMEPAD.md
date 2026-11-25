@@ -25,7 +25,9 @@ Validation: every action bound once, to a known button; no button twice in a gro
 range; unknown keys fail with their path.
 
 Default play bindings: A jump (fly up), B crouch (fly down), left stick press run, RT break (held, a tool or a punch keeps swinging: ITEMS.md "Hold to keep swinging"), LT
-place (held, it builds on: ITEMS.md §5), D-pad right the build mode, RB / LB next / previous block, Y fly, D-pad up / down fly faster / slower, X spyglass, View
+place (held, it builds on: ITEMS.md §5), D-pad right the build mode, RB / LB next / previous block, Y fly, D-pad up / down fly faster / slower, X interact (a press uses the door, helm or cannon aimed at, as E; held, a
+boat's hold: right it, or bail it from inside in creative; owner, 2026-11-23: "X on controller"), the right stick press
+the spyglass (X until 0.76), View
 the big map (ADR 0068; on it the left stick and D-pad pan, RT / RB zoom in, LT / LB zoom out, Y centres
 on the player, B or View closes: `bigMap.pad*` in `shared/ui/map.json`), Menu the game menu. Menus: D-pad (or left stick) moves the focus, A presses, B goes back, Menu
 closes the game menu.

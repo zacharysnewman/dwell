@@ -1151,3 +1151,197 @@ both_faces!(
         );
     }
 );
+
+/// Player 1 says this build's capabilities (`bodies.hold` among them).
+fn say_capabilities(fx: &mut Fixture) {
+    let c = dwell_protocol::capabilities::Capabilities::this_client();
+    fx.send(1, Message::Capabilities(c));
+}
+
+/// Player 1 holds E on `body` for `ticks` ticks: a `BodyHold` every 6 ticks (the client's
+/// ~100 ms), the server stepping.
+fn hold_e(fx: &mut Fixture, seq: &mut u32, body: u32, ticks: u32) {
+    for t in 0..ticks {
+        if t % 6 == 0 {
+            fx.send(1, Message::BodyHold(body));
+        }
+        hold(fx, seq, Input::default(), 1);
+    }
+}
+
+/// An all-plank 8 × 8 hull (walls 3 high) afloat in `harbour`'s pool, its floor holed at (3, 0, 3)
+/// and flooding for 10 s, player 1 standing inside it: the fixture, the hull and the input
+/// sequence.
+fn flooded_hull(f: FaceFrame, mode: &str) -> (Fixture, u32, u32) {
+    let mut fx = Fixture::new(config(f));
+    fx.join(1, &Client::new(1));
+    assert!(fx.server.set_mode(mode), "{mode}");
+    let (raft, _) = harbour(&mut fx, f);
+    fx.server.remove_body(raft);
+    let up = up_rows(f);
+    let planks = f.state(dwell_blocks::require("dwell:planks"));
+    let mut hull = Vec::new();
+    for x in 0..8 {
+        for z in 0..8 {
+            hull.push(([x, 0, z], planks));
+            if x == 0 || z == 0 || x == 7 || z == 7 {
+                for r in 1..4 {
+                    hull.push(([x, r * up, z], planks));
+                }
+            }
+        }
+    }
+    let c = f.cell([0, BASE, 0]);
+    let y = f64::from(c[1]) * dwell_world::CELL_H + if up > 0 { 0.0 } else { dwell_world::CELL_H };
+    let body = fx.server.add_body(1, hull, [0.5, y, 0.5]);
+    let mut seq = 0;
+    hold(&mut fx, &mut seq, Input::default(), 120);
+    assert!(fx.server.break_body_cell(body, [3, 0, 3]), "holed");
+    hold(&mut fx, &mut seq, Input::default(), 600);
+    (fx, body, seq)
+}
+
+/// Stands player 1 on the floor of hull `body` at its cell (5, ·, 5).
+fn stand_in_hull(fx: &mut Fixture, f: FaceFrame, body: u32) {
+    let (at, rot) = fx.server.body_pose(body).expect("afloat");
+    let up = dwell_physics::DVec3::from(f.vector([0.0, 1.0, 0.0]));
+    let floor_top =
+        at + rot * dwell_physics::DVec3::new(5.0, 0.0, 5.0) + up * (0.5 * dwell_world::CELL_H);
+    stand(fx, floor_top + up * 0.05, up);
+}
+
+both_faces!(
+    fn holding_e_inside_a_flooded_hull_bails_it_dry_in_creative(f: FaceFrame) {
+        // Owner, 2026-11-23: "Hold E inside the hull" (creative): it bails dry over a second or
+        // two, faster than its hole lets water in.
+        let (mut fx, body, mut seq) = flooded_hull(f, "creative");
+        say_capabilities(&mut fx);
+        let (water, room) = fx.server.hull_water(body);
+        assert!(water > 0.2 * room, "it flooded: {water} of {room} m³");
+        stand_in_hull(&mut fx, f, body);
+        hold_e(&mut fx, &mut seq, body, 150);
+        let (left, _) = fx.server.hull_water(body);
+        assert!(left < 0.05 * water, "bailed: {water} -> {left} m³");
+        assert!(matches!(
+            fx.server.hold_done(),
+            Some(dwell_sim::server::HoldDone::Bailed(_))
+        ));
+    }
+);
+
+both_faces!(
+    fn holding_e_bails_nothing_in_adventure_or_from_a_client_without_the_hold(f: FaceFrame) {
+        // Bailing is creative's (the `bail` ability); a client that never said `bodies.hold` is
+        // not heard at all.
+        let (mut fx, body, mut seq) = flooded_hull(f, "adventure");
+        say_capabilities(&mut fx);
+        stand_in_hull(&mut fx, f, body);
+        let (water, _) = fx.server.hull_water(body);
+        hold_e(&mut fx, &mut seq, body, 90);
+        assert!(
+            fx.server.hull_water(body).0 >= water,
+            "adventure: not bailed"
+        );
+        let (mut fx, body, mut seq) = flooded_hull(f, "creative");
+        stand_in_hull(&mut fx, f, body);
+        let (water, _) = fx.server.hull_water(body);
+        hold_e(&mut fx, &mut seq, body, 90);
+        assert!(
+            fx.server.hull_water(body).0 >= water,
+            "no capability: not bailed"
+        );
+    }
+);
+
+/// A 4 × 2 plank raft (two rows thick) turned `degrees` about +x (face-local), its centre at
+/// face-local `centre`, player 1 standing 3 m from it at `feet`: holding E for `ticks`, its
+/// tilt from its build's up after (degrees).
+fn tilt_after_holding_e(
+    f: FaceFrame,
+    degrees: f64,
+    centre: [f64; 3],
+    feet: [f64; 3],
+    mode: &str,
+    water: bool,
+    ticks: u32,
+) -> (f64, f64) {
+    let mut fx = Fixture::new(config(f));
+    fx.join(1, &Client::new(1));
+    assert!(fx.server.set_mode(mode));
+    say_capabilities(&mut fx);
+    let up = up_rows(f);
+    if water {
+        let (raft, _) = harbour(&mut fx, f);
+        fx.server.remove_body(raft);
+    } else {
+        let stone = f.state(dwell_blocks::require("dwell:stone"));
+        for x in -12..12 {
+            for z in -12..12 {
+                let c = f.cell([x, BASE - 1, z]);
+                fx.server.world().set_voxel(c[0], c[1], c[2], stone);
+            }
+        }
+    }
+    let planks = f.state(dwell_blocks::require("dwell:planks"));
+    let cells: Vec<_> = (0..4)
+        .flat_map(|x| (0..2).flat_map(move |z| [([x, 0, z], planks), ([x, up, z], planks)]))
+        .collect();
+    let turn = dwell_physics::DQuat::from_axis_angle(
+        dwell_physics::DVec3::from(f.vector([1.0, 0.0, 0.0])),
+        f.handed(degrees.to_radians()),
+    );
+    let body = fx.server.add_body_turned(1, cells, f.point(centre), turn);
+    let tilt = |fx: &Fixture| {
+        let (_, rot) = fx.server.body_pose(body).expect("the raft");
+        let face_up = dwell_physics::DVec3::from(f.vector([0.0, 1.0, 0.0]));
+        (rot * face_up).angle_between(face_up).to_degrees()
+    };
+    let mut seq = 0;
+    // Let it come to rest as it lies.
+    hold(&mut fx, &mut seq, Input::default(), 120);
+    let before = tilt(&fx);
+    let fu = dwell_physics::DVec3::from(f.vector([0.0, 1.0, 0.0]));
+    stand(&mut fx, dwell_physics::DVec3::from(f.point(feet)), fu);
+    hold_e(&mut fx, &mut seq, body, ticks);
+    // And after it is let go.
+    hold(&mut fx, &mut seq, Input::default(), 120);
+    (before, tilt(&fx))
+}
+
+both_faces!(
+    fn holding_e_by_a_raft_on_its_side_on_land_rights_it_in_both_modes(f: FaceFrame) {
+        // Owner, 2026-11-23: "Hold E", "Both modes": a body lying on its side turns back upright.
+        let ground = m_of_row(BASE);
+        for mode in ["creative", "adventure"] {
+            let (before, after) = tilt_after_holding_e(
+                f,
+                90.0,
+                [2.0, ground + 1.2, 1.0],
+                [2.0, ground, -3.0],
+                mode,
+                false,
+                240,
+            );
+            assert!(before > 60.0, "{mode}: it lay on its side: {before}°");
+            assert!(after < 12.0, "{mode}: righted: {before}° -> {after}°");
+        }
+    }
+);
+
+both_faces!(
+    fn holding_e_by_a_capsized_raft_afloat_rights_it(f: FaceFrame) {
+        // "holding E (X on a controller) by a capsized boat rights it": upside down in the water.
+        let water_top = m_of_row(BASE);
+        let (before, after) = tilt_after_holding_e(
+            f,
+            180.0,
+            [2.0, water_top, 1.0],
+            [2.0, water_top + 0.1, -2.5],
+            "adventure",
+            true,
+            300,
+        );
+        assert!(before > 150.0, "it capsized: {before}°");
+        assert!(after < 12.0, "righted: {before}° -> {after}°");
+    }
+);

@@ -52,6 +52,8 @@ mod grass;
 mod grids;
 pub use grids::{GridSlot, Grids};
 mod blueprints;
+mod body_hold;
+pub use body_hold::HoldDone;
 mod ground;
 mod growth;
 mod healing;
@@ -1211,6 +1213,10 @@ pub struct Server {
     cannon_ready: HashMap<(u32, [i32; 3]), u32>,
     /// The players at a ship's helm (docs/CANNONS.md C5): session → (body id, the helm's cell).
     helms: HashMap<SessionId, (u32, [i32; 3])>,
+    /// Hold E on a body (`body_hold`): session → (body id, the tick its last `BodyHold` came).
+    holds: HashMap<SessionId, (u32, u32)>,
+    /// What the last hold did on its tick (tests).
+    hold_done: Option<HoldDone>,
     /// Shots fired, ever (C1; C2 launches each one's ball).
     shots_fired: u64,
     last_ball: Option<u32>,
@@ -1502,6 +1508,8 @@ impl Server {
             body_hits: HashMap::default(),
             cannon_ready: HashMap::default(),
             helms: HashMap::default(),
+            holds: HashMap::default(),
+            hold_done: None,
             shots_fired: 0,
             last_ball: None,
             balls: Vec::new(),
@@ -2095,6 +2103,7 @@ impl Server {
                 self.send_blueprints(id);
             }
             Message::TheaterViewpoint(at) => self.theater_viewpoint(id, at),
+            Message::BodyHold(body) => self.body_hold(id, body),
             Message::Markers(m) => self.set_markers(id, m),
             Message::Blueprints(m) => self.blueprints_message(id, m),
             Message::WorldgenRequest => {
@@ -2456,6 +2465,7 @@ impl Server {
         self.lap(5, &mut watch);
         self.roll_balls();
         self.steer_ships();
+        self.hold_bodies();
         self.physics.step(1.0 / f64::from(SIM_HZ));
         // The other grids' spaces, their players and physics.
         self.grids.step(1.0 / f64::from(SIM_HZ));

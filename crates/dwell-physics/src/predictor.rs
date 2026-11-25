@@ -176,6 +176,9 @@ pub struct WaterDrag {
 pub type WaterDragFn =
     fn(&mut VoxelWorld, &Physics, BodyHandle, &mut dwell_world::falls::FallMemo) -> WaterDrag;
 
+/// The current (m/s) over which the glide fades out ([`WaterDrag::slow`]).
+pub const GLIDE_FADE_MS: f64 = 0.25;
+
 impl WaterDrag {
     /// A velocity (world) after a tick of it: sideways slowed toward the current, and a fall's push.
     pub fn slow(self, v: DVec3, dt: f64) -> DVec3 {
@@ -186,8 +189,12 @@ impl WaterDrag {
             v
         } else {
             let k = (rx.abs() * self.kx + rz.abs() * self.kz) / speed;
-            // The speed-squared drag on the speed over the glide speed only.
-            let over = (speed - self.glide).max(0.0);
+            // The speed-squared drag on the speed over the glide speed only: a boat let go in still
+            // water coasts on (BUGS.md #220). In a current the glide fades out over its first
+            // `GLIDE_FADE_MS` m/s, so a river still carries what floats in it at its own speed
+            // (owner, 2026-11-12: trees "floating downstream").
+            let glide = self.glide * (1.0 - cx.hypot(cz) / GLIDE_FADE_MS).clamp(0.0, 1.0);
+            let over = (speed - glide).max(0.0);
             let slowed = speed - over + over / (1.0 + k * over * dt);
             let keep = (-self.linear * dt).exp() * slowed / speed;
             DVec3::new(cx + rx * keep, v.y, cz + rz * keep)

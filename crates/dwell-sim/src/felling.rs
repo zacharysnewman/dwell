@@ -93,6 +93,23 @@ pub enum Divert {
     Taken,
 }
 
+/// Hold E on a body (`shared/physics/bodies.json` `hold`): bail its hull or right it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HoldRules {
+    /// How long E is held before the hold acts (s).
+    pub hold_seconds: f64,
+    /// How long a full hull takes to bail (s).
+    pub bail_seconds: f64,
+    /// How fast a tipped body turns back upright (rad/s).
+    pub right_rad_per_s: f64,
+    /// The lift while it rights (m/s, along the face's up).
+    pub right_lift_ms: f64,
+    /// Upright within this many degrees: nothing to right.
+    pub upright_deg: f64,
+    /// The reach from the body's nearest cell (m).
+    pub reach_m: f64,
+}
+
 /// How bodies float (`shared/physics/bodies.json` `water`; docs/BUILT_BODIES.md §6).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WaterRules {
@@ -121,7 +138,7 @@ pub struct WaterRules {
 mod bodies_generated {
     include!("bodies.gen.rs");
 }
-pub use bodies_generated::{BODY_KINDS, WATER};
+pub use bodies_generated::{BODY_KINDS, HOLD, WATER};
 
 /// How water slows body `body` sideways (docs/BUILT_BODIES.md §6), the server's and the clients'
 /// stand-ins' alike: ½ · the liquid's density · `WATER.drag_coefficient` · the area of its sides
@@ -190,6 +207,11 @@ pub fn body_kind(k: u8) -> &'static BodyKind {
 impl Falling {
     /// Afloat this tick (a cell of it in a liquid and the body lighter than it): a ship's helm
     /// steers it only then (docs/CANNONS.md C5).
+    /// Held still on its build platform (docs/BUILT_BODIES.md §3).
+    pub fn is_anchored(&self) -> bool {
+        self.anchored
+    }
+
     pub fn is_afloat(&self) -> bool {
         self.afloat
     }
@@ -746,6 +768,27 @@ fn offset_m(o: [i32; 3]) -> DVec3 {
 }
 
 impl Felling {
+    /// Whether body `id`'s hull (its air cells, docs/CANNONS.md §12 H1) holds cell `cell` of its
+    /// own grid: a point there is inside the hull.
+    pub fn in_hull(&self, id: u32, cell: [i32; 3]) -> bool {
+        self.air.get(&id).is_some_and(|h| h.air.contains(&cell))
+    }
+
+    /// The water in body `id`'s hull (m³) and the most it holds (H2).
+    pub fn hull_water(&self, id: u32) -> (f64, f64) {
+        self.air
+            .get(&id)
+            .map_or((0.0, 0.0), |h| (h.water_m3, h.air.len() as f64 * CELL_H))
+    }
+
+    /// Bails `m3` of water out of body `id`'s hull (hold E, `HOLD`); the water left.
+    pub fn bail(&mut self, id: u32, m3: f64) -> f64 {
+        self.air.get_mut(&id).map_or(0.0, |h| {
+            h.water_m3 = (h.water_m3 - m3).max(0.0);
+            h.water_m3
+        })
+    }
+
     /// Detaches what the cells `changed` left without support: each piece's cells are cleared
     /// (`clear`: the cell and the state it leaves, water where the block was flooded) and it
     /// becomes a body. Returns the new pieces' indices in `pieces`.

@@ -656,6 +656,10 @@ pub enum Message {
     /// server adds it to this player's interest only where the world's mode has the
     /// `theaterViewpoint` ability. u8 0 (cleared) or 1 then three f64 (finite).
     TheaterViewpoint(Option<[f64; 3]>),
+    /// C→S reliable, control channel, only to a server with the `bodies.hold` capability: E (X on
+    /// a controller) is held aimed at moving body `u32` (`shared/physics/bodies.json` `hold`), sent
+    /// a few times a second while it is; the server bails its hull or rights it while they come.
+    BodyHold(u32),
     /// Both ways, reliable, control channel, only with the `markers.private` capability on both
     /// sides (WORK_QUEUE item 53, docs/MAP_MARKERS.md): a player's map markers in this world, the
     /// whole record (`crate::markers::Markers`). S→C once after the client's `Capabilities`, that
@@ -1067,6 +1071,7 @@ impl Message {
             M::Capabilities(_) => MessageType::Capabilities,
             M::Swordplay(_) => MessageType::Swordplay,
             M::TheaterViewpoint(_) => MessageType::TheaterViewpoint,
+            M::BodyHold(_) => MessageType::BodyHold,
             M::Markers(_) => MessageType::Markers,
             M::Blueprints(_) => MessageType::Blueprints,
             M::SwingHello => MessageType::SwingHello,
@@ -1782,6 +1787,7 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
         M::Capabilities(c) => c.write(w),
         M::Markers(m) => m.encode_into(w),
         M::Blueprints(m) => m.encode_into(w),
+        M::BodyHold(body) => w.u32(*body),
         M::TheaterViewpoint(at) => match at {
             None => w.u8(0),
             Some(p) => {
@@ -2425,6 +2431,7 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
         T::Capabilities => M::Capabilities(crate::capabilities::Capabilities::read(r)?),
         T::Markers => M::Markers(crate::markers::Markers::decode_from(r)),
         T::Blueprints => M::Blueprints(crate::blueprints::BlueprintsMessage::decode_from(r)),
+        T::BodyHold => M::BodyHold(r.u32()),
         T::TheaterViewpoint => M::TheaterViewpoint(match r.u8() {
             0 => None,
             1 => {

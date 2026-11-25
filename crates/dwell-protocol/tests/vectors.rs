@@ -158,6 +158,11 @@ fn decoded_fields_are_the_vectors_values() {
         panic!("body_edit_request_break")
     };
     assert_eq!((b.body, b.cell, b.face, b.material), (9, [0, 3, -1], 5, 0));
+    // Hold E on a body (`bodies.hold`).
+    assert_eq!(
+        Message::decode(&get("body_hold")),
+        Some(Message::BodyHold(70001))
+    );
     let Some(Message::BodyEdit(b)) = Message::decode(&get("body_edit")) else {
         panic!("body_edit")
     };

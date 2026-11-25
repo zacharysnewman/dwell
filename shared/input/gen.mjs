@@ -28,6 +28,7 @@ export const PLAY_ACTIONS = [
   'map',
   'pause',
   'inventory',
+  'interact',
 ];
 /** The menu actions the shell knows (client/src/input/gamepadMenu.ts). */
 export const MENU_ACTIONS = ['up', 'down', 'left', 'right', 'confirm', 'back', 'close'];

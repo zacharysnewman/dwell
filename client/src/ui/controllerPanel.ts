@@ -28,6 +28,7 @@ export const ACTION_LABELS: Record<PlayAction, string> = {
   map: 'Map',
   pause: 'Menu',
   inventory: 'Inventory',
+  interact: 'Use (hold: right a boat, bail its hull)',
 };
 
 export interface ControllerPanelOptions {

@@ -84,7 +84,14 @@ export function validateBodies(data, blocks = registryBlockNames()) {
     throw new Error(`bodies.json: ${m}`);
   };
   if (typeof data !== 'object' || data === null || Array.isArray(data)) bad('(root) must be an object');
-  for (const k of Object.keys(data)) if (!['$comment', 'kinds', 'water'].includes(k)) bad(`unknown entry (root).${k}`);
+  for (const k of Object.keys(data)) if (!['$comment', 'kinds', 'water', 'hold'].includes(k)) bad(`unknown entry (root).${k}`);
+  const h = data.hold;
+  if (typeof h !== 'object' || h === null || Array.isArray(h)) bad('hold must be an object');
+  const holdRanges = { holdSeconds: [0.05, 3], bailSeconds: [0.1, 30], rightRadPerS: [0.05, 10], rightLiftMs: [0, 10], uprightDeg: [0.5, 45], reachM: [1, 32] };
+  for (const k of Object.keys(h)) if (k !== '$comment' && !(k in holdRanges)) bad(`hold: unknown ${k}`);
+  for (const [k, [lo, hi]] of Object.entries(holdRanges)) {
+    if (typeof h[k] !== 'number' || !(h[k] >= lo && h[k] <= hi)) bad(`hold.${k} must be a number in [${lo}, ${hi}]`);
+  }
   const w = data.water;
   if (typeof w !== 'object' || w === null || Array.isArray(w)) bad('water must be an object');
   for (const k of Object.keys(w)) if (!['dragCoefficient', 'glideSpeed', 'drag', 'heaveDrag', 'angularDrag', 'floodM3sPerM2'].includes(k)) bad(`water: unknown ${k}`);
@@ -121,10 +128,13 @@ export function validateBodies(data, blocks = registryBlockNames()) {
 
 /** The Rust source for validated body kinds. */
 export function bodiesRust(data) {
-  const lines = [`// ${bodiesHeader}`, '', 'use crate::felling::{BodyKind, WaterRules};', ''];
+  const lines = [`// ${bodiesHeader}`, '', 'use crate::felling::{BodyKind, HoldRules, WaterRules};', ''];
   const rf = (v) => (Number.isInteger(v) ? `${v}.0` : String(v));
   lines.push('/// How bodies float (shared/physics/bodies.json `water`).');
   lines.push(`pub const WATER: WaterRules = WaterRules { drag_coefficient: ${rf(data.water.dragCoefficient)}, glide_speed: ${rf(data.water.glideSpeed ?? 0)}, drag: ${rf(data.water.drag)}, heave_drag: ${rf(data.water.heaveDrag)}, angular_drag: ${rf(data.water.angularDrag)}, flood_m3s_per_m2: ${rf(data.water.floodM3sPerM2)} };`, '');
+  const h = data.hold;
+  lines.push('/// Hold E on a body (shared/physics/bodies.json `hold`).');
+  lines.push(`pub const HOLD: HoldRules = HoldRules { hold_seconds: ${rf(h.holdSeconds)}, bail_seconds: ${rf(h.bailSeconds)}, right_rad_per_s: ${rf(h.rightRadPerS)}, right_lift_ms: ${rf(h.rightLiftMs)}, upright_deg: ${rf(h.uprightDeg)}, reach_m: ${rf(h.reachM)} };`, '');
   lines.push('/// The body kinds, in wire order (shared/physics/bodies.json).');
   lines.push(`pub const BODY_KINDS: [BodyKind; ${data.kinds.length}] = [`);
   for (const k of data.kinds) {

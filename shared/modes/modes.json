@@ -6,7 +6,7 @@
       "name": "creative",
       "label": "Creative",
       "description": "No damage, flight, brush tools, unlimited blocks, without a tool any block breaks in one hit (held tools keep their hits), the whole map revealed, saved structures placed, the theater camera loads and simulates the world where it is, blueprints placed.",
-      "abilities": ["flight", "brushes", "unlimitedBlocks", "map", "mapRevealed", "instantBreaks", "structures", "theaterViewpoint", "blueprints"]
+      "abilities": ["flight", "brushes", "unlimitedBlocks", "map", "mapRevealed", "instantBreaks", "structures", "theaterViewpoint", "blueprints", "bail"]
     },
     {
       "name": "adventure",

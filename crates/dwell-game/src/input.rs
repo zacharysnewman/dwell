@@ -264,6 +264,14 @@ impl KeyboardMouseInput {
         self.keys.contains(code)
     }
 
+    /// Interact is held: E while playing (not the brush's while it is on), or the controller's
+    /// interact button (X by default). A held one is a body's hold (`shared/physics/bodies.json`
+    /// `hold`).
+    pub fn interact_held(&self) -> bool {
+        (self.pointer_locked && !self.brush_active && self.key_held(INTERACT_KEY))
+            || (self.gamepad.connected && self.gamepad.down(crate::gamepad::PlayAction::Interact))
+    }
+
     /// This tick's input, with the on-screen touch controls (if any) and the controller merged in.
     pub fn sample(&self, touch: Option<&TouchState>) -> PlayerInputState {
         let k = |code: &str| self.keys.contains(code) || self.tapped.contains(code);

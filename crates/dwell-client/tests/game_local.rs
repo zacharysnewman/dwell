@@ -5754,3 +5754,77 @@ fn e_uses_the_door_aimed_at_and_places_nothing_on_bare_ground() {
     rig.run_until(30, |_| false);
     assert_eq!(server_voxel(&mut rig, above), before, "nothing placed");
 }
+
+#[test]
+fn holding_e_at_a_raft_on_its_side_rights_it_and_a_tap_does_not() {
+    // face-a-only: the sandbox world is face A's; the righting on both faces is the server's
+    // (dwell-sim ships.rs `holding_e_…`).
+    // Owner, 2026-11-23: "Hold E (think FPS controls like Halo, X on controller)": held past
+    // bodies.json `hold.holdSeconds` aimed at a body, the client sends `BodyHold` and the server
+    // rights it; a tap (a door's use) sends none.
+    let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    rig.run_until(60, |_| false);
+    rig.game.as_mut().unwrap().set_body_hold(true);
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    let ground = f64::from(dwell_world::FLAT_TOP_Y) * dwell_world::CELL_H;
+    let planks = dwell_blocks::require("dwell:planks");
+    let cells: Vec<([i32; 3], u16)> = (0..4)
+        .flat_map(|x| (0..2).flat_map(move |z| [([x, 0, z], planks), ([x, 1, z], planks)]))
+        .collect();
+    let on_side =
+        dwell_physics::DQuat::from_axis_angle(dwell_physics::DVec3::X, std::f64::consts::FRAC_PI_2);
+    let raft = rig.core.server().add_body_turned(
+        1,
+        cells,
+        [feet[0] - 1.5, ground + 1.2, feet[2] + 3.5],
+        on_side,
+    );
+    rig.run_until(120, |_| false);
+    let tilt = |rig: &mut Rig| {
+        let (_, rot) = rig.core.server().body_pose(raft).expect("the raft");
+        (rot * dwell_physics::DVec3::Y)
+            .angle_between(dwell_physics::DVec3::Y)
+            .to_degrees()
+    };
+    let lying = tilt(&mut rig);
+    assert!(lying > 60.0, "on its side: {lying}°");
+    // Look at it.
+    let (at, _) = rig.core.server().body_pose(raft).unwrap();
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    let d = [at.x - feet[0], at.y - feet[1] - 1.62, at.z - feet[2]];
+    rig.input.look.yaw = d[0].atan2(d[2]).to_degrees();
+    rig.input.look.pitch = d[1].atan2(d[0].hypot(d[2])).to_degrees();
+    rig.input.pointer_locked = true;
+    assert!(
+        rig.run_until(120, |r| r.game.as_ref().unwrap().body_aimed().is_some()),
+        "the raft aimed at"
+    );
+    let press = |rig: &mut Rig, frames: u32| {
+        rig.input
+            .key_down(dwell_game::input::INTERACT_KEY, false, false, false);
+        for _ in 0..frames {
+            rig.input
+                .key_down(dwell_game::input::INTERACT_KEY, true, false, false);
+            rig.frame();
+        }
+        rig.input.key_up(dwell_game::input::INTERACT_KEY);
+        rig.run_until(30, |_| false);
+    };
+    // A tap: 0.2 s.
+    press(&mut rig, 12);
+    let tapped = tilt(&mut rig);
+    assert!(
+        (tapped - lying).abs() < 5.0,
+        "a tap leaves it: {lying}° -> {tapped}°"
+    );
+    // Held 4 s: upright.
+    press(&mut rig, 240);
+    rig.run_until(90, |_| false);
+    let after = tilt(&mut rig);
+    assert!(after < 12.0, "held, it rights: {lying}° -> {after}°");
+}

@@ -462,6 +462,8 @@ vectors["world_settings_capabilities"] = world_settings(
 # TheaterViewpoint (docs/THEATER_MODE.md §7): u8 0 (cleared) or 1 then three f64.
 vectors["theater_viewpoint"] = struct.pack("<BBddd", T["TheaterViewpoint"], 1, 1200.5, 96.25, -40.0)
 vectors["theater_viewpoint_cleared"] = struct.pack("<BB", T["TheaterViewpoint"], 0)
+# BodyHold (shared/physics/bodies.json `hold`): the body's id, u32.
+vectors["body_hold"] = struct.pack("<BI", T["BodyHold"], 70001)
 # Markers (WORK_QUEUE item 53, docs/MAP_MARKERS.md): u8 version 1, u16 count, each u32 id, str icon,
 # u8 r g b, str label, u8 face, three f32 (face-local), str auto kind ("" the player's own).
 def marker(mid, icon, rgb, label, face, pos, auto):

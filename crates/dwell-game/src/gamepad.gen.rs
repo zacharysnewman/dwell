@@ -23,7 +23,7 @@ pub const BUTTONS: [Button; 16] = [
 ];
 
 /// The play actions' default buttons, in `PlayAction` order (by name).
-pub const PLAY: [(&str, &str); 15] = [
+pub const PLAY: [(&str, &str); 16] = [
     ("jump", "a"),
     ("crouch", "b"),
     ("run", "ls"),
@@ -35,10 +35,11 @@ pub const PLAY: [(&str, &str); 15] = [
     ("fly", "y"),
     ("flyFaster", "up"),
     ("flySlower", "down"),
-    ("spyglass", "x"),
+    ("spyglass", "rs"),
     ("map", "view"),
     ("pause", "menu"),
     ("inventory", "left"),
+    ("interact", "x"),
 ];
 
 pub const STICKS: Sticks = Sticks { move_x: 0, move_y: 1, look_x: 2, look_y: 3 };

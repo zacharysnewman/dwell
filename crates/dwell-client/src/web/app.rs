@@ -661,6 +661,9 @@ impl Client {
                 game.set_blueprints_synced(
                     session.capability(dwell_protocol::capability_names::BLUEPRINTS_WORLD),
                 );
+                game.set_body_hold(
+                    session.capability(dwell_protocol::capability_names::BODIES_HOLD),
+                );
                 // The theater camera as a simulation viewpoint (THEATER_MODE.md §7): creative
                 // on a server that takes it.
                 game.set_theater_viewpoint(
@@ -1272,6 +1275,11 @@ impl Client {
                 }
                 // The big map is the shell's (ADR 0068), as M is; the F4 debug map stays a key.
                 A::Map | A::Pause | A::Inventory => shell.push(a.name().to_owned()),
+                A::Interact => {
+                    if let Some(g) = &mut s.game {
+                        g.interact(now_ms);
+                    }
+                }
                 A::Jump | A::Crouch | A::Run => {}
             }
         }
