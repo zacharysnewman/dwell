@@ -251,6 +251,8 @@ fn round_trip(face: FaceFrame) {
     f.land();
     let s = &f.tr.spaces[1];
     assert!((s.players.gravity_scale(f.p.handle) - 0.1667).abs() < 1e-6);
+    // No air on the moon (grids.json `airDensity`, owner 2026-11-25): no drag there.
+    assert_eq!(s.players.air_density(f.p.handle), 0.0, "the moon's air");
     // ⅙ g: the jump rises 1/0.1667 × the config's height.
     let rise = f.jump();
     let want = f64::from(PlayerControllerConfig::default().jump.height) / 0.1667;
@@ -269,6 +271,17 @@ fn round_trip(face: FaceFrame) {
         f.tr.spaces[0].players.gravity_scale(f.p.handle),
         1.0,
         "home gravity"
+    );
+    // Home's air is the controller's own (players spawn at home with the config's).
+    assert_eq!(
+        f.tr.spaces[0].def.air_density as f32,
+        PlayerControllerConfig::default().air.density,
+        "grids.json home `airDensity` and `air.density` agree"
+    );
+    assert_eq!(
+        f.tr.spaces[0].players.air_density(f.p.handle),
+        PlayerControllerConfig::default().air.density,
+        "home's air again"
     );
     assert_eq!(f.transfers.len(), 2, "one capture, one release");
     f.check_transfers();

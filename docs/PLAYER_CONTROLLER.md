@@ -1126,12 +1126,26 @@ body's mass 80 kg, `air.scale` 0.75. It acts walking, running, sliding (ground o
 and falling; climbing, swimming and flying keep their own drags. At walking speeds it is nothing
 (0.25 m/s² at 8 m/s, which input makes up); it gives every downhill its top speed now that the
 slides have no caps (crouched down ½ m ramps ~45 m/s, down 45° ~69 m/s) and a fall its terminal
-speed, √(g ÷ k): ~71 m/s standing. Gravity stays 20 m/s² (owner, 2026-11-25). A long fall lands a
-little softer than its drop (§6.10 reads the landing speed as a height): a 10 m drop lands at 19.6
-m/s (a 9.6 m drop without the air), 15 m at 23.8 (14.2 m).
-Tests: `ramps.rs` `the_air_holds_a_fall_to_its_top_speed` (red before: 240 m/s after 12 s); the
-air-rule tests (momentum kept in the air, the fall damage curve by drop height) run without the air
-(`common::without_air`).
+speed, √(g ÷ k): ~71 m/s standing. Gravity stays 20 m/s² (owner, 2026-11-25).
+- **Per grid** (owner, 2026-11-25: *"air density should be set per world so the moon has none"*):
+  each grid's air is `grids.json` `airDensity` (kg/m³; 0 unless declared, and only a grid with an
+  `atmosphere` may declare it): home 1.2 (the config's `air.density`, which players spawn with; a
+  test holds the two equal), the moon and the sun none. Carried into a grid (`controller::carry`,
+  the predictor's `GridCarry` and `GridTravel::air_density`), the player takes its air, as its
+  gravity; back home, the config's.
+- **Fall damage holds its heights** (owner, 2026-11-25: *"scale the fall damage thresholds"*): the
+  drag lands a drop a little slower (10 m at 19.6 m/s, not 20), so §6.10 now reads a landing speed
+  as the drop that reaches it through the air, `−ln(1 − k v² ÷ g) ÷ 2k` (standing; `Damage::
+  impact_damage_in_air`): 5 m is still the first drop that hurts and 15 m still kills (before the
+  fix 10 m dealt 20 points, read as a 9.6 m drop; at or past the air's top speed a hit reads as a
+  drop of any height).
+Tests: `ramps.rs` `the_air_holds_a_fall_to_its_top_speed` (red before: 240 m/s after 12 s);
+`impact.rs` `drops_up_to_5_m_never_hurt_…` with the air (red before the inversion: 10 m dealt 20;
+its lethal case is 15.3 m, the tick-by-tick drag landing 15.2 a sliver short); `dwell-sim`
+`travel.rs`'s round trip (no air on the moon, home's again after; red without the carry: the moon's
+air 1.2); `dwell-worldgen` `grids.rs` (home 1.2, the moon 0; `airDensity` without an `atmosphere`
+or negative fails). The air-rule tests (momentum kept in the air, the damage curve's numbers, ⅙ g
+jumps) run without the air (`common::without_air`).
 
 ## 7. Configuration
 

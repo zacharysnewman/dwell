@@ -301,6 +301,7 @@ impl dwell_physics::predictor::GridTravel for TravelMap {
                 position,
                 velocity,
                 gravity_scale: def.gravity_scale as f32,
+                air_density: Some(def.air_density as f32),
             });
         }
         let &(_, def, _) = self.def(grid)?;
@@ -314,6 +315,7 @@ impl dwell_physics::predictor::GridTravel for TravelMap {
             position,
             velocity,
             gravity_scale: 1.0,
+            air_density: None,
         })
     }
 
@@ -324,6 +326,10 @@ impl dwell_physics::predictor::GridTravel for TravelMap {
 
     fn gravity_scale(&self, grid: u8) -> f32 {
         self.def(grid).map_or(1.0, |g| g.1.gravity_scale as f32)
+    }
+
+    fn air_density(&self, grid: u8) -> Option<f32> {
+        self.def(grid).map(|g| g.1.air_density as f32)
     }
 
     fn to_world(&self, grid: u8, p: V3, world_s: f64) -> V3 {
@@ -485,6 +491,7 @@ impl Travel {
             t.handle,
             (&mut dst.players, &mut dst.physics),
             scale,
+            Some(dst.def.air_density as f32),
             p,
             v,
         );
