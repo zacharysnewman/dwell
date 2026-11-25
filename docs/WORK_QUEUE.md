@@ -271,6 +271,16 @@ context) at a time with a choice to table it as well as the other options?" Answ
   piece-glide check of every water cell against every piece (17 ms → 0.07), the water surface redrawn once a frame not
   once a write per neighbour, water level changes not relit. Frame CPU 47 → 14 ms mean (359 → 35 max), 162 → 482
   frames in the 12 s (~40 fps). Left: the workers re-mesh ~2,500 chunks in those 12 s (~30 ms each).
+  Owner, 2026-11-24: "Why are there so many chunk re-meshes though, that seems wrong since only the water is changing?"
+  **Round 2** (`claude/flood-remesh`; the bench's `remesh.*` counts each re-mesh's cause): the flood floods and drains
+  the valley's ramps (`flooded`), so its writes weren't water-only and each re-meshed its chunk and every neighbour in
+  the 6×16×6 sky apron; a chunk whose mesh job was running when its water changed was meshed again, over and over; the
+  flood's light change re-meshed the chunks round it at every write. Fixed: a flooded-only change re-meshes its own
+  chunk only; water reaches a neighbour only from the shared face (water stops no sky ray); a running job's water is
+  redrawn as it lands; light changed by the water alone waits as settling water does. Found: every water tier has the
+  GPU heightfield off (`watertiers.json`, proposals/WATER_GPU_SURFACE.md C6), so water is part of each chunk's mesh and
+  a chunk of moving water is re-meshed at every write (~20 chunks × ~10 writes/s); 2,601 → 2,359 jobs in the 12 s.
+  Options put to the owner: a water-only re-mesh job, a per-chunk rate, the heightfield (C6).
 - **Standing on a moving boat:** owner, 2026-11-24: "I notice the players don't seem to be moving relative to the boat
   while standing on it (should be until no longer grounded on it). But now the players are twitching and twitch
   falling, sliding around a bit on the boat too when it moves. I want to be careful not to prevent emergent physics

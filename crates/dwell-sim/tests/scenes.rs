@@ -309,6 +309,7 @@ fn measure_a_20_m_dam_blown_with_12_yellow_dynamite() {
     for second in 0..12 {
         let mut ms = Vec::new();
         let (mut bytes, mut mods, mut chunks, mut worst) = (0usize, 0usize, 0usize, 0usize);
+        let mut kinds: std::collections::BTreeMap<String, usize> = Default::default();
         for _ in 0..60 {
             let t = std::time::Instant::now();
             f.server.step();
@@ -320,10 +321,21 @@ fn measure_a_20_m_dam_blown_with_12_yellow_dynamite() {
                     mods += 1;
                     chunks += v.chunks.len();
                     tick_chunks += v.chunks.len();
+                    // What a modification writes that isn't water or air (the client's water-only
+                    // path takes a change only if every cell is one).
+                    for c in &v.chunks {
+                        for ch in &c.changes {
+                            let i = dwell_blocks::info(ch.material);
+                            if ch.material != dwell_blocks::AIR && !i.liquid {
+                                *kinds.entry(i.name.to_string()).or_default() += 1;
+                            }
+                        }
+                    }
                 }
             }
             worst = worst.max(tick_chunks);
         }
+        println!("  not water: {kinds:?}");
         let max = ms.iter().copied().fold(0.0, f64::max);
         let mean = ms.iter().sum::<f64>() / ms.len() as f64;
         let mut phases: Vec<(&str, f64)> = f
