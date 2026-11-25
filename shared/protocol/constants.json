@@ -158,7 +158,8 @@
     "Swordplay": 106,
     "TheaterViewpoint": 107,
     "Markers": 108,
-    "Blueprints": 109
+    "Blueprints": 109,
+    "BodyHold": 110
   },
   "rejectReasons": {
     "ProtocolVersion": 1,

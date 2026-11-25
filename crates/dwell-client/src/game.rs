@@ -84,6 +84,8 @@ const RATE_NUDGE: f64 = 0.02;
 /// server reaches seconds later; past its backstop (`MAX_BUFFERED_INPUTS`, 60) it skips them, and a
 /// skipped input is movement it never simulates, so every later snapshot would snap us back.
 const BUFFER_HOLD: u8 = 30;
+/// How often a held interact sends `BodyHold` (ms; the server's hold lasts a quarter second).
+const BODY_HOLD_EVERY_MS: f64 = 100.0;
 /// ... and resumes here: lower, and the snapshots' lag lets the queue run dry, when the server
 /// repeats our last input (movement we never predicted).
 const BUFFER_RESUME: u8 = 6;
@@ -1159,6 +1161,11 @@ pub struct Game<S: Scene> {
     /// aimed one's ghost and panel, the held Place's pace.
     pub(crate) blueprints: crate::blueprints::ClientBlueprints,
     blueprints_synced: bool,
+    /// The server takes `BodyHold` (`bodies.hold`).
+    body_hold: bool,
+    /// Since when interact has been held (ms), and when the last `BodyHold` went.
+    interact_since: Option<f64>,
+    body_hold_sent_ms: f64,
     blueprint_aimed: Option<usize>,
     /// The server takes a tool's hit at its contact (`hits.at_contact`, BUGS.md #111): the hit is
     /// aimed and sent then, not at the click.
@@ -1401,6 +1408,9 @@ impl<S: Scene> Game<S> {
             markers_in: None,
             blueprints: Default::default(),
             blueprints_synced: false,
+            body_hold: false,
+            interact_since: None,
+            body_hold_sent_ms: f64::NEG_INFINITY,
             blueprint_aimed: None,
             // As this build's client says it (`Capabilities::this_client`); an older server's
             // session turns it off (`set_hits_at_contact`).
@@ -3207,6 +3217,48 @@ impl<S: Scene> Game<S> {
     /// interact"): uses the block aimed at that has a `use` (a door, a helm, a cannon), in the
     /// world or on a moving body, as Place aimed at it does; never places a block. Whether it used
     /// one.
+    /// The moving body aimed at, if any (its id).
+    pub fn body_aimed(&self) -> Option<u32> {
+        self.body_target.map(|b| b.body)
+    }
+
+    /// The server takes `BodyHold` (its `bodies.hold` capability).
+    pub fn set_body_hold(&mut self, on: bool) {
+        self.body_hold = on;
+    }
+
+    /// Interact held this frame (E, or X on a controller; owner, 2026-11-23: "Hold E"): once held
+    /// `HOLD.hold_seconds` aimed at a moving body (not at a block of it that has a use: that was
+    /// the tap's), `BodyHold` goes to the server every `BODY_HOLD_EVERY_MS`, which bails its hull
+    /// or rights it while they come. Let go, they stop.
+    pub fn hold_interact(&mut self, held: bool, now_ms: f64) {
+        if !held {
+            self.interact_since = None;
+            return;
+        }
+        let since = *self.interact_since.get_or_insert(now_ms);
+        if !self.body_hold || now_ms - since < dwell_sim::felling::HOLD.hold_seconds * 1000.0 {
+            return;
+        }
+        let Some(b) = self.body_target else {
+            return;
+        };
+        let used = self.pieces.block_at(b.body, b.cell).is_some_and(|m| {
+            dwell_blocks::try_info(m).is_some_and(|s| s.use_action.is_some() || s.toggle.is_some())
+        });
+        if used || now_ms - self.body_hold_sent_ms < BODY_HOLD_EVERY_MS {
+            return;
+        }
+        // The hold taking: the tool's sound, once (its controls' sound coverage).
+        if now_ms - self.body_hold_sent_ms > 4.0 * BODY_HOLD_EVERY_MS {
+            self.sounds.push(sound_event(SoundKind::Tool));
+        }
+        self.body_hold_sent_ms = now_ms;
+        self.outbox
+            .borrow_mut()
+            .push(Send::Control(Message::BodyHold(b.body)));
+    }
+
     pub fn brush_active(&self) -> bool {
         self.brush.active()
     }
@@ -5485,6 +5537,7 @@ impl<S: Scene> Game<S> {
         self.frame_start_ms = now();
         input.brushes = self.brush.available;
         input.brush_active = self.brush.active();
+        self.hold_interact(input.interact_held(), now_ms);
         // Queued region edits (a brush stroke) as the server's cell rate allows.
         self.pump_region(now_ms);
         self.expire_currents(now_ms);

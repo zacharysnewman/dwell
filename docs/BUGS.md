@@ -6,6 +6,15 @@ pins it.
 
 ## Open
 
+### 239. Rivers stopped carrying floating trees (0.76.4, the boats' glide)
+
+Found 2026-11-24 (dwell-sim `felling.rs` `a_trunk_afloat_drifts_downstream_and_never_settles`, red on main): a trunk
+in a 1 m/s river drifted 9.5 m in 40 s, not 25–41. Cause: the glide (#220, `bodies.json` `water.glideSpeed` 1.5 m/s)
+left the speed-squared drag only above 1.5 m/s relative to the water, so a 1 m/s current coupled to a log by the gentle
+0.02/s linear drag alone. **Fixed** (`claude/hold-e-drain-flip`): the glide fades out over a current's first 0.25 m/s
+(`dwell-physics` `predictor.rs` `GLIDE_FADE_MS`): still water, a let-go boat coasts; in a river, what floats goes with
+it. Red → green: the drift test.
+
 ### 238. Felled trees fall through the world (0.76)
 
 Owner, 2026-11-24, on 0.76.0: "In 76 something totally broke tree collision somehow, they fall through the world when

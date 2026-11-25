@@ -26,7 +26,7 @@
     "lookY": 3
   },
   "play": {
-    "$comment": "While playing (no menu open). Held: jump (and fly up), crouch (and fly down), run (pressed once, it holds until the stick lets go), and place, which builds on while held (docs/ITEMS.md §5). Pressed: the rest; buildMode cycles the build modes; inventory opens the backpack (adventure) or the creative inventory view, where the menu buttons move, pick (confirm) and close (back).",
+    "$comment": "While playing (no menu open). Held: jump (and fly up), crouch (and fly down), run (pressed once, it holds until the stick lets go), and place, which builds on while held (docs/ITEMS.md §5). interact (owner, 2026-11-23: \"X on controller\") uses what is aimed at on its press, as E does, and held flips a body upright or bails its hull (shared/physics/bodies.json `hold`). Pressed: the rest; buildMode cycles the build modes; inventory opens the backpack (adventure) or the creative inventory view, where the menu buttons move, pick (confirm) and close (back).",
     "jump": "a",
     "crouch": "b",
     "run": "ls",
@@ -38,7 +38,8 @@
     "fly": "y",
     "flyFaster": "up",
     "flySlower": "down",
-    "spyglass": "x",
+    "spyglass": "rs",
+    "interact": "x",
     "map": "view",
     "pause": "menu",
     "inventory": "left"

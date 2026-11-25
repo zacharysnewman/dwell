@@ -139,6 +139,16 @@ export const KEYBOARD: ControlGroup[] = [
         keys: ['E', 'Right click'],
         when: 'aimed at it, on land or on a ship',
       },
+      {
+        action: 'Right a tipped boat',
+        keys: ['Hold E'],
+        when: 'aimed at it, in both modes',
+      },
+      {
+        action: 'Bail a flooded hull',
+        keys: ['Hold E'],
+        when: 'aimed at it from inside, in creative',
+      },
       { action: 'Menu and settings', keys: ['Esc'] },
     ],
   },

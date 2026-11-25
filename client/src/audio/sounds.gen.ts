@@ -672,6 +672,12 @@ export const SOUND_DATA: SoundData = {
     "Use a door, helm or cannon": [
       "event:place"
     ],
+    "Right a tipped boat": [
+      "event:tool"
+    ],
+    "Bail a flooded hull": [
+      "event:tool"
+    ],
     "Debug overlay": [
       "action:overlay_on",
       "action:overlay_off"

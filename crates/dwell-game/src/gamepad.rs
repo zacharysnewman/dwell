@@ -69,11 +69,13 @@ pub enum PlayAction {
     Map,
     Pause,
     Inventory,
+    /// Use what is aimed at (E); held, a body's hold (`shared/physics/bodies.json` `hold`).
+    Interact,
 }
 
 impl PlayAction {
     /// Every action, in the data's order (`gamepad.gen.rs` `PLAY`).
-    pub const ALL: [PlayAction; 15] = [
+    pub const ALL: [PlayAction; 16] = [
         Self::Jump,
         Self::Crouch,
         Self::Run,
@@ -89,6 +91,7 @@ impl PlayAction {
         Self::Map,
         Self::Pause,
         Self::Inventory,
+        Self::Interact,
     ];
 
     /// Its name in the data and in Settings.

@@ -54,10 +54,14 @@ pub enum Ability {
     /// placed as ghost blocks everyone in the world sees and builds. Without it the server refuses
     /// a client's `Blueprints` `Place` and `Remove` (builders still build the world's own).
     Blueprints,
+    /// Holding E aimed at a moving body from inside its hull bails its water out
+    /// (`shared/physics/bodies.json` `hold`; owner, 2026-11-23: "Hold E inside the hull", creative).
+    /// Without it the hold only rights a tipped body.
+    Bail,
 }
 
 impl Ability {
-    pub const ALL: [Ability; 12] = [
+    pub const ALL: [Ability; 13] = [
         Ability::Damage,
         Ability::Flight,
         Ability::Brushes,
@@ -70,6 +74,7 @@ impl Ability {
         Ability::Structures,
         Ability::TheaterViewpoint,
         Ability::Blueprints,
+        Ability::Bail,
     ];
     /// The data's name (`shared/modes/gen.mjs` `ABILITIES`).
     pub const fn name(self) -> &'static str {
@@ -86,6 +91,7 @@ impl Ability {
             Ability::Structures => "structures",
             Ability::TheaterViewpoint => "theaterViewpoint",
             Ability::Blueprints => "blueprints",
+            Ability::Bail => "bail",
         }
     }
     pub const fn bit(self) -> u32 {

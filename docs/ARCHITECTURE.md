@@ -4907,7 +4907,14 @@ structure's cells as runs, face-local, turned); without it neither is sent. **[b
 `npcs.carry` ([BLUEPRINTS.md](BLUEPRINTS.md) §9, WORK_QUEUE item 57): a `Creatures` message ends, after the
 poses' part (it and the NPCs' part written empty if need be), with the carrying NPCs' loads (`CarryNet`: `u16`
 count, each `u32` id, `u8` kinds ≤ 16, each `str` block state name and `u8` count), drawn as a stack on the back
-(`blueprints.json` `carryLook`); without it the part is left out.
+(`blueprints.json` `carryLook`); without it the part is left out. **[built, 0.76]** `bodies.hold`: `BodyHold` 0x6E (C→S,
+control: a `u32` body id), sent every 100 ms while interact (E, X on a controller) is held aimed at a moving body past
+`shared/physics/bodies.json` `hold.holdSeconds` (`dwell-client` `Game::hold_interact`); the server
+(`dwell-sim` `server/body_hold.rs`) keeps each player's hold a quarter second after the last one and each tick bails the
+body's hull (from inside it, where the mode has the `bail` ability: creative; `Felling::bail`, a full hull in
+`hold.bailSeconds`) or else turns a body tipped past `hold.uprightDeg` back toward its build's up at
+`hold.rightRadPerS`, lifted off the ground by `hold.rightLiftMs`; within `hold.reachM`, never one held on its
+platform. Without it the client never sends one.
 ```
 S→C  WorldSettings field 0x85 (optional): u8 count (≤ 64), each str name (≤ 48 bytes, no repeat)
 C→S  Capabilities 0x69, control: the same form — the client's capabilities, once after Welcome,

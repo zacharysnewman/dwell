@@ -349,6 +349,8 @@
     "Menu and settings":["action:menu_open", "action:menu_close"],
     "Inventory": ["action:menu_open", "action:menu_close"],
     "Use a door, helm or cannon": ["event:place"],
+    "Right a tipped boat": ["event:tool"],
+    "Bail a flooded hull": ["event:tool"],
     "Debug overlay": ["action:overlay_on", "action:overlay_off"],
     "Terrain map": ["action:map_open", "action:map_close"],
     "Map zoom": ["action:map_zoom"],

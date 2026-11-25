@@ -208,6 +208,7 @@ pub enum MessageType {
     TheaterViewpoint = 107,
     Markers = 108,
     Blueprints = 109,
+    BodyHold = 110,
 }
 
 impl MessageType {
@@ -278,6 +279,7 @@ impl MessageType {
             107 => Some(Self::TheaterViewpoint),
             108 => Some(Self::Markers),
             109 => Some(Self::Blueprints),
+            110 => Some(Self::BodyHold),
             _ => None,
         }
     }
@@ -693,8 +695,10 @@ pub mod capability_names {
     pub const GRID_SUN: &str = "grid.sun";
     /// Blueprints (WORK_QUEUE item 56, docs/BLUEPRINTS.md) go both ways as `Blueprints` (dwell_protocol::blueprints): the server sends every blueprint in the world once after this client's Capabilities, then each one placed or gone (completed or removed) to every client with it; the client places and removes one with `Place` and `Remove`, which the server keeps in the world's optional `blueprints` table. Without it neither is sent: an older client sees no blueprints and an older server is never sent one.
     pub const BLUEPRINTS_WORLD: &str = "blueprints.world";
+    /// The client sends `BodyHold` (shared/physics/bodies.json `hold`; owner, 2026-11-23: "Hold E") while E (X on a controller) is held aimed at a moving body: the body's id, a few times a second. The server bails the body's hull where the player stands inside it and the world's mode has the `bail` ability (creative), else rights the body if it is tipped, while the holds keep coming. Without it the client never sends one, and an older server is never sent one.
+    pub const BODIES_HOLD: &str = "bodies.hold";
     /// A Creatures message ends, after the animals' poses (written empty if need be), with the NPCs' carried loads (B5, docs/BLUEPRINTS.md §9): per NPC carrying something its id and its items (each a block state name and how many, in load order), drawn as a stack of those blocks on its back by blueprints.json `carryLook`. Without it the server leaves the part out and a carrying villager is drawn with nothing on its back.
     pub const NPCS_CARRY: &str = "npcs.carry";
     /// Every capability this build knows, in the table's order.
-    pub const ALL: &[&str] = &[STRUCTURES_PLACE, GRID_FRAMES, DAMAGE_CHUNKS, CREATURES_NPCS, WEAPONS_CLASH, CREATURES_POSES, NPCS_SWINGS, HUMANS_DEFEAT, THEATER_VIEWPOINT, HITS_AT_CONTACT, MARKERS_PRIVATE, GRID_SUN, BLUEPRINTS_WORLD, NPCS_CARRY];
+    pub const ALL: &[&str] = &[STRUCTURES_PLACE, GRID_FRAMES, DAMAGE_CHUNKS, CREATURES_NPCS, WEAPONS_CLASH, CREATURES_POSES, NPCS_SWINGS, HUMANS_DEFEAT, THEATER_VIEWPOINT, HITS_AT_CONTACT, MARKERS_PRIVATE, GRID_SUN, BLUEPRINTS_WORLD, BODIES_HOLD, NPCS_CARRY];
 }

@@ -249,8 +249,12 @@ context) at a time with a choice to table it as well as the other options?" Answ
   and copying takes the whole body onto the clipboard in its original rotation (saved and exported from the Structures
   panel). Pasting it: "A moving body again" (it floats if over water).
 - **Flipping a body upright:** "Hold E (think FPS controls like Halo, X on controller), Q is used for inventory", in
-  "Both modes". Owner should see: holding E (X on a controller) by a capsized boat rights it.
-- **Draining a flooded hull (creative):** "Hold E inside the hull": bails it dry over a second or two.
+  "Both modes". Owner should see: holding E (X on a controller) by a capsized boat rights it. **Built 2026-11-24**
+  (`claude/hold-e-drain-flip`): held 0.35 s aimed at a body tipped past 8°, it turns back upright (lifted off land);
+  tunables in `shared/physics/bodies.json` `hold`; X on a controller, the spyglass moved to the right stick press.
+- **Draining a flooded hull (creative):** "Hold E inside the hull": bails it dry over a second or two. **Built
+  2026-11-24** (same branch): a full hull in 1.5 s, faster than a hole lets water in; creative only (the `bail`
+  ability).
 - **Ladders and doors on ships (#223):** owner: "I thought doors open with a right click, left trigger? But yes
   generally exactly as on land." (Right: doors open with right click, the Use of Place, or the left trigger.)
 - **Rebinding for "hold E":** today E opens the inventory and Q is unbound in play. Owner: "Q inventory, E interact":
