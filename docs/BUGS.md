@@ -145,8 +145,16 @@ joining sees the rafts, boats and felled logs already in the world where the hos
 2026-11-24, not reproduced: the server sends every body at join (`server.rs`, after `Welcome`), and two tests pass
 on main: `ships.rs` `a_second_player_joining_is_sent_every_body_already_afloat` (a raft and a body built later, both
 faces) and `game_local.rs` `a_raft_already_in_the_world_is_seen_by_a_player_joining` (spawned, drawn, posed where the
-server has it). The WebRTC link opens all its channels before the host connects a guest. Asked the owner for the case
-(a friend's world or a dedicated server; which bodies; how far from the spawn).
+server has it). The WebRTC link opens all its channels before the host connects a guest. Owner, 2026-11-24: "It was 2
+chrome browsers on the same device. Using host and codes from the menu. Any dynamic bodies added before joining were not
+visible. Unclear if they were present, but I couldn't see them. They were floating boats, not sure if it's relevant."
+**Cause and fix (`claude/join-sync-early`):** over WebRTC each data channel arrives on its own, so the world channel's
+`EntitySpawn`s of the bodies already there could arrive before the control channel's block registry and `Welcome`; the
+session dropped world messages that came mid-handshake (`session.rs` `on_reliable`), and spawns are sent only once
+(chunks recover: they keep streaming). Now the session keeps them raw (at most 8,192) and replays them once the
+handshake is over, mapped by the registry. Red → green: `session.rs`
+`a_world_message_that_overtakes_the_welcome_is_kept_for_the_game`. Owner should see: in two Chrome windows (Host, then
+the code), the boats already afloat on the host's world show for the guest.
 
 ### 221. Water shows inside a hull from below and above
 
