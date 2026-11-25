@@ -590,6 +590,17 @@ impl Session {
                     ..e.clone()
                 })
             }
+            Message::BodyPaste(e) => {
+                let mut e = e.clone();
+                for c in e
+                    .cells
+                    .iter_mut()
+                    .filter(|c| usize::from(**c) != region_edit::KEEP)
+                {
+                    *c = id(*c)?;
+                }
+                Message::BodyPaste(e)
+            }
             Message::RegionEdit(e) => {
                 let mut e = e.clone();
                 match e.op {

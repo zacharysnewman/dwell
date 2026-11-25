@@ -142,6 +142,12 @@ climbs, a door on a ship opens and closes with Use. WORK_QUEUE "Owner's list, 20
 Owner, 2026-11-23: "Pre-Existing dynamic objects should be synced across the network." Owner should see: a player
 joining sees the rafts, boats and felled logs already in the world where the host does. WORK_QUEUE §1.
 
+2026-11-24, not reproduced: the server sends every body at join (`server.rs`, after `Welcome`), and two tests pass
+on main: `ships.rs` `a_second_player_joining_is_sent_every_body_already_afloat` (a raft and a body built later, both
+faces) and `game_local.rs` `a_raft_already_in_the_world_is_seen_by_a_player_joining` (spawned, drawn, posed where the
+server has it). The WebRTC link opens all its channels before the host connects a guest. Asked the owner for the case
+(a friend's world or a dedicated server; which bodies; how far from the spawn).
+
 ### 221. Water shows inside a hull from below and above
 
 Owner, 2026-11-23: "Water inside of dynamic objects should not visible from underneath or above. It needs a dynamic

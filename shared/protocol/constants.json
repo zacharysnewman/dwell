@@ -159,7 +159,8 @@
     "TheaterViewpoint": 107,
     "Markers": 108,
     "Blueprints": 109,
-    "BodyHold": 110
+    "BodyHold": 110,
+    "BodyPaste": 111
   },
   "rejectReasons": {
     "ProtocolVersion": 1,

@@ -289,6 +289,35 @@ impl Pieces {
         self.map.get(&id).map(|p| p.kind)
     }
 
+    /// Body `id` copied as a structure (the Copy tool aimed at it): its own grid's box, face-local
+    /// (the grid's rows run along its face's up, `up_step`), in layer order (y-slices, z-rows, x
+    /// fastest), air where it has no cell, its states face-local: unturned, as it was built. The
+    /// box's size, and the cells; None for a body not known.
+    pub fn copy_of(&self, id: u32) -> Option<([i32; 3], Vec<StateId>)> {
+        let p = self.map.get(&id)?;
+        let f = if p.up_step < 0 {
+            FaceFrame::B
+        } else {
+            FaceFrame::A
+        };
+        let local: Vec<([i32; 3], StateId)> = p
+            .blocks
+            .iter()
+            .map(|&(o, m)| ([o[0], o[1] * p.up_step, o[2]], f.state(m)))
+            .collect();
+        let lo =
+            std::array::from_fn::<i32, 3, _>(|k| local.iter().map(|c| c.0[k]).min().unwrap_or(0));
+        let hi =
+            std::array::from_fn::<i32, 3, _>(|k| local.iter().map(|c| c.0[k]).max().unwrap_or(0));
+        let size = std::array::from_fn::<i32, 3, _>(|k| hi[k] - lo[k] + 1);
+        let mut cells = vec![dwell_world::M.air; size.iter().map(|&s| s as usize).product()];
+        for (o, m) in local {
+            let [x, y, z] = std::array::from_fn::<i32, 3, _>(|k| o[k] - lo[k]);
+            cells[(x + size[0] * (z + size[2] * y)) as usize] = m;
+        }
+        Some((size, cells))
+    }
+
     /// The block in the body `id`'s cell `cell` (its grid).
     pub fn block_at(&self, id: u32, cell: [i32; 3]) -> Option<StateId> {
         let p = self.map.get(&id)?;

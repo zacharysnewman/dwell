@@ -205,6 +205,9 @@ struct Clipboard {
     /// A saved structure from the library (`load_clipboard`), not a copy: its paste is a structure
     /// placement (`RegionEditOp::Structure` to a server that takes it).
     structure: bool,
+    /// A moving body's cells (`copy_body`, or a structure saved from one): its paste is a moving
+    /// body again (`Message::BodyPaste`; owner, 2026-11-23: "A moving body again").
+    body: bool,
 }
 
 /// One edit of an undo step: the box and its states before `edit` (what undo pastes back; `KEEP`
@@ -234,6 +237,9 @@ pub struct RegionTools {
     /// server refuses outside a mode with `structures`. Without it (an older server), plain
     /// `Paste`s, validated as any paste (STRUCTURES.md §9).
     pub structure_ops: bool,
+    /// The server pastes bodies as bodies (the `bodies.paste` capability): a body's paste goes
+    /// as `Message::BodyPaste`; without it, it is refused with a note.
+    pub body_ops: bool,
     /// The world's disc and build volume (its size, `Game::set_world`): a box outside them is not
     /// sent (BUGS.md #109).
     pub bounds: dwell_world::WorldBounds,
@@ -305,6 +311,7 @@ impl RegionTools {
             reach: region_edit::REACH,
             structures: false,
             structure_ops: false,
+            body_ops: false,
             bounds: dwell_world::WorldBounds::DEFAULT,
             armed: false,
             a: None,
@@ -505,6 +512,7 @@ impl RegionTools {
                     cells: FaceFrame::of_box(min, size).box_cells(size, &cells),
                     keep: Vec::new(),
                     structure: false,
+                    body: false,
                 });
                 self.note = format!("Copied {}", size_text(size));
                 None
@@ -542,6 +550,9 @@ impl RegionTools {
                     return None;
                 };
                 let (size, local) = p.apply(c.size, &c.cells);
+                if c.body {
+                    return self.body_paste(p, &c, min, size, local);
+                }
                 if fits(size).is_none() {
                     // A library structure over one edit's side: one undo step of tiles.
                     self.paste_tiles(p, &c, min, size, local, ctx, world);
@@ -579,6 +590,71 @@ impl RegionTools {
         }
     }
 
+    /// Puts a moving body's cells on the clipboard (the Copy tool aimed at one, owner 2026-11-23:
+    /// "Aim at it with the copy tool"): `cells` face-local, in layer order, its own grid's box of
+    /// `size` (air where it has no cell), unturned: it pastes as it was built.
+    pub fn copy_body(&mut self, size: [i32; 3], cells: Vec<StateId>) {
+        self.note = format!("Copied the body ({})", size_text(size));
+        self.clipboard = Some(Clipboard {
+            size,
+            cells,
+            keep: Vec::new(),
+            structure: false,
+            body: true,
+        });
+    }
+
+    /// The clipboard: its size, face-local cells (layer order) and whether it is a body's (saving
+    /// it from the Structures page).
+    pub fn clipboard(&self) -> Option<([i32; 3], &[StateId], bool)> {
+        self.clipboard
+            .as_ref()
+            .map(|c| (c.size, c.cells.as_slice(), c.body))
+    }
+
+    /// A body clipboard's paste (turned to `size`, its face-local states `local`) at `min`: one
+    /// `BodyPaste`, which the server makes a moving body (no undo: it is a body, not blocks).
+    fn body_paste(
+        &mut self,
+        p: PasteTransform,
+        c: &Clipboard,
+        min: [i32; 3],
+        size: [i32; 3],
+        local: Vec<StateId>,
+    ) -> Option<Message> {
+        if !self.body_ops {
+            self.note = "This server doesn't paste bodies (an older build)".into();
+            return None;
+        }
+        let Some(size) = fits(size) else {
+            self.note = format!("A body pastes at most {} a side", region_edit::MAX_SIDE);
+            return None;
+        };
+        if !box_in_world_of(&self.bounds, min, dims(size)) {
+            self.note = "Outside the build volume".into();
+            return None;
+        }
+        let f = FaceFrame::of_box(min, dims(size));
+        let mut cells = f.box_cells(dims(size), &local);
+        if c.keep.iter().any(|&k| k) {
+            let kept = f.box_flags(dims(size), &transform_mask(p, c.size, &c.keep));
+            for (i, kept) in kept.into_iter().enumerate() {
+                if kept {
+                    cells[i] = region_edit::KEEP as StateId;
+                }
+            }
+        }
+        self.note = "Pasted the body".into();
+        Some(Message::BodyPaste(RegionEdit {
+            op: RegionEditOp::Paste,
+            min,
+            size,
+            material: 0,
+            from: 0,
+            cells,
+        }))
+    }
+
     /// The op a paste of `c` goes as: a library structure's is a structure placement where the
     /// server takes one (`structure_ops`), anything else a plain `Paste`.
     fn paste_op(&self, c: &Clipboard) -> RegionEditOp {
@@ -602,6 +678,7 @@ impl RegionTools {
         cells: Vec<StateId>,
         keep: Vec<bool>,
         label: &str,
+        body: bool,
     ) -> Result<(), String> {
         if !self.structures {
             return Err("Saved structures are placed in creative worlds only".into());
@@ -616,11 +693,18 @@ impl RegionTools {
         if cells.len() != volume || !(keep.is_empty() || keep.len() == volume) {
             return Err("The cells don't fill the box".into());
         }
+        if body && size.iter().any(|&s| s as usize > region_edit::MAX_SIDE) {
+            return Err(format!(
+                "A body pastes at most {} a side",
+                region_edit::MAX_SIDE
+            ));
+        }
         self.clipboard = Some(Clipboard {
             size,
             cells,
             keep,
             structure: true,
+            body,
         });
         self.paste = Some(PasteTransform::default());
         self.note = format!("{label}: aim and right click to paste");
@@ -1144,8 +1228,14 @@ mod tests {
         let mut t = tools();
         // 2 × 1 × 1: stone at x = 0, kept at x = 1.
         assert!(
-            t.load_clipboard([2, 1, 1], vec![stone, M.air], vec![false, true], "post")
-                .is_ok()
+            t.load_clipboard(
+                [2, 1, 1],
+                vec![stone, M.air],
+                vec![false, true],
+                "post",
+                false
+            )
+            .is_ok()
         );
         assert!(t.pasting());
         assert_eq!(
@@ -1162,15 +1252,15 @@ mod tests {
         step(&mut t, &mut w, ToolAction::Paste, &ctx(Some([5, 0, 5]), 0));
         assert_eq!((w.get_voxel(5, 1, 4), w.get_voxel(5, 1, 5)), (stone, sand));
         assert!(
-            t.load_clipboard([1 << 11, 1 << 11, 2], vec![], vec![], "huge")
+            t.load_clipboard([1 << 11, 1 << 11, 2], vec![], vec![], "huge", false)
                 .is_err()
         );
         assert!(
-            t.load_clipboard([2, 1, 1], vec![stone], vec![], "short")
+            t.load_clipboard([2, 1, 1], vec![stone], vec![], "short", false)
                 .is_err()
         );
         assert!(
-            t.load_clipboard([2, 1, 1], vec![stone; 2], vec![true], "mask")
+            t.load_clipboard([2, 1, 1], vec![stone; 2], vec![true], "mask", false)
                 .is_err()
         );
     }
@@ -1196,7 +1286,7 @@ mod tests {
                 structure_ops,
                 ..tools()
             };
-            t.load_clipboard([1, 1, 1], vec![stone], vec![], "one")
+            t.load_clipboard([1, 1, 1], vec![stone], vec![], "one", false)
                 .unwrap();
             let m = t.act(ToolAction::Paste, &ctx(Some([2, 0, 2]), 0), &mut w);
             assert_eq!(op_of(m), Some(want), "structure_ops {structure_ops}");
@@ -1205,7 +1295,7 @@ mod tests {
                 structure_ops,
                 ..tools()
             };
-            t.load_clipboard([40, 1, 1], vec![stone; 40], vec![], "wide")
+            t.load_clipboard([40, 1, 1], vec![stone; 40], vec![], "wide", false)
                 .unwrap();
             assert!(
                 t.act(ToolAction::Paste, &ctx(Some([2, 0, 2]), 0), &mut w)
@@ -1591,7 +1681,8 @@ mod tests {
             }
         }
         let mut t = tools();
-        t.load_clipboard(size, cells, keep, "wall").expect("loads");
+        t.load_clipboard(size, cells, keep, "wall", false)
+            .expect("loads");
         for _ in 0..turns {
             t.act(ToolAction::Rotate, &ctx(None, 0), &mut w);
         }
@@ -1678,7 +1769,7 @@ mod tests {
             ..tools()
         };
         let e = t
-            .load_clipboard([1, 1, 1], vec![stone], vec![], "post")
+            .load_clipboard([1, 1, 1], vec![stone], vec![], "post", false)
             .expect_err("adventure");
         assert!(e.contains("creative"), "{e}");
         assert!(!t.pasting());

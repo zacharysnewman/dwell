@@ -644,6 +644,9 @@ impl Client {
                 game.set_structure_ops(
                     session.capability(dwell_protocol::capability_names::STRUCTURES_PLACE),
                 );
+                game.set_body_ops(
+                    session.capability(dwell_protocol::capability_names::BODIES_PASTE),
+                );
                 // The moon (MOON_WORLD.md §7.3): the predictor and the view follow the player
                 // onto another grid only on a server that carries it there.
                 game.set_grid_frames(
@@ -2082,7 +2085,23 @@ impl Client {
             .as_ref()
             .is_some_and(|s| s.structures())
     }
+    /// The moving body last copied (the copy tool aimed at one): its size then its face-local
+    /// states in layer order, as `u16`s (`[sx, sy, sz, cells…]`); empty with none (saving it from
+    /// the Structures page).
+    #[wasm_bindgen(js_name = copiedBody)]
+    pub fn copied_body(&self) -> Vec<u16> {
+        let s = self.inner.borrow();
+        let Some((size, cells, true)) = s.game.as_ref().and_then(|g| g.region.clipboard()) else {
+            return Vec::new();
+        };
+        size.iter()
+            .map(|&n| n as u16)
+            .chain(cells.iter().copied())
+            .collect()
+    }
+
     #[wasm_bindgen(js_name = loadStructure)]
+    #[allow(clippy::too_many_arguments)]
     pub fn load_structure(
         &self,
         sx: i32,
@@ -2091,13 +2110,17 @@ impl Client {
         cells: Vec<u16>,
         keep: Vec<u8>,
         label: &str,
+        body: bool,
     ) -> String {
         let mut s = self.inner.borrow_mut();
         let Some(g) = s.game.as_mut() else {
             return "Not playing".into();
         };
         let keep: Vec<bool> = keep.iter().map(|&k| k != 0).collect();
-        match g.region.load_clipboard([sx, sy, sz], cells, keep, label) {
+        match g
+            .region
+            .load_clipboard([sx, sy, sz], cells, keep, label, body)
+        {
             Ok(()) => String::new(),
             Err(e) => e,
         }
@@ -4235,6 +4258,7 @@ impl Inner {
             game.set_structure_ops(
                 s.capability(dwell_protocol::capability_names::STRUCTURES_PLACE),
             );
+            game.set_body_ops(s.capability(dwell_protocol::capability_names::BODIES_PASTE));
             game.set_grid_capabilities(
                 dwell_protocol::capability_names::ALL
                     .iter()

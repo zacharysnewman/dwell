@@ -349,5 +349,13 @@ save as an array of that size."* Sharing between players is in [`FUTURE.md`](./F
   the server refuses (`RegionCheck::NotInMode`, nothing paid) where the mode lacks `structures`. A
   server before it (0.54 and older) gets plain `Paste`s, as before, validated as any paste. A copy
   (Ctrl+C) still pastes as `Paste` in every mode.
+- **Moving bodies (0.76; owner, 2026-11-23: "Aim at it with the copy tool", pasted "A moving body again").** Ctrl+C
+  with no box selected, aimed at a moving body, copies the whole body: its own grid's box, face-local, unturned (as it
+  was built, however it lies now), air where it has no cell (`Pieces::copy_of`, `RegionTools::copy_body`). The
+  Structures page saves it ("The copied moving body") as a `voxels` structure with the optional top-level `"body":
+  true` (`format.mjs`; not in the canonical text; older builds keep it as an unknown field), its air kept. A body
+  clipboard (copied, or such a structure loaded) pastes as one `BodyPaste` (the `bodies.paste` capability,
+  ARCHITECTURE.md §8.3): the server makes its cells one built body there, unturned, in creative (`structures`),
+  within reach and clear of solid blocks; over water it floats. At most 32 a side; no undo (it is a body).
 - **Not yet:** the anchor (a placement stands on its bottom centre, as a paste does), a ghost of the
   blocks themselves (the ghost is the box), sharing.

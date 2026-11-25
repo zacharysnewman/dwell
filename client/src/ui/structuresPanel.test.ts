@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { stateId } from '../world/blocks';
 import { checkStructure, type Vec3 } from '../local/structures';
-import { parseCell, saveBox, saveFromWorld } from './structuresPanel';
+import { bodyStructure, parseCell, saveBox, saveFromWorld } from './structuresPanel';
 
 const air = stateId('dwell:air');
 const floor = stateId('dwell:sandbox_floor');
@@ -73,5 +73,37 @@ describe('structures page', () => {
     expect(saveFromWorld(() => [], box, 'wall', '')).toEqual({
       error: 'Part of that box is not loaded: go closer.',
     });
+  });
+});
+
+// Owner, 2026-11-23: a moving body copied with the copy tool is saved from the Structures page,
+// and pasted it is "A moving body again": the file is marked `body`, its air kept.
+describe('saving a copied moving body', () => {
+  it('makes a structure marked body, its air kept, that loads as a body', () => {
+    const planks = stateId('dwell:planks');
+    const air = stateId('dwell:air');
+    const made = bodyStructure(
+      { size: [2, 1, 2] as Vec3, cells: Uint16Array.from([planks, planks, air, planks]) },
+      'raft',
+    );
+    if ('error' in made) throw new Error(made.error);
+    expect(made.json.body).toBe(true);
+    const s = checkStructure(made.json, 'raft.json');
+    expect(s.body).toBe(true);
+    expect(s.cells.split('').filter((c) => c === '.').length).toBe(1);
+  });
+
+  it('says what to do with nothing copied', () => {
+    expect(bodyStructure(null, 'raft')).toEqual({
+      error: 'Copy a moving body first: aim at it and press Ctrl+C.',
+    });
+  });
+
+  it('a structure without the field is no body', () => {
+    const planks = stateId('dwell:planks');
+    const made = bodyStructure({ size: [1, 1, 1] as Vec3, cells: Uint16Array.from([planks]) }, 'p');
+    if ('error' in made) throw new Error(made.error);
+    const plain = Object.fromEntries(Object.entries(made.json).filter(([k]) => k !== 'body'));
+    expect(checkStructure(plain, 'p.json').body).toBe(false);
   });
 });
