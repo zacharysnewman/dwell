@@ -84,6 +84,22 @@ const RATE_NUDGE: f64 = 0.02;
 /// server reaches seconds later; past its backstop (`MAX_BUFFERED_INPUTS`, 60) it skips them, and a
 /// skipped input is movement it never simulates, so every later snapshot would snap us back.
 const BUFFER_HOLD: u8 = 30;
+/// The telemetry name of a re-mesh cause (`chunk_stream::REMESH_CAUSES`).
+fn remesh_name(cause: &str) -> &'static str {
+    match cause {
+        "block" => "remesh.block",
+        "flood" => "remesh.flood",
+        "block.near" => "remesh.block.near",
+        "busy" => "remesh.busy",
+        "busy.near" => "remesh.busy.near",
+        "levels.view" => "remesh.levels.view",
+        "settled" => "remesh.settled",
+        "light" => "remesh.light",
+        "chunk" => "remesh.chunk",
+        _ => "remesh.other",
+    }
+}
+
 /// How often a held interact sends `BodyHold` (ms; the server's hold lasts a quarter second).
 const BODY_HOLD_EVERY_MS: f64 = 100.0;
 /// ... and resumes here: lower, and the snapshots' lag lets the queue run dry, when the server
@@ -5568,6 +5584,15 @@ impl<S: Scene> Game<S> {
         input.brushes = self.brush.available;
         input.brush_active = self.brush.active();
         self.hold_interact(input.interact_held(), now_ms);
+        // Why chunks were queued for a re-mesh since the last frame (the dev tools' `remesh.*`).
+        for (name, n) in dwell_game::chunk_stream::REMESH_CAUSES
+            .iter()
+            .zip(self.streamer.take_remesh_counts())
+        {
+            if n > 0 {
+                telemetry::add(remesh_name(name), n as f64);
+            }
+        }
         // Queued region edits (a brush stroke) as the server's cell rate allows.
         self.pump_region(now_ms);
         self.expire_currents(now_ms);

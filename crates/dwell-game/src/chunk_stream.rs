@@ -133,6 +133,23 @@ pub const LIGHT_SLICE_CELLS: usize = 1024;
 
 /// The client sim's voxel world is the store.
 /// With [`VoxelWorld::enable_light`] (the client) it keeps the flood light of what it holds.
+/// Why chunks are queued for a re-mesh (`ChunkStreamer::take_remesh_counts`, the dev tools):
+/// a block changed in it or near its border, its water changed while it couldn't be redrawn from
+/// its levels (no current mesh: busy), the view couldn't, its moving water settled, its light
+/// changed, its chunk arrived, or anything else.
+pub const REMESH_CAUSES: [&str; 10] = [
+    "block",
+    "flood",
+    "block.near",
+    "busy",
+    "busy.near",
+    "levels.view",
+    "settled",
+    "light",
+    "chunk",
+    "other",
+];
+
 /// Whether state `a` and `b` differ in what the light reads of a block: how much it filters
 /// light and how much it gives (`light_filter`, `emits`).
 pub fn light_differs(a: u16, b: u16) -> bool {
@@ -421,6 +438,16 @@ fn is_liquid(m: u16) -> bool {
 /// Whether a cell going from `old` to `new` changes only the water: each air or a liquid, the same
 /// liquid where both are, and at least one a liquid (the GPU heightfield's tile holds it,
 /// proposals/WATER_GPU_SURFACE.md §3, W1).
+/// Whether a cell going from `old` to `new` only floods or drains a block: the same block, only
+/// its `flooded` property changed (a ramp's open half filling with water as a flood rises past it,
+/// or emptying). Its solid part and what it hides of its neighbours are as they were: only its own
+/// chunk's mesh (which draws a flooded block's water) need be made again.
+pub fn floods_only(old: u16, new: u16) -> bool {
+    old != new
+        && dwell_blocks::state_property(new, "flooded")
+            .is_some_and(|v| dwell_blocks::with_property(old, "flooded", v) == Some(new))
+}
+
 fn water_only(old: u16, new: u16) -> bool {
     let wet_or_air = |m: u16| m == dwell_blocks::AIR || is_liquid(m);
     wet_or_air(old)
@@ -697,7 +724,13 @@ pub struct ChunkStreamer<S, G, M: Mesher, V> {
     /// there, once each (owner, 2026-11-24: a blown dam's flood lagged: each water write redrew
     /// its chunk and every neighbour it touched at once, the same chunks many times a frame).
     levels_pending: Vec<Coord>,
+    /// Chunks newly queued for a re-mesh, by why ([`REMESH_CAUSES`]; the dev tools).
+    remesh_counts: [u64; REMESH_CAUSES.len()],
     levels_pending_set: HashSet<Coord>,
+    /// Chunks whose water alone changed while their mesh job ran: their surface is redrawn from
+    /// their levels when it lands rather than meshed again (a moving flood kept such chunks
+    /// re-meshing for as long as it moved).
+    levels_after_mesh: HashSet<Coord>,
     level_redraws: u64,
     /// First worldgen failure (the workers are unusable).
     pub error: Option<String>,
@@ -756,7 +789,9 @@ where
             stale: HashSet::default(),
             settling: HashMap::default(),
             levels_pending: Vec::new(),
+            remesh_counts: [0; REMESH_CAUSES.len()],
             levels_pending_set: HashSet::default(),
+            levels_after_mesh: HashSet::default(),
             level_redraws: 0,
             error: None,
         }
@@ -922,6 +957,7 @@ where
             }
             self.dirty.remove(&key);
             self.meshing.remove(&key);
+            self.levels_after_mesh.remove(&key);
             if self.meshed.remove(&key) {
                 self.view.set_terrain_chunk(key, [0, 0, 0], None);
             }
@@ -1070,7 +1106,7 @@ where
         });
         for c in settled {
             if self.loaded.contains_key(&c) {
-                self.dirty.mark(c);
+                self.mark_for(c, 6);
             }
         }
         let distance_to = |c: &Coord, to: [f64; 3]| -> f64 {
@@ -1284,6 +1320,7 @@ where
             return; // unloaded or superseded meanwhile
         }
         self.meshing.remove(&coord);
+        let water_moved = self.levels_after_mesh.remove(&coord);
         if self.stale.remove(&coord) {
             return; // a cell in it was hidden or shown since: meshed again
         }
@@ -1294,6 +1331,11 @@ where
             .set_terrain_chunk(coord, coord.map(|c| c * CHUNK_SIZE), Some(meshes));
         self.drawn_revision += 1;
         self.meshed.insert(coord);
+        // Its water changed while it was meshed: its surface from its levels now, as a level
+        // change would have (queued for the frame's mesh pump).
+        if water_moved && !self.dirty.contains(&coord) && self.levels_pending_set.insert(coord) {
+            self.levels_pending.push(coord);
+        }
     }
 
     /// Sets world cell `cell`'s cut (none: uncut), as the server sent it (ADR 0067 §11): its
@@ -1537,7 +1579,7 @@ where
         self.drawn_revision += 1;
         self.air.remove(&key);
         self.loaded.insert(key, revision);
-        self.dirty.mark(key);
+        self.mark_for(key, 8);
         self.neighbours_changed(key);
         self.queue_light(key);
     }
@@ -1561,10 +1603,27 @@ where
 
     /// Marks the chunks whose flood light changed for meshing (docs/DAY_NIGHT.md §11): light
     /// reaches farther than the neighbours (a roof darkens the column under it all the way down).
+    /// [`Self::relit`] after the water alone changed (levels, the wet front, blocks flooded or
+    /// drained): a shown chunk whose light it changed waits as moving water does
+    /// (`WATER_SETTLE_PASSES` with no further change) and is meshed once then, rather than at
+    /// every write of a moving flood (owner, 2026-11-24: "so many chunk re-meshes").
+    fn relit_by_water(&mut self) {
+        for c in self.store.light_changed() {
+            if !self.loaded.contains_key(&c) || self.air.contains(&c) {
+                continue;
+            }
+            if self.meshed.contains(&c) && !self.dirty.contains(&c) {
+                self.settling.insert(c, 0);
+            } else {
+                self.mark_for(c, 7);
+            }
+        }
+    }
+
     fn relit(&mut self) {
         for c in self.store.light_changed() {
             if self.loaded.contains_key(&c) && !self.air.contains(&c) {
-                self.dirty.mark(c);
+                self.mark_for(c, 7);
             }
         }
     }
@@ -1661,21 +1720,46 @@ where
         // Only the water changes (each cell air or liquid before and after, one liquid where both
         // are: a level, or the wet front advancing or drying, no block placed or broken): the
         // chunk and the neighbours it touches may redraw their surface tiles instead.
-        let levels_only = !changes.changes.is_empty()
-            && changes.changes.iter().all(|v| {
-                self.store
-                    .voxel(key, v.index)
-                    .is_some_and(|old| water_only(old, v.material))
-            });
+        // Blocks only flooded or drained among them (a flood rising past ramps): this chunk is
+        // made again (its mesh draws a flooded block's water), its neighbours take it as water.
+        let (mut levels_only, mut floods) = (!changes.changes.is_empty(), false);
+        for v in &changes.changes {
+            match self.store.voxel(key, v.index) {
+                Some(old) if water_only(old, v.material) => {}
+                Some(old) if floods_only(old, v.material) => floods = true,
+                _ => {
+                    levels_only = false;
+                    floods = false;
+                    break;
+                }
+            }
+        }
+        let near_levels_only = levels_only;
+        let levels_only = levels_only && !floods;
         self.store.edit_chunk(changes);
         self.loaded.insert(key, changes.revision);
         if !(levels_only && self.levels_later(key)) {
-            self.dirty.mark(changes.coord);
+            let cause = if levels_only {
+                3
+            } else if floods {
+                1
+            } else {
+                0
+            };
+            self.mark_for(changes.coord, cause);
         }
         // Neighbours whose mesh block holds a changed voxel, diagonals included: their border
         // faces, and their baked ambient light, whose sky rays read `SKY_APRON` cells past their
         // borders (`ChunkStore::mesh_block`), may change. In the order first touched.
-        let apron = dwell_world::SKY_APRON;
+        // Water alone (levels, the wet front, blocks flooded or drained) stops no sky ray (only
+        // solid, opaque cubes do, dwell-mesh sky.rs): it changes a neighbour's mesh only at the
+        // face they share, so only a cell on this chunk's edge reaches one (owner, 2026-11-24: a
+        // flood re-meshed every chunk within the sky apron of each write).
+        let apron = if near_levels_only {
+            [1, 1, 1]
+        } else {
+            dwell_world::SKY_APRON
+        };
         let mut touched: Vec<Coord> = Vec::with_capacity(7);
         for v in &changes.changes {
             let index = i32::from(v.index);
@@ -1703,19 +1787,46 @@ where
             let c = add(changes.coord, n);
             if self.loaded.contains_key(&c)
                 && !self.air.contains(&c)
-                && !(levels_only && self.levels_later(c))
+                && !(near_levels_only && self.levels_later(c))
             {
-                self.dirty.mark(c);
+                self.mark_for(c, if near_levels_only { 4 } else { 2 });
             }
         }
-        self.relit();
+        if near_levels_only {
+            self.relit_by_water();
+        } else {
+            self.relit();
+        }
+    }
+
+    /// Queues chunk `c` for a re-mesh, counting why (`REMESH_CAUSES[cause]`) if it wasn't queued.
+    fn mark_for(&mut self, c: Coord, cause: usize) {
+        if !self.dirty.contains(&c) {
+            self.remesh_counts[cause] += 1;
+        }
+        self.dirty.mark(c);
+    }
+
+    /// The re-mesh counts by cause since the last call ([`REMESH_CAUSES`]; the dev tools).
+    pub fn take_remesh_counts(&mut self) -> [u64; REMESH_CAUSES.len()] {
+        std::mem::take(&mut self.remesh_counts)
     }
 
     /// Whether chunk `c`'s water surface may be redrawn alone, at the next `mesh_dirty` (queued
     /// once however many writes touch it before then): its shown mesh is current. Whether the view
     /// can is asked there; if not, it is re-meshed then.
     fn levels_later(&mut self, c: Coord) -> bool {
-        if !self.meshed.contains(&c) || self.dirty.contains(&c) || self.meshing.contains_key(&c) {
+        // Queued for a mesh: the job reads its water as it is then. Its job running: its surface
+        // is redrawn from its levels when it lands (the shown mesh leaves the water's tops and
+        // sides to the tile).
+        if self.dirty.contains(&c) {
+            return true;
+        }
+        if self.meshing.contains_key(&c) {
+            self.levels_after_mesh.insert(c);
+            return true;
+        }
+        if !self.meshed.contains(&c) {
             return false;
         }
         if self.levels_pending_set.insert(c) {
@@ -1730,11 +1841,15 @@ where
         let pending = std::mem::take(&mut self.levels_pending);
         self.levels_pending_set.clear();
         for c in pending {
-            if !self.loaded.contains_key(&c) || self.air.contains(&c) {
+            if !self.loaded.contains_key(&c) || self.air.contains(&c) || self.dirty.contains(&c) {
+                continue; // queued for a mesh since: it reads the water as it is
+            }
+            if self.meshing.contains_key(&c) {
+                self.levels_after_mesh.insert(c);
                 continue;
             }
             if !self.levels_only(c) {
-                self.dirty.mark(c);
+                self.mark_for(c, 5);
             }
         }
     }
@@ -1932,6 +2047,8 @@ mod tests {
     struct FakeStore {
         /// coord → (revision, first voxel)
         chunks: HashMap<Coord, (u32, u16)>,
+        /// The chunks its next edit's light changes (`light_changed`).
+        light_next: Vec<Coord>,
         edits: Vec<(Coord, u32, Vec<u16>)>,
         meshed_from: Vec<Coord>,
         /// A flood light whose lighting of a chunk takes 10 ms of this clock.
@@ -1999,6 +2116,9 @@ mod tests {
         }
         fn remove_chunk(&mut self, coord: Coord) {
             self.chunks.remove(&coord);
+        }
+        fn light_changed(&mut self) -> Vec<Coord> {
+            std::mem::take(&mut self.light_next)
         }
         fn edit_chunk(&mut self, c: &ChunkChanges) {
             let pairs = c
@@ -2759,6 +2879,159 @@ mod tests {
         assert_eq!(
             air_to_water, filters,
             "the wet front relights where water filters light"
+        );
+    }
+
+    #[test]
+    fn a_ramp_flooding_at_a_chunks_edge_re_meshes_its_chunk_and_not_its_neighbour() {
+        // Owner, 2026-11-24: "Why are there so many chunk re-meshes though, that seems wrong since
+        // only the water is changing?" A flood rising past a valley's ramps floods and drains them
+        // (their `flooded` property): each was a block change, its chunk and every neighbour its
+        // apron reaches re-meshed. Only its own chunk's mesh draws a flooded block's water; the
+        // neighbour takes it as water (its tile redrawn).
+        let water = dwell_blocks::require("dwell:water");
+        let dry = dwell_blocks::parse_state(
+            "dwell:grass_ramp[facing=east,flooded=false,half=bottom,shape=ramp]",
+        )
+        .expect("a ramp");
+        let wet = dwell_blocks::with_property(dry, "flooded", "true").expect("a flooded ramp");
+        assert!(floods_only(dry, wet) && floods_only(wet, dry));
+        assert!(!floods_only(dry, water), "a ramp gone is a block change");
+        let (mut s, _) = setup();
+        s.view_mut().tiles = true;
+        // Chunk 0 of dry ramps (the fake store holds one state a chunk), chunk 1 water beside it.
+        s.on_chunk_data(explicit([0, 0, 0], 3, dry));
+        s.on_chunk_data(explicit([1, 0, 0], 3, water));
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        flush(&mut s);
+        s.take_remesh_counts();
+        // The ramp on chunk 0's +x edge (x 31) flooded as the water rises past it.
+        let edge = 31 | (5 << 5);
+        s.on_voxel_modification(&[modification([0, 0, 0], 4, &[edge, wet])]);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        let counts = s.take_remesh_counts();
+        let why: Vec<_> = REMESH_CAUSES
+            .iter()
+            .zip(counts)
+            .filter(|c| c.1 > 0)
+            .collect();
+        assert_eq!(jobs(&s), vec![[0, 0, 0]], "its own chunk only: {why:?}");
+        assert_eq!(
+            counts[REMESH_CAUSES
+                .iter()
+                .position(|&c| c == "block.near")
+                .unwrap()],
+            0
+        );
+        assert!(
+            s.view().tiled.contains(&[1, 0, 0]),
+            "the neighbour's tile redrawn"
+        );
+    }
+
+    #[test]
+    fn water_changing_while_a_chunk_is_meshed_redraws_its_tile_when_the_mesh_lands() {
+        // Owner, 2026-11-24 (a blown dam's flood re-meshed thousands of chunks): water changing in
+        // a chunk while its mesh job ran queued it to be meshed again, and the flood's next write
+        // found that job running too; a chunk under moving water re-meshed for as long as it moved.
+        // The mesh leaves the water's tops and sides to the tile: its tile is redrawn as it lands.
+        let water = dwell_blocks::require("dwell:water");
+        let low = dwell_blocks::liquid_at_fill(water, 0.5);
+        let (mut s, _) = setup();
+        s.view_mut().tiles = true;
+        s.on_chunk_data(explicit([0, 0, 0], 3, water));
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        assert_eq!(jobs(&s), vec![[0, 0, 0]], "its first mesh, running");
+        for k in 0..4u16 {
+            let fill = if k % 2 == 0 { low } else { water };
+            s.on_voxel_modification(&[modification(
+                [0, 0, 0],
+                4 + u32::from(k),
+                &[(5 + k) | (5 << 5), fill],
+            )]);
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        }
+        assert_eq!(jobs(&s), vec![[0, 0, 0]], "no other mesh job while it runs");
+        flush(&mut s);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        assert!(jobs(&s).is_empty(), "not meshed again as it lands");
+        assert_eq!(s.view().tiled, vec![[0, 0, 0]], "its tile redrawn");
+    }
+
+    #[test]
+    fn a_light_change_from_the_water_alone_re_meshes_once_the_water_settles() {
+        // Owner, 2026-11-24: a flood's front relit the chunks round it (water dims the sky's
+        // light) and each was re-meshed at every write. Changed by the water alone, a shown
+        // chunk's light waits as moving water does and is meshed once it settles; a block's light
+        // change (a torch, a hole to the sky) is meshed at once.
+        let water = dwell_blocks::require("dwell:water");
+        let low = dwell_blocks::liquid_at_fill(water, 0.5);
+        let stone = dwell_blocks::require("dwell:stone");
+        let (mut s, _) = setup();
+        s.view_mut().tiles = true;
+        s.on_chunk_data(explicit([0, 0, 0], 3, water));
+        s.on_chunk_data(explicit([0, -1, 0], 3, stone));
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        flush(&mut s);
+        // A level change that relights the bed's chunk below.
+        s.store_mut().light_next = vec![[0, -1, 0]];
+        s.on_voxel_modification(&[modification([0, 0, 0], 4, &[5 | (5 << 5), low])]);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        assert!(!jobs(&s).contains(&[0, -1, 0]), "not at once");
+        for _ in 1..WATER_SETTLE_PASSES {
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        }
+        assert!(
+            jobs(&s).contains(&[0, -1, 0]),
+            "once settled: {:?}",
+            jobs(&s)
+        );
+        flush(&mut s);
+        // A block placed that relights it: at once.
+        s.store_mut().light_next = vec![[0, -1, 0]];
+        s.on_voxel_modification(&[modification([0, 0, 0], 5, &[6 | (5 << 5), stone])]);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        assert!(jobs(&s).contains(&[0, -1, 0]), "a block's light at once");
+    }
+
+    #[test]
+    fn a_water_change_away_from_a_chunks_edge_re_meshes_no_neighbour() {
+        // Owner, 2026-11-24: "Why are there so many chunk re-meshes though ... only the water is
+        // changing?" Water changes no neighbour's sky shading, only the face two chunks share: a
+        // change 3 cells from the edge (inside the 6-cell sky apron) re-meshes its chunk alone,
+        // one on the edge its neighbour too; a block there re-meshes the neighbour (its sky rays).
+        let water = dwell_blocks::require("dwell:water");
+        let low = dwell_blocks::liquid_at_fill(water, 0.5);
+        let stone = dwell_blocks::require("dwell:stone");
+        let (mut s, _) = setup();
+        s.on_chunk_data(explicit([0, 0, 0], 3, water));
+        s.on_chunk_data(explicit([1, 0, 0], 3, water));
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        flush(&mut s);
+        let near_edge = 28 | (5 << 5) | (5 << 10);
+        s.on_voxel_modification(&[modification([0, 0, 0], 4, &[near_edge, low])]);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        assert_eq!(jobs(&s), vec![[0, 0, 0]], "water 3 cells in: its own chunk");
+        flush(&mut s);
+        let edge = 31 | (5 << 5) | (5 << 10);
+        s.on_voxel_modification(&[modification([0, 0, 0], 5, &[edge, low])]);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        let mut j = jobs(&s);
+        j.sort();
+        assert_eq!(
+            j,
+            vec![[0, 0, 0], [1, 0, 0]],
+            "water on the edge: the neighbour too"
+        );
+        flush(&mut s);
+        s.on_voxel_modification(&[modification([0, 0, 0], 6, &[near_edge, stone])]);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        let mut j = jobs(&s);
+        j.sort();
+        assert_eq!(
+            j,
+            vec![[0, 0, 0], [1, 0, 0]],
+            "a block 3 cells in: its sky rays reach"
         );
     }
 
