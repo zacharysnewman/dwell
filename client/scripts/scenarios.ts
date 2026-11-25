@@ -174,6 +174,10 @@ export type Step =
    * `rate` [k] scales every vent's rate, `vent` [x, y, z, rateM3s, depthM] places a lake vent.
    */
   | { do: 'lava'; op: 'report' | 'rate' | 'vent' | 'ventNear'; args: number[] }
+  /** A scene (`shared/theater/scenes/<build>.json`) built into the local world, or its `event`. */
+  | { do: 'scene'; build?: string; event?: number }
+  /** The player's feet moved to `feet` (world m; the dev move). */
+  | { do: 'teleport'; feet: [number, number, number] }
   /**
    * The finder (WORK_QUEUE item 46): logs the far herds and packs nearest first (`__dwell.herds`)
    * and stands the player `back` m (default 40) short of the nearest of `kind` (`deer`, `wolf`;
@@ -495,6 +499,8 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   die: ['maxS'],
   give: ['item', 'count'],
   lava: ['op', 'args'],
+  scene: ['build', 'event'],
+  teleport: ['feet'],
   herd: ['kind', 'back'],
   flyTo: ['to', 'face', 'marginM', 'landM', 'maxS'],
   flyAtMoon: ['name', 'maxS', 'run', 'shotEveryS'],
@@ -754,6 +760,31 @@ export function parseStep(where: string, v: unknown): Step {
         s: num(at('s'), o.s, 0, 600),
         ...(o.lift === undefined ? {} : { lift: num(at('lift'), o.lift, 0, 64) }),
       };
+    case 'teleport': {
+      const v = o.feet;
+      if (
+        !Array.isArray(v) ||
+        v.length !== 3 ||
+        !v.every((n) => typeof n === 'number' && Number.isFinite(n))
+      ) {
+        throw new ViewError(`${at('feet')}: expected [x, y, z] in metres`);
+      }
+      return { do: d, feet: [v[0], v[1], v[2]] as [number, number, number] };
+    }
+    case 'scene': {
+      const build = o.build;
+      if (build !== undefined && (typeof build !== 'string' || !/^[a-z0-9_]+$/.test(build))) {
+        throw new ViewError(`${at('build')}: expected a scene file's name (shared/theater/scenes)`);
+      }
+      if ((build === undefined) === (o.event === undefined)) {
+        throw new ViewError(`${at('build')}: expected one of build or event`);
+      }
+      return {
+        do: d,
+        ...(build === undefined ? {} : { build }),
+        ...(o.event === undefined ? {} : { event: num(at('event'), o.event, 0, 99) }),
+      };
+    }
     case 'lava': {
       if (o.op !== 'report' && o.op !== 'rate' && o.op !== 'vent' && o.op !== 'ventNear') {
         throw new ViewError(`${at('op')}: expected "report", "rate", "vent" or "ventNear"`);

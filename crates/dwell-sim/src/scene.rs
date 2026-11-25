@@ -129,6 +129,20 @@ pub enum Level {
 pub enum Action {
     /// A structure deleted all at once (its cells to air).
     Remove(String),
+    /// Explosives set into a structure and lit at once (owner, 2026-11-24: a dam "blown up with
+    /// yellow dynamite"; a measurement's and a recording's).
+    Blast(Blast),
+}
+
+/// A blast's charges: `explosive` (a name in `shared/explosives/explosives.json`) at each charge,
+/// lit with a fuse of `fuse_s`. A charge is (across the valley m, over the floor m at the
+/// structure, along the valley m from the structure's upstream face), of structure `target`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Blast {
+    pub target: String,
+    pub explosive: String,
+    pub fuse_s: f64,
+    pub charges: Vec<[f64; 3]>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -449,7 +463,11 @@ impl Scene {
         let mut events = Vec::new();
         for (i, e) in r.list(m, "events", "scene").iter().enumerate() {
             let at = format!("scene.events[{i}]");
-            let Some(e) = r.obj(Some(e), &at, &["atS", "do", "target"]) else {
+            let Some(e) = r.obj(
+                Some(e),
+                &at,
+                &["atS", "do", "target", "explosive", "fuseS", "charges"],
+            ) else {
                 continue;
             };
             let at_s = r.num(e, "atS", &at, 0.0, 86_400.0);
@@ -465,8 +483,49 @@ impl Scene {
                         action: Action::Remove(target),
                     });
                 }
+                Some("blast") => {
+                    if !walls.iter().any(|w| w.name == target) {
+                        r.errs
+                            .push(format!("{at}.target: no structure \"{target}\""));
+                    }
+                    let explosive = r.text(e, "explosive", &at);
+                    if !dwell_world::explosives::EXPLOSIVES
+                        .iter()
+                        .any(|x| x.name == explosive)
+                    {
+                        r.errs.push(format!(
+                            "{at}.explosive: {explosive:?} is no explosive (shared/explosives/explosives.json)"
+                        ));
+                    }
+                    let fuse_s = r.num_or(e, "fuseS", &at, 0.0, 60.0, 0.0);
+                    let mut charges = Vec::new();
+                    for (k, c) in r.list(e, "charges", &at).iter().enumerate() {
+                        let xyz: Option<Vec<f64>> = c
+                            .as_array()
+                            .filter(|a| a.len() == 3)
+                            .and_then(|a| a.iter().map(Value::as_f64).collect());
+                        match xyz.filter(|v| v.iter().all(|n| n.abs() <= 1000.0)) {
+                            Some(v) => charges.push([v[0], v[1], v[2]]),
+                            None => r.errs.push(format!(
+                                "{at}.charges[{k}]: [across m, over the floor m, along m], each within 1000"
+                            )),
+                        }
+                    }
+                    if charges.is_empty() {
+                        r.errs.push(format!("{at}.charges: at least one"));
+                    }
+                    events.push(Event {
+                        at_s,
+                        action: Action::Blast(Blast {
+                            target,
+                            explosive,
+                            fuse_s,
+                            charges,
+                        }),
+                    });
+                }
                 other => r.errs.push(format!(
-                    "{at}.do: {other:?} is not an event a scene runs (remove)"
+                    "{at}.do: {other:?} is not an event a scene runs (remove, blast)"
                 )),
             }
         }
@@ -763,6 +822,23 @@ impl Scene {
     /// under the ground to `clearM` over the land whose state `read` (world cell → state) differs
     /// from the scene's, in world cells and states (through the scene's face), with each
     /// structure's cells.
+    /// A blast's charges' world cells (face `frame`'s): each across, over the floor at its
+    /// structure and along the valley from the structure's upstream face.
+    pub fn charge_cells(&self, b: &Blast) -> Vec<[i32; 3]> {
+        let Some(w) = self.walls.iter().find(|w| w.name == b.target) else {
+            return Vec::new();
+        };
+        let floor = rows(self.valley.floor_m(w.at_m));
+        b.charges
+            .iter()
+            .map(|&[v, over, along]| {
+                let (x, z) = self.axis.xz(self.origin, w.at_m + along, v);
+                self.frame
+                    .cell([x.floor() as i32, floor + rows(over), z.floor() as i32])
+            })
+            .collect()
+    }
+
     pub fn cells(&self, mut read: impl FnMut([i32; 3]) -> StateId) -> Plan {
         let f = self.frame;
         let v = &self.valley;

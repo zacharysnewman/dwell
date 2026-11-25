@@ -873,6 +873,31 @@ async function step(run: Run, s: Step): Promise<void> {
       await page.waitForTimeout(s.s * 1000);
       return;
     }
+    case 'teleport':
+      await call(page, `d.teleport(${JSON.stringify(s.feet)})`);
+      return;
+    case 'scene': {
+      // A scene file's text built into the local world, or one of its events (local.rs
+      // `scene_dev`; docs/THEATER_MODE.md §6.3).
+      const [op, text] =
+        s.build !== undefined
+          ? [
+              'build',
+              readFileSync(
+                new URL(`../../shared/theater/scenes/${s.build}.json`, import.meta.url),
+                'utf8',
+              ),
+            ]
+          : ['event', String(s.event ?? 0)];
+      const r = await call<string | null>(
+        page,
+        `d.scene(${JSON.stringify(op)}, ${JSON.stringify(text)})`,
+      );
+      if (r === null) throw new Error('scene: not a local world');
+      console.log(`  scene ${op}: ${r}`);
+      if (r.includes('"error"')) throw new Error(`scene ${op}: ${r}`);
+      return;
+    }
     case 'lava': {
       const r = await call<string | null>(
         page,

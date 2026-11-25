@@ -6,6 +6,15 @@ pins it.
 
 ## Open
 
+### 240. The dam-break scene is built 544 m underground since 0.76
+
+Found 2026-11-24 (building `dam_blast`): `shared/theater/scenes/dam_break.json` puts its land at 32 m, the flat world's
+ground before 0.76; since 0.76 that ground is at 576 m, so in the browser (`?world=flat`) the scene carves its valley
+deep under the surface. Its tests pass (they read the same absolute heights), and so would the recording take
+(`.claude/skills/record/videos/dam-break/`) with its camera at the old heights. Fix: its land at 576 m, its tests' and
+take's heights by +544 m. `dam_blast.json` is at 576 m already. Owner should see: the dam-break recording's valley at the
+flat world's ground.
+
 ### 239. Rivers stopped carrying floating trees (0.76.4, the boats' glide)
 
 Found 2026-11-24 (dwell-sim `felling.rs` `a_trunk_afloat_drifts_downstream_and_never_settles`, red on main): a trunk

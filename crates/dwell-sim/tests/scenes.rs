@@ -217,3 +217,146 @@ fn no_water_hangs_where_the_dam_stood() {
         &hanging[..hanging.len().min(4)]
     );
 }
+
+#[test]
+fn the_dam_blast_scene_blows_its_dam_open_and_the_lake_floods_out() {
+    // face-a-only: the flat world the scene builds on is face A's.
+    // Owner, 2026-11-24: "building dams, and then blowing them up with yellow dynamite, and the
+    // water rushes out": the `dam_blast` scene's 12 yellow dynamite go off, the dam is breached
+    // through its top (the water is a surface grid), pieces fly, and within 6 s water stands past
+    // the dam.
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../shared/theater/scenes/dam_blast.json"
+    );
+    let scene = Scene::parse(&std::fs::read_to_string(path).unwrap()).expect("valid");
+    let mut f = Fixture::new(flat());
+    f.server.build_scene(&scene);
+    for _ in 0..60 {
+        f.server.step();
+        f.take_all();
+    }
+    let e: serde_json::Value =
+        serde_json::from_str(&f.server.scene_event(&scene, 0).expect("the blast")).unwrap();
+    assert_eq!(e["charges"].as_u64(), Some(12), "{e}");
+    let mut pieces = 0;
+    let mut wet = false;
+    for _ in 0..60 * 6 {
+        f.server.step();
+        f.take_all();
+        pieces = pieces.max(f.server.body_count());
+        wet |= (110..130).any(|z| water_level(&f, 0, z).is_some());
+    }
+    assert!(pieces > 50, "the blast flung pieces: {pieces}");
+    assert!(wet, "water past the dam within 6 s");
+}
+
+/// A measurement (owner, 2026-11-24: "building dams, and then blowing them up with yellow
+/// dynamite ... so incredibly laggy ... Imagine a 20m high dam. And 12 dynamite"): the
+/// `dam_blast` scene (a 20 m dam, its lake a metre under the top, 12 yellow dynamite in its
+/// downstream face lit at once), a player watching from the land beside it. Prints each second's
+/// tick mean and max, where the time went by phase, the bodies, the water past the dam and what
+/// went to the player. `DWELL_REMOVE=1`: the dam deleted instead of blown (the water's alone).
+#[test]
+#[ignore = "a measurement: cargo test --release -p dwell-sim --test scenes measure_a -- --ignored --nocapture"]
+fn measure_a_20_m_dam_blown_with_12_yellow_dynamite() {
+    // face-a-only: a measurement on the flat world's face A.
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../shared/theater/scenes/dam_blast.json"
+    );
+    let mut json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let removing = std::env::var("DWELL_REMOVE").is_ok();
+    if removing {
+        json["events"] = serde_json::json!([{ "atS": 3, "do": "remove", "target": "dam" }]);
+    }
+    let scene = Scene::parse(&json.to_string()).expect("valid");
+    let mut f = Fixture::new(flat());
+    // A player on the land beside the dam (the owner watching it), so the world round it is live.
+    let w = f.join(1, &Client::new(1));
+    let mut v = dwell_world::Chunk::default();
+    dwell_world::generate_flat_chunk(
+        dwell_world::ChunkCoord::from_array(w.verification_chunk),
+        &mut v,
+    );
+    f.send(
+        1,
+        dwell_protocol::Message::WorldgenCheck(dwell_world::chunk_hash(&v)),
+    );
+    let t0 = std::time::Instant::now();
+    let report = f.server.build_scene(&scene);
+    println!(
+        "built in {:.0} ms: {report}",
+        t0.elapsed().as_secs_f64() * 1000.0
+    );
+    let h = f.server.player_handle_of(1).expect("a player");
+    {
+        let (_, physics, players) = f.server.sim();
+        players.teleport(
+            physics,
+            h,
+            dwell_physics::DVec3::new(20.0, 577.0, 115.0),
+            dwell_physics::Vec3::ZERO,
+        );
+    }
+    for _ in 0..120 {
+        f.server.step();
+        f.take_all();
+    }
+    println!("{:?}", f.server.scene_event(&scene, 0));
+    f.server.tick_phases();
+    for second in 0..12 {
+        let mut ms = Vec::new();
+        let (mut bytes, mut mods, mut chunks, mut worst) = (0usize, 0usize, 0usize, 0usize);
+        for _ in 0..60 {
+            let t = std::time::Instant::now();
+            f.server.step();
+            ms.push(t.elapsed().as_secs_f64() * 1000.0);
+            let mut tick_chunks = 0;
+            for (m, n) in f.take(1) {
+                bytes += n;
+                if let dwell_protocol::Message::VoxelModification(v) = &m {
+                    mods += 1;
+                    chunks += v.chunks.len();
+                    tick_chunks += v.chunks.len();
+                }
+            }
+            worst = worst.max(tick_chunks);
+        }
+        let max = ms.iter().copied().fold(0.0, f64::max);
+        let mean = ms.iter().sum::<f64>() / ms.len() as f64;
+        let mut phases: Vec<(&str, f64)> = f
+            .server
+            .tick_phases()
+            .into_iter()
+            .filter(|&(_, v)| v > 1.0)
+            .collect();
+        phases.sort_by(|a, b| b.1.total_cmp(&a.1));
+        let top: Vec<String> = phases
+            .iter()
+            .take(5)
+            .map(|(n, v)| format!("{n} {v:.0}"))
+            .collect();
+        let past = {
+            let w = f.server.world();
+            let mut n = 0;
+            for z in 104..200 {
+                for x in -10..=10 {
+                    for r in row_of_m(554.0)..row_of_m(574.0) {
+                        if dwell_blocks::info(w.get_voxel(x, r, z)).liquid {
+                            n += 1;
+                        }
+                    }
+                }
+            }
+            n
+        };
+        println!(
+            "second {second}: tick mean {mean:.1} ms, max {max:.1} ms, bodies {}, water cells past the dam {past}; sent {:.0} kB, {mods} modifications of {chunks} chunks (most in a tick {worst}); ms by phase: {}",
+            f.server.body_count(),
+            bytes as f64 / 1000.0,
+            top.join(", ")
+        );
+    }
+}

@@ -1,0 +1,119 @@
+{
+  "$comment": "A measurement and test world (owner, 2026-11-24: \"I've been building dams, and then blowing them up with yellow dynamite, and the water rushes out. Very cool but so incredibly laggy ... Imagine a 20m high dam. And 12 dynamite.\"; WORK_QUEUE): dam_break's valley cut 22 m into the flat world's ground (its land at 576 m, the 0.76 ground), a 20-block stone dam across it 100 m down, 4 m thick, the lake a metre under its top, held still from the start, the water at the world's own speed (\"game\"); at 3 s twelve yellow dynamite in the dam's downstream face, six across at 12 m and six at 17 m over the floor, lit at once (a surface-grid water runs under no bridge, so the dam's top must go). Built by dwell-sim scene.rs; `cargo test --release -p dwell-sim --test scenes measure_a -- --ignored --nocapture` measures it natively, the bench's `dam-blast` in the browser.",
+  "formatVersion": 1,
+  "name": "dam_blast",
+  "description": "A 20-block dam blown open by 12 yellow dynamite at 3 s.",
+  "world": "flat",
+  "face": "a",
+  "origin": [
+    0,
+    0
+  ],
+  "axis": "+z",
+  "waterClock": "game",
+  "terrain": {
+    "kind": "valley",
+    "landM": 576,
+    "lengthM": 320,
+    "floorWidthM": 14,
+    "depthM": 22,
+    "floorFall": 0,
+    "sideSlope": 1,
+    "clearM": 2,
+    "surface": "dwell:grass",
+    "under": "dwell:dirt",
+    "underDepthM": 1.5,
+    "rock": "dwell:stone",
+    "bed": "dwell:sand"
+  },
+  "structures": [
+    {
+      "name": "dam",
+      "kind": "wall",
+      "atM": 100,
+      "heightBlocks": 20,
+      "blockM": 1,
+      "thicknessM": 4,
+      "material": "dwell:stone"
+    }
+  ],
+  "water": [
+    {
+      "name": "reservoir",
+      "kind": "lake",
+      "behind": "dam",
+      "belowTopM": 1
+    }
+  ],
+  "events": [
+    {
+      "atS": 3,
+      "do": "blast",
+      "target": "dam",
+      "explosive": "dwell:dynamite_yellow",
+      "fuseS": 0.5,
+      "charges": [
+        [
+          -5,
+          12,
+          3
+        ],
+        [
+          -5,
+          17,
+          3
+        ],
+        [
+          -2,
+          12,
+          3
+        ],
+        [
+          -2,
+          17,
+          3
+        ],
+        [
+          -1,
+          12,
+          3
+        ],
+        [
+          -1,
+          17,
+          3
+        ],
+        [
+          2,
+          12,
+          3
+        ],
+        [
+          2,
+          17,
+          3
+        ],
+        [
+          3,
+          12,
+          3
+        ],
+        [
+          3,
+          17,
+          3
+        ],
+        [
+          6,
+          12,
+          3
+        ],
+        [
+          6,
+          17,
+          3
+        ]
+      ]
+    }
+  ]
+}

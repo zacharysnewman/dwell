@@ -237,7 +237,7 @@
     },
     {
       "name": "forest-edge-ablate",
-      "notes": "What the forest edge's GPU frame is made of (WORK_QUEUE items 31/32): forest:edge at ?preset=high, 4 s records of the frame with each suspect off in turn and back on between: the cutout meshes (leaf cards and tall grass, `grass` false hides them), sun shadows, the full-detail distance 192 \u2192 96 m.",
+      "notes": "What the forest edge's GPU frame is made of (WORK_QUEUE items 31/32): forest:edge at ?preset=high, 4 s records of the frame with each suspect off in turn and back on between: the cutout meshes (leaf cards and tall grass, `grass` false hides them), sun shadows, the full-detail distance 192 → 96 m.",
       "query": {
         "worldgen": "test:forest",
         "seed": "0",
@@ -353,7 +353,7 @@
     },
     {
       "name": "lava-burn",
-      "notes": "Burning (VOLCANOES.md \u00a76.3): an adventure-mode player on the starter's summit, the lake filled fast, the player put into the lava (`goto` the nearest dwell:lava): the red-orange screen edge and the sizzle.",
+      "notes": "Burning (VOLCANOES.md §6.3): an adventure-mode player on the starter's summit, the lake filled fast, the player put into the lava (`goto` the nearest dwell:lava): the red-orange screen edge and the sizzle.",
       "query": {
         "worldgen": "test:starter",
         "seed": "0",
@@ -397,7 +397,7 @@
     },
     {
       "name": "lava-glow",
-      "notes": "Lava's look by heat (VOLCANOES.md \u00a76.5): every vent \u00d730 for 45 s, the summit lake by day and night, the face-B river running (hot), then the vents all but stopped for 40 s so the river cools by stop (warm, cooling, crusting).",
+      "notes": "Lava's look by heat (VOLCANOES.md §6.5): every vent ×30 for 45 s, the summit lake by day and night, the face-B river running (hot), then the vents all but stopped for 40 s so the river cools by stop (warm, cooling, crusting).",
       "query": {
         "worldgen": "test:starter",
         "seed": "0",
@@ -486,7 +486,7 @@
     },
     {
       "name": "bloom",
-      "notes": "Bloom (WORK_QUEUE item 19): the starter's summit lava lake filled fast (its vent \u00d7 30), by night, shot and the frame recorded; run with --compare and configs that set ?bloom=off|low|high or ?preset= to see the glow and its GPU cost (gpu.bloom is inside gpu.frame).",
+      "notes": "Bloom (WORK_QUEUE item 19): the starter's summit lava lake filled fast (its vent × 30), by night, shot and the frame recorded; run with --compare and configs that set ?bloom=off|low|high or ?preset= to see the glow and its GPU cost (gpu.bloom is inside gpu.frame).",
       "query": {
         "worldgen": "test:starter",
         "seed": "0",
@@ -609,7 +609,7 @@
     },
     {
       "name": "lava-lake",
-      "notes": "Lava's look (VOLCANOES.md \u00a76.3): the starter world's summit lava lake, its vent's rate \u00d7 30 (the dev `lava` step) so it fills in seconds, by day and by night, the frame near it; then a dev vent by the sea for lava meeting water (obsidian, steam).",
+      "notes": "Lava's look (VOLCANOES.md §6.3): the starter world's summit lava lake, its vent's rate × 30 (the dev `lava` step) so it fills in seconds, by day and by night, the frame near it; then a dev vent by the sea for lava meeting water (obsidian, steam).",
       "query": {
         "worldgen": "test:starter",
         "seed": "0",
@@ -1543,7 +1543,7 @@
     },
     {
       "name": "water-river",
-      "notes": "A river's flow visuals (docs/WATER_SURFACE_GRID.md \u00a72c): goes to the world map's nearest river from the seed-7 spawn and finds water running at least 0.1 m/s there, then views it from 2 m up downstream and upstream, across it from 6 m up (steeply: a narrow river's banks rise close), and from 12 m up looking down on it. Records the frame looking downstream. Finding no running river fails the run.",
+      "notes": "A river's flow visuals (docs/WATER_SURFACE_GRID.md §2c): goes to the world map's nearest river from the seed-7 spawn and finds water running at least 0.1 m/s there, then views it from 2 m up downstream and upstream, across it from 6 m up (steeply: a narrow river's banks rise close), and from 12 m up looking down on it. Records the frame looking downstream. Finding no running river fails the run.",
       "settings": {
         "timeOfDay": 0.45
       },
@@ -1642,7 +1642,7 @@
     },
     {
       "name": "water-flood",
-      "notes": "A flood for the water's re-mesh cost (proposals/WATER_GPU_SURFACE.md C6a): goes to the seed-7 spawn's nearest running river as water-river does, then clears a 29 \u00d7 29 m box from 1 m to 5 m under the feet (the river's bed and both banks under its level), so the river pours in from up- and downstream and fills the pit, viewed from 12 m up looking down. Records the 12 s of the fill; compare with the `heightfield` configuration (the near water from the GPU heightfield: level-only changes rewrite tiles instead of re-meshing).",
+      "notes": "A flood for the water's re-mesh cost (proposals/WATER_GPU_SURFACE.md C6a): goes to the seed-7 spawn's nearest running river as water-river does, then clears a 29 × 29 m box from 1 m to 5 m under the feet (the river's bed and both banks under its level), so the river pours in from up- and downstream and fills the pit, viewed from 12 m up looking down. Records the 12 s of the fill; compare with the `heightfield` configuration (the near water from the GPU heightfield: level-only changes rewrite tiles instead of re-meshing).",
       "settings": {
         "timeOfDay": 0.45
       },
@@ -1747,7 +1747,7 @@
     },
     {
       "name": "look-horizon",
-      "notes": "From the player's eyes at the spawn, looking along the ground 3\u00b0 below the horizon (heading +X): a grazing view over near and far terrain.",
+      "notes": "From the player's eyes at the spawn, looking along the ground 3° below the horizon (heading +X): a grazing view over near and far terrain.",
       "split": "far",
       "steps": [
         {
@@ -1778,7 +1778,7 @@
     },
     {
       "name": "look-down",
-      "notes": "From the player's eyes at the spawn, looking 80\u00b0 down at the ground: near terrain only.",
+      "notes": "From the player's eyes at the spawn, looking 80° down at the ground: near terrain only.",
       "split": "near",
       "steps": [
         {
@@ -1870,7 +1870,7 @@
     },
     {
       "name": "shadows-pines",
-      "notes": "Sun shadows in a pine grove (docs/DAY_NIGHT.md \u00a710): mid-morning, rises a little over the spawn and looks across the groves up the hill (recorded: the cost of the maps with many casters), then shoots the pines' shadows on High, Low and Off.",
+      "notes": "Sun shadows in a pine grove (docs/DAY_NIGHT.md §10): mid-morning, rises a little over the spawn and looks across the groves up the hill (recorded: the cost of the maps with many casters), then shoots the pines' shadows on High, Low and Off.",
       "settings": {
         "timeOfDay": 0.4
       },
@@ -1944,7 +1944,7 @@
     },
     {
       "name": "shadows-still",
-      "notes": "Shadow flicker with a still camera (docs/DAY_NIGHT.md \u00a710): hovers over the spawn looking across the pine groves, then shoots bursts of frames back to back at noon and at dusk (and at noon looking down at the ground under you, the nearest cascade's), with the time of day held and with it running at the world clock's rate (the light moving every frame, as in play), on High, Low and Off. Read each burst's flicker (the share of pixels that change from frame to frame) against the Off burst's (the clouds, water and plants' own motion).",
+      "notes": "Shadow flicker with a still camera (docs/DAY_NIGHT.md §10): hovers over the spawn looking across the pine groves, then shoots bursts of frames back to back at noon and at dusk (and at noon looking down at the ground under you, the nearest cascade's), with the time of day held and with it running at the world clock's rate (the light moving every frame, as in play), on High, Low and Off. Read each burst's flicker (the share of pixels that change from frame to frame) against the Off burst's (the clouds, water and plants' own motion).",
       "settings": {
         "timeOfDay": 0.5
       },
@@ -2116,7 +2116,7 @@
     },
     {
       "name": "lod-zfight",
-      "notes": "The LOD's z-fighting (ARCHITECTURE.md \u00a76.6, \"Known bug class\"; owner 2026-10-21: dirt showing through the grass from high up, changing as the camera moves): the camera placed 160\u2013300 m over the seed-7 spawn's hills at three pitches with the phone's detail (128 m full detail, 8 px), drifting 2 mm and 0.002\u00b0 a frame through a 16-frame burst. Fails when over 0.004 % of the pixels flip hue between frames (grass to dirt): 0.005\u20130.013 % before the fix (top skirts on the section plane in the top row's dirt colour), 0.000\u20130.002 % after.",
+      "notes": "The LOD's z-fighting (ARCHITECTURE.md §6.6, \"Known bug class\"; owner 2026-10-21: dirt showing through the grass from high up, changing as the camera moves): the camera placed 160–300 m over the seed-7 spawn's hills at three pitches with the phone's detail (128 m full detail, 8 px), drifting 2 mm and 0.002° a frame through a 16-frame burst. Fails when over 0.004 % of the pixels flip hue between frames (grass to dirt): 0.005–0.013 % before the fix (top skirts on the section plane in the top row's dirt colour), 0.000–0.002 % after.",
       "seed": 7,
       "window": {
         "width": 1000,
@@ -2402,7 +2402,7 @@
     },
     {
       "name": "fly-high",
-      "notes": "Flies up about 540 m (level 8 for 3 s), looks out and down 20\u00b0 and flies +X for 10 s: far terrain, the LOD's distant levels streaming.",
+      "notes": "Flies up about 540 m (level 8 for 3 s), looks out and down 20° and flies +X for 10 s: far terrain, the LOD's distant levels streaming.",
       "split": "far",
       "steps": [
         {
@@ -3328,7 +3328,7 @@
     },
     {
       "name": "clouds-high",
-      "notes": "The sky's clouds on High (docs/CLOUDS.md): shots looking up, at the horizon and toward the sun, then 5 s recorded looking 25\u00b0 up (mostly sky). Run with --unthrottled to compare gpu.composite between clouds-high, clouds-low and clouds-off.",
+      "notes": "The sky's clouds on High (docs/CLOUDS.md): shots looking up, at the horizon and toward the sun, then 5 s recorded looking 25° up (mostly sky). Run with --unthrottled to compare gpu.composite between clouds-high, clouds-low and clouds-off.",
       "settings": {
         "clouds": "high"
       },
@@ -3559,7 +3559,7 @@
     },
     {
       "name": "clouds-dusk",
-      "notes": "The clouds with a low sun (golden hour, the sun about 5\u00b0 up toward yaw \u2212152), toward it and away.",
+      "notes": "The clouds with a low sun (golden hour, the sun about 5° up toward yaw −152), toward it and away.",
       "settings": {
         "clouds": "high",
         "timeOfDay": 0.82
@@ -3740,7 +3740,7 @@
     },
     {
       "name": "day-night-face-b",
-      "notes": "The day/night cycle on face B (DAY_NIGHT.md \u00a73): a camera 50 m over face B's ground at the origin (y = \u2212452: seed 7's face B stands 402 m high there; the old \u22124,150, from before Phase 16's midplane at 0, put the camera inside the rock, the \"stray dark slabs\", BIFACIAL_WORLD.md \u00a711); face A's noon is face B's midnight (the moon overhead), face A's sunset is face B's sunrise.",
+      "notes": "The day/night cycle on face B (DAY_NIGHT.md §3): a camera 50 m over face B's ground at the origin (y = −452: seed 7's face B stands 402 m high there; the old −4,150, from before Phase 16's midplane at 0, put the camera inside the rock, the \"stray dark slabs\", BIFACIAL_WORLD.md §11); face A's noon is face B's midnight (the moon overhead), face A's sunset is face B's sunrise.",
       "steps": [
         {
           "do": "settle",
@@ -3822,7 +3822,7 @@
     },
     {
       "name": "clouds-above",
-      "notes": "The cloud deck (1.8 km up) seen from above (CLOUDS.md \u00a77): the camera 3.5 km up looking down at 40\u00b0, then 15 km up (a cloud sea to the deck's horizon), then 5 s recorded 3.5 km up looking down (the deck over the terrain: compare gpu.composite with clouds-off).",
+      "notes": "The cloud deck (1.8 km up) seen from above (CLOUDS.md §7): the camera 3.5 km up looking down at 40°, then 15 km up (a cloud sea to the deck's horizon), then 5 s recorded 3.5 km up looking down (the deck over the terrain: compare gpu.composite with clouds-off).",
       "settings": {
         "clouds": "high"
       },
@@ -3930,7 +3930,7 @@
     },
     {
       "name": "clouds-far-above",
-      "notes": "The cloud deck from 3\u201340 km up over seed 7, by day and by night (owner, 2026-10-21: from high up the clouds showed in a circle round the player and past the world's edge, not over the far sea; CLOUDS.md \u00a77): the deck must cover the whole flat world below its altitude.",
+      "notes": "The cloud deck from 3–40 km up over seed 7, by day and by night (owner, 2026-10-21: from high up the clouds showed in a circle round the player and past the world's edge, not over the far sea; CLOUDS.md §7): the deck must cover the whole flat world below its altitude.",
       "seed": 7,
       "window": {
         "width": 1000,
@@ -4151,7 +4151,7 @@
     },
     {
       "name": "clouds-through",
-      "notes": "Rising through the deck (1.8 km): the camera at 1.3, 1.65, 1.8, 1.95 and 2.3 km looking 10\u00b0 down: the deck fades out below it, the in-cloud fog where a cloud is, then the deck's top below. No pop between the shots. At the deck's height also at x = 1.5, 3, 4.5 and 6 km, so some shots are inside a cloud (the in-cloud fog).",
+      "notes": "Rising through the deck (1.8 km): the camera at 1.3, 1.65, 1.8, 1.95 and 2.3 km looking 10° down: the deck fades out below it, the in-cloud fog where a cloud is, then the deck's top below. No pop between the shots. At the deck's height also at x = 1.5, 3, 4.5 and 6 km, so some shots are inside a cloud (the in-cloud fog).",
       "settings": {
         "clouds": "high"
       },
@@ -4345,7 +4345,7 @@
     },
     {
       "name": "clouds-above-night",
-      "notes": "The deck from above by moonlight (midnight), 3.5 km up looking down at 30\u00b0.",
+      "notes": "The deck from above by moonlight (midnight), 3.5 km up looking down at 30°.",
       "settings": {
         "clouds": "high",
         "timeOfDay": 0.0
@@ -4373,7 +4373,7 @@
     },
     {
       "name": "clouds-above-fast",
-      "notes": "The deck from above at speed (owner's report, 2026-10-20: the clouds showed only inside a circle). Climbs at level 10 (256 m/s) above the deck (1.8 km), then flies fast with Run looking 40\u00b0 and 80\u00b0 down: the wind's edge blur over the deck where it is in front of the terrain. The clouds must reach the view's edges, as they do flying slowly.",
+      "notes": "The deck from above at speed (owner's report, 2026-10-20: the clouds showed only inside a circle). Climbs at level 10 (256 m/s) above the deck (1.8 km), then flies fast with Run looking 40° and 80° down: the wind's edge blur over the deck where it is in front of the terrain. The clouds must reach the view's edges, as they do flying slowly.",
       "settings": {
         "clouds": "high"
       },
@@ -4454,7 +4454,7 @@
     },
     {
       "name": "walk-over-a-placed-block",
-      "notes": "Places a block in front of the spawn and walks over it without jumping (Phase 18, ADAPTIVE_BLOCKS.md): natural ground shapes itself, so the placed block is a half pyramid (45\u00b0 faces: a slide, owner 2026-10-15) and the ground under and around it ramps up at 27\u00b0 \u2014 the controller trace shows what the player does on it (no jump, no launch).",
+      "notes": "Places a block in front of the spawn and walks over it without jumping (Phase 18, ADAPTIVE_BLOCKS.md): natural ground shapes itself, so the placed block is a half pyramid (45° faces: a slide, owner 2026-10-15) and the ground under and around it ramps up at 27° — the controller trace shows what the player does on it (no jump, no launch).",
       "steps": [
         {
           "do": "settle",
@@ -4519,7 +4519,7 @@
     },
     {
       "name": "slide-off-a-steep-block",
-      "notes": "Slides on 45\u00b0 ground (PLAYER_CONTROLLER.md \u00a76.8, owner 2026-10-15): places a block in front of the spawn (natural ground shapes it into a half pyramid with 45\u00b0 faces), walks up the 27\u00b0 ground around it into its 45\u00b0 face (walking up it fails: the player slides back, braking), steers right along the face mid-slide with forward still held, then lets go and slides off. The controller trace (records.slide.ticks) shows the Sliding state, the speeds and the steer; the sounds (window.__dwell.sounds) the slide's loop and stop.",
+      "notes": "Slides on 45° ground (PLAYER_CONTROLLER.md §6.8, owner 2026-10-15): places a block in front of the spawn (natural ground shapes it into a half pyramid with 45° faces), walks up the 27° ground around it into its 45° face (walking up it fails: the player slides back, braking), steers right along the face mid-slide with forward still held, then lets go and slides off. The controller trace (records.slide.ticks) shows the Sliding state, the speeds and the steer; the sounds (window.__dwell.sounds) the slide's loop and stop.",
       "steps": [
         {
           "do": "settle",
@@ -4606,7 +4606,7 @@
     },
     {
       "name": "sprint-slide",
-      "notes": "The sprint slide (PLAYER_CONTROLLER.md \u00a76.9, owner 2026-10-19): sprints (Shift+W), presses crouch (C) to slide on in the crouch capsule, steers right (D) mid-slide, jumps out (Space) keeping the momentum; then, crouch let go, sprints and slides again after the cooldown and rides it out to the crouch speed. Screenshots through the slide (the lower eye, the FOV widening); the controller trace (records.slide.ticks) shows the Sliding state, the crouch flag, the speed falling with friction and the jump; the sounds the crouch and the slide's scrape.",
+      "notes": "The sprint slide (PLAYER_CONTROLLER.md §6.9, owner 2026-10-19): sprints (Shift+W), presses crouch (C) to slide on in the crouch capsule, steers right (D) mid-slide, jumps out (Space) keeping the momentum; then, crouch let go, sprints and slides again after the cooldown and rides it out to the crouch speed. Screenshots through the slide (the lower eye, the FOV widening); the controller trace (records.slide.ticks) shows the Sliding state, the crouch flag, the speed falling with friction and the jump; the sounds the crouch and the slide's scrape.",
       "steps": [
         {
           "do": "settle",
@@ -4820,7 +4820,7 @@
     },
     {
       "name": "spyglass-far",
-      "notes": "The spyglass (docs/SPYGLASS.md): flies about 180 m up over the seed-7 spawn and looks out over the distant terrain 6\u00b0 down (heading +X), then shoots it unzoomed, zoomed to each step once the LOD has refined inside the narrow view, and unzoomed again.",
+      "notes": "The spyglass (docs/SPYGLASS.md): flies about 180 m up over the seed-7 spawn and looks out over the distant terrain 6° down (heading +X), then shoots it unzoomed, zoomed to each step once the LOD has refined inside the narrow view, and unzoomed again.",
       "split": "far",
       "steps": [
         {
@@ -4914,7 +4914,7 @@
     },
     {
       "name": "step-up-angles",
-      "notes": "The step-up from many angles (PLAYER_CONTROLLER.md \u00a74) on the generated ground: walks, then runs, out and back at 24 headings (every 15\u00b0) from the spawn, 1.2 s each way. The controller traces (records 'walk' and 'run') show each step-up (a grounded feet rise) and any hang-up (forward input held, grounded, the speed near zero).",
+      "notes": "The step-up from many angles (PLAYER_CONTROLLER.md §4) on the generated ground: walks, then runs, out and back at 24 headings (every 15°) from the spawn, 1.2 s each way. The controller traces (records 'walk' and 'run') show each step-up (a grounded feet rise) and any hang-up (forward input held, grounded, the speed near zero).",
       "steps": [
         {
           "do": "settle",
@@ -5911,7 +5911,7 @@
     },
     {
       "name": "faces-a",
-      "notes": "Face parity's look (BIFACIAL_WORLD.md \u00a711): other players' bodies, your arms, the block outline, the sky and clouds and the spyglass on face A; `faces-b` is the same on face B, to compare shot for shot.",
+      "notes": "Face parity's look (BIFACIAL_WORLD.md §11): other players' bodies, your arms, the block outline, the sky and clouds and the spyglass on face A; `faces-b` is the same on face B, to compare shot for shot.",
       "steps": [
         {
           "do": "settle",
@@ -6090,7 +6090,7 @@
     },
     {
       "name": "tunnel-a",
-      "notes": "A hill built in front of the spawn (stone, 32 m long, 15 m tall) with a 3 m wide, 2 m tall tunnel 20 m into it; walked into at noon and at midnight. Owner's bug (2026-10-21, \"lit up like day\"; DAY_NIGHT.md \u00a711): the tunnel goes dark inside, your hand with it.",
+      "notes": "A hill built in front of the spawn (stone, 32 m long, 15 m tall) with a 3 m wide, 2 m tall tunnel 20 m into it; walked into at noon and at midnight. Owner's bug (2026-10-21, \"lit up like day\"; DAY_NIGHT.md §11): the tunnel goes dark inside, your hand with it.",
       "settings": {
         "timeOfDay": 0.5
       },
@@ -6237,7 +6237,7 @@
     },
     {
       "name": "tunnel-b",
-      "notes": "tunnel-a on face B (its noon is face A midnight: time 0 is noon here, 0.5 midnight). Owner's bug (2026-10-21, \"lit up like day\"; DAY_NIGHT.md \u00a711): the tunnel goes dark inside, your hand with it.",
+      "notes": "tunnel-a on face B (its noon is face A midnight: time 0 is noon here, 0.5 midnight). Owner's bug (2026-10-21, \"lit up like day\"; DAY_NIGHT.md §11): the tunnel goes dark inside, your hand with it.",
       "face": "b",
       "settings": {
         "timeOfDay": 0.0
@@ -6374,7 +6374,7 @@
     },
     {
       "name": "lod-shadows-dusk",
-      "notes": "The distant terrain's shadows (docs/DAY_NIGHT.md \u00a712): a camera 520 m up over the seed-7 hills with a low sun (time 0.81, then 0.795), looking away from the sun and across it, past the shadow cascades; records 5 s of the first view (with --compare and lod-shadows-off: the third layer's cost).",
+      "notes": "The distant terrain's shadows (docs/DAY_NIGHT.md §12): a camera 520 m up over the seed-7 hills with a low sun (time 0.81, then 0.795), looking away from the sun and across it, past the shadow cascades; records 5 s of the first view (with --compare and lod-shadows-off: the third layer's cost).",
       "split": "far",
       "settings": {
         "timeOfDay": 0.81
@@ -7151,7 +7151,7 @@
     },
     {
       "name": "torch-scale-a",
-      "notes": "The 1 m torch (two \u00bd m cells, docs/LIGHTS.md) placed on the ground ahead at noon, a stand-in player beside it for scale, then at midnight; and the held torch's flame (self-lit) by day and at night.",
+      "notes": "The 1 m torch (two ½ m cells, docs/LIGHTS.md) placed on the ground ahead at noon, a stand-in player beside it for scale, then at midnight; and the held torch's flame (self-lit) by day and at night.",
       "settings": {
         "timeOfDay": 0.5
       },
@@ -7254,7 +7254,7 @@
     },
     {
       "name": "torch-shadows-a",
-      "notes": "Torch shadows (docs/LIGHTS.md \u00a74): the tunnel and room of torch-cave-a at midnight with a stone pillar in the room; a torch placed before it (its shadow on the floor and wall behind), then the torch held as well. Records placed and held-and-placed for the maps' cost; run with --configs torch-shadows-off,torch-shadows-high.",
+      "notes": "Torch shadows (docs/LIGHTS.md §4): the tunnel and room of torch-cave-a at midnight with a stone pillar in the room; a torch placed before it (its shadow on the floor and wall behind), then the torch held as well. Records placed and held-and-placed for the maps' cost; run with --configs torch-shadows-off,torch-shadows-high.",
       "settings": {
         "timeOfDay": 0.0
       },
@@ -7416,7 +7416,7 @@
     },
     {
       "name": "torch-shadows-b",
-      "notes": "Torch shadows (docs/LIGHTS.md \u00a74): the tunnel and room of torch-cave-a at midnight with a stone pillar in the room; a torch placed before it (its shadow on the floor and wall behind), then the torch held as well. Records placed and held-and-placed for the maps' cost; run with --configs torch-shadows-off,torch-shadows-high. On face B (its midnight is time 0.5).",
+      "notes": "Torch shadows (docs/LIGHTS.md §4): the tunnel and room of torch-cave-a at midnight with a stone pillar in the room; a torch placed before it (its shadow on the floor and wall behind), then the torch held as well. Records placed and held-and-placed for the maps' cost; run with --configs torch-shadows-off,torch-shadows-high. On face B (its midnight is time 0.5).",
       "face": "b",
       "settings": {
         "timeOfDay": 0.5
@@ -7583,7 +7583,7 @@
     },
     {
       "name": "join-behind",
-      "notes": "The join's timeline (ARCHITECTURE.md \u00a76.3, \u00a76.6): looks +X the moment the game starts and shoots ahead and behind (\u2212X), then waits until the full detail behind the camera has loaded (until nearBehind: within the full-detail distance), then nothing behind is still loading (until behind: every LOD section and chunk out of view), then ahead, then settles and shoots behind again. Formerly the out-of-view LOD ranked as if its cells were 8 times smaller, so the terrain behind loaded only after the whole view ahead (or once the player turned round). Run with --compare --configs raster,loading-off for the loading screen's cost.",
+      "notes": "The join's timeline (ARCHITECTURE.md §6.3, §6.6): looks +X the moment the game starts and shoots ahead and behind (−X), then waits until the full detail behind the camera has loaded (until nearBehind: within the full-detail distance), then nothing behind is still loading (until behind: every LOD section and chunk out of view), then ahead, then settles and shoots behind again. Formerly the out-of-view LOD ranked as if its cells were 8 times smaller, so the terrain behind loaded only after the whole view ahead (or once the player turned round). Run with --compare --configs raster,loading-off for the loading screen's cost.",
       "steps": [
         {
           "do": "look",
@@ -7656,7 +7656,7 @@
     },
     {
       "name": "respawn-far",
-      "notes": "The respawn's timeline (ARCHITECTURE.md \u00a76.3, owner 2026-10-21: \"We could preload terrain at spawn once you die too?\"): flies about 700 m east of the seed-7 spawn (level 6, as fly-low-fast), waits there while the view loads (the spawn's chunks leave), dies, and times respawn \u2192 playing behind the loading screen (the report's respawns). With the respawn preload the server streams the spawn's ring and the client meshes it and readies its LOD during the five-second death screen. Run with --compare --configs raster,respawn-preload-off for the preload's effect.",
+      "notes": "The respawn's timeline (ARCHITECTURE.md §6.3, owner 2026-10-21: \"We could preload terrain at spawn once you die too?\"): flies about 700 m east of the seed-7 spawn (level 6, as fly-low-fast), waits there while the view loads (the spawn's chunks leave), dies, and times respawn → playing behind the loading screen (the report's respawns). With the respawn preload the server streams the spawn's ring and the client meshes it and readies its LOD during the five-second death screen. Run with --compare --configs raster,respawn-preload-off for the preload's effect.",
       "steps": [
         {
           "do": "settle",
@@ -7750,7 +7750,7 @@
     },
     {
       "name": "portal-a",
-      "notes": "A portal between the faces (BIFACIAL_WORLD.md \u00a712, shared/worldgen/midplane.json): seed 7's nearest the centre (axis column -4872, 20185), the player on face A's rim over its ladder (?spawn=portal). Shots: the opening from above, the shaft looked down from over its axis, the midplane from inside the shaft, then the climb down the ladder looking down and holding forward: just above the midplane, across it (the look continued: up face B's ladder), and at face B's opening.",
+      "notes": "A portal between the faces (BIFACIAL_WORLD.md §12, shared/worldgen/midplane.json): seed 7's nearest the centre (axis column -4872, 20185), the player on face A's rim over its ladder (?spawn=portal). Shots: the opening from above, the shaft looked down from over its axis, the midplane from inside the shaft, then the climb down the ladder looking down and holding forward: just above the midplane, across it (the look continued: up face B's ladder), and at face B's opening.",
       "seed": 7,
       "portal": true,
       "settings": {
@@ -7909,7 +7909,7 @@
     },
     {
       "name": "portal-motes",
-      "notes": "The glowing motes in a portal's shaft round the midplane (BIFACIAL_WORLD.md \u00a712.1, shared/look/motes.json), seed 7's nearest portal (?spawn=portal): from above the midplane, at it (twice, 0.7 s apart: they swirl and pulse), and climbing down the ladder into them. Records motes.drawn.",
+      "notes": "The glowing motes in a portal's shaft round the midplane (BIFACIAL_WORLD.md §12.1, shared/look/motes.json), seed 7's nearest portal (?spawn=portal): from above the midplane, at it (twice, 0.7 s apart: they swirl and pulse), and climbing down the ladder into them. Records motes.drawn.",
       "seed": 7,
       "portal": true,
       "settings": {
@@ -8683,7 +8683,7 @@
     },
     {
       "name": "damage-dents",
-      "notes": "Block damage's dents (docs/BLOCK_DAMAGE.md \u00a76): on the flat world, a dirt patch and a stone block before the player; the shovel hits the dirt twice (dirt-2) and twice more (dirt-4), the stone pickaxe hits the stone three times (stone-3).",
+      "notes": "Block damage's dents (docs/BLOCK_DAMAGE.md §6): on the flat world, a dirt patch and a stone block before the player; the shovel hits the dirt twice (dirt-2) and twice more (dirt-4), the stone pickaxe hits the stone three times (stone-3).",
       "world": "flat",
       "steps": [
         {
@@ -8832,7 +8832,7 @@
     },
     {
       "name": "dirt-relief",
-      "notes": "Block damage's carved dents (docs/BLOCK_DAMAGE.md \u00a76.1): damage-dents' dirt patch dug 2 and 4 times, each shot from standing height and close up, by day (0.42) and at a low sun (0.27).",
+      "notes": "Block damage's carved dents (docs/BLOCK_DAMAGE.md §6.1): damage-dents' dirt patch dug 2 and 4 times, each shot from standing height and close up, by day (0.42) and at a low sun (0.27).",
       "world": "flat",
       "steps": [
         {
@@ -11093,7 +11093,7 @@
     },
     {
       "name": "moon-fly",
-      "notes": "A player's flight to the moon from home's ground (BUGS.md #155): flight at the top level, W held as a key, the look kept on the moon in the sky every \u00bd s, until captured; logs the distance, closing speed, rise and snaps, shots every 8 s. Face B: at the bench's clock the moon is over face B.",
+      "notes": "A player's flight to the moon from home's ground (BUGS.md #155): flight at the top level, W held as a key, the look kept on the moon in the sky every ½ s, until captured; logs the distance, closing speed, rise and snaps, shots every 8 s. Face B: at the bench's clock the moon is over face B.",
       "face": "b",
       "steps": [
         {
@@ -11110,7 +11110,7 @@
     },
     {
       "name": "moon-trip",
-      "notes": "The browser flight to the moon and back (MOON_WORLD.md \u00a77.3; docs/DEV_TOOLS.md \"The moon\"): from the spawn, flyTo moon puts the player just outside the moon's capture sphere over its face A with the dev move, flies it in for real until captured, down to 40 m over the moon's ground, measures the fall with flight off (the run fails unless it is the moon's \u2159 g within 25 %) and lands; a shot on the moon at noon looking across its ground and one looking up; then flyTo home flies up past the release sphere, moves the player back to the spawn and waits until the client holds home's chunk under the feet again, and a last shot at home. The trips (capture, descent and landing seconds, the fall) are in report.json's trips.",
+      "notes": "The browser flight to the moon and back (MOON_WORLD.md §7.3; docs/DEV_TOOLS.md \"The moon\"): from the spawn, flyTo moon puts the player just outside the moon's capture sphere over its face A with the dev move, flies it in for real until captured, down to 40 m over the moon's ground, measures the fall with flight off (the run fails unless it is the moon's ⅙ g within 25 %) and lands; a shot on the moon at noon looking across its ground and one looking up; then flyTo home flies up past the release sphere, moves the player back to the spawn and waits until the client holds home's chunk under the feet again, and a last shot at home. The trips (capture, descent and landing seconds, the fall) are in report.json's trips.",
       "steps": [
         {
           "do": "settle",
@@ -11361,6 +11361,61 @@
         {
           "do": "shot",
           "name": "fly-end"
+        }
+      ]
+    },
+    {
+      "name": "dam-blast",
+      "world": "flat",
+      "notes": "Owner, 2026-11-24: \"building dams, and then blowing them up with yellow dynamite ... so incredibly laggy ... Imagine a 20m high dam. And 12 dynamite.\" Builds shared/theater/scenes/dam_blast.json (a 20 m dam across a valley, its lake a metre under the top) on the flat world, watches from the land beside the dam, then sets off its 12 yellow dynamite and records the 12 s of the blast and the flood: the client's frame and the local server's ticks (in its worker) together. Natively: `cargo test --release -p dwell-sim --test scenes measure_a -- --ignored --nocapture`.",
+      "settings": {
+        "timeOfDay": 0.45
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "scene",
+          "build": "dam_blast"
+        },
+        {
+          "do": "teleport",
+          "feet": [24, 577, 116]
+        },
+        {
+          "do": "camera",
+          "position": [30, 590, 125],
+          "yaw": 230,
+          "pitch": -20
+        },
+        {
+          "do": "wait",
+          "s": 8
+        },
+        {
+          "do": "shot",
+          "name": "before"
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "scene",
+          "event": 0
+        },
+        {
+          "do": "wait",
+          "s": 12
+        },
+        {
+          "do": "record",
+          "name": "blast"
+        },
+        {
+          "do": "shot",
+          "name": "after"
         }
       ]
     }

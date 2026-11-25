@@ -265,7 +265,12 @@ context) at a time with a choice to table it as well as the other options?" Answ
   blown with 12 yellow dynamite (`dwell:dynamite_yellow`, 7 m) floods out at a steady frame rate, the water and the
   blast's pieces arriving smoothly, not in chunks. Plan: reproduce it natively first (a scene: a 20 m dam holding a
   lake, 12 yellow dynamite along it), time the server's tick by phase (the blast, the pieces, the water grid, the
-  sends), then the client's side in the bench; fix the biggest first.
+  sends), then the client's side in the bench; fix the biggest first. **Round 1, 2026-11-24** (`claude/dam-blast-perf`):
+  the `dam_blast` scene and bench scenario. Natively the server keeps 3–5 ms ticks (13 max); in the browser the hosted
+  server 4.7 ms, the client's main thread was the cost: applying the flood's writes, 37 ms a frame (to 445). Fixed: a
+  piece-glide check of every water cell against every piece (17 ms → 0.07), the water surface redrawn once a frame not
+  once a write per neighbour, water level changes not relit. Frame CPU 47 → 14 ms mean (359 → 35 max), 162 → 482
+  frames in the 12 s (~40 fps). Left: the workers re-mesh ~2,500 chunks in those 12 s (~30 ms each).
 - **Standing on a moving boat:** owner, 2026-11-24: "I notice the players don't seem to be moving relative to the boat
   while standing on it (should be until no longer grounded on it). But now the players are twitching and twitch
   falling, sliding around a bit on the boat too when it moves. I want to be careful not to prevent emergent physics
