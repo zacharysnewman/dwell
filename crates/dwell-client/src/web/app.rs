@@ -626,7 +626,17 @@ impl Client {
                     game.on_edit_results(&done);
                     continue;
                 }
-                game.on_game_message(m, bytes.len(), now_ms);
+                // Timed by kind (docs/DEV_TOOLS.md): what the server's messages cost the frame.
+                let name = match &m {
+                    dwell_protocol::Message::VoxelModification(_) => "msg.modification",
+                    dwell_protocol::Message::EntitySpawn(_) => "msg.spawn",
+                    dwell_protocol::Message::ChunkData(_) => "msg.chunk",
+                    dwell_protocol::Message::PhysicsSnapshot(_) => "msg.snapshot",
+                    dwell_protocol::Message::BodyEdit(_)
+                    | dwell_protocol::Message::EntityDespawn(_) => "msg.body",
+                    _ => "msg.other",
+                };
+                telemetry::span(name, || game.on_game_message(m, bytes.len(), now_ms));
             }
             // The host changed the world's game mode (ADR 0065): flight and brushes follow it.
             if session.take_abilities_changed()

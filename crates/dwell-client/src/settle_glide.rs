@@ -188,8 +188,9 @@ impl Glides {
         }
         let mut hide = Vec::new();
         for &(c, m) in cells {
-            // Air, or out of every falling piece's reach (water's writes): nothing to glide in.
-            if m == 0 || !near_piece(c) {
+            // Air, a liquid (the water's writes, thousands a second in a flood: never a piece's
+            // block, so the pieces aren't asked), or out of every falling piece's reach.
+            if m == 0 || dwell_blocks::try_info(m).is_none_or(|i| i.liquid) || !near_piece(c) {
                 continue;
             }
             self.written.insert(c, m);
@@ -500,6 +501,27 @@ mod tests {
             .fold(0.0, f64::max);
         assert!(peak <= 1.0 + 1e-12);
         const { assert!(FELLING.settle_glide_seconds > 0.0 && FELLING.settle_bounce >= 0.0) };
+    }
+
+    #[test]
+    fn the_waters_writes_are_never_checked_against_the_pieces() {
+        // Owner, 2026-11-24: a dam blown open lagged; the flood's writes (a `Rebake` of thousands
+        // of cells a second) were each tested against every floating piece. A liquid is never a
+        // settling piece's block: skipped before the pieces are asked.
+        let water = state("dwell:water[fill=7]");
+        let mut g = Glides::default();
+        let asked = std::cell::Cell::new(0);
+        let hide = g.rebaked(&[([4, 80, 4], water), ([5, 80, 4], water)], 0.0, |_| {
+            asked.set(asked.get() + 1);
+            true
+        });
+        assert!(hide.is_empty());
+        assert_eq!(
+            asked.get(),
+            0,
+            "the pieces were asked {} times",
+            asked.get()
+        );
     }
 
     /// Owner, 2026-11-04: rising water "disappears and then reappears at a slightly higher level".

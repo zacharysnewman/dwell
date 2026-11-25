@@ -2233,14 +2233,20 @@ impl<S: Scene> Game<S> {
                     self.blasts_from(&changes, now_ms);
                 }
                 // A settling piece's blocks: hidden from the terrain while its glide draws them.
-                let settled = (v.reason == dwell_protocol::VoxelModificationReason::Rebake)
-                    .then(|| self.cell_changes(&v.chunks));
-                self.streamer.on_voxel_modification(&v.chunks);
+                let settled = telemetry::span("mod.changes", || {
+                    (v.reason == dwell_protocol::VoxelModificationReason::Rebake)
+                        .then(|| self.cell_changes(&v.chunks))
+                });
+                telemetry::span("mod.streamer", || {
+                    self.streamer.on_voxel_modification(&v.chunks)
+                });
                 if let Some(changes) = settled {
-                    let cells: Vec<_> = changes.iter().map(|c| (c.cell, c.new)).collect();
-                    let pieces = &self.pieces;
-                    let hide = self.glides.rebaked(&cells, now_ms, |c| pieces.near_cell(c));
-                    self.streamer.hide_cells(&hide, true);
+                    telemetry::span("mod.glides", || {
+                        let cells: Vec<_> = changes.iter().map(|c| (c.cell, c.new)).collect();
+                        let pieces = &self.pieces;
+                        let hide = self.glides.rebaked(&cells, now_ms, |c| pieces.near_cell(c));
+                        self.streamer.hide_cells(&hide, true);
+                    });
                 }
             }
             Message::LodIndex(_) | Message::LodIndexUpdate(_) | Message::LodData(_) => {

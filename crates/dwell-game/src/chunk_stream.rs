@@ -133,6 +133,13 @@ pub const LIGHT_SLICE_CELLS: usize = 1024;
 
 /// The client sim's voxel world is the store.
 /// With [`VoxelWorld::enable_light`] (the client) it keeps the flood light of what it holds.
+/// Whether state `a` and `b` differ in what the light reads of a block: how much it filters
+/// light and how much it gives (`light_filter`, `emits`).
+pub fn light_differs(a: u16, b: u16) -> bool {
+    let rules = |m: u16| dwell_blocks::try_info(m).map(|s| (s.light_filter, s.emits));
+    a != b && rules(a) != rules(b)
+}
+
 impl ChunkStore for VoxelWorld {
     fn voxel(&mut self, coord: Coord, index: u16) -> Option<u16> {
         self.find(ChunkCoord::from_array(coord))
@@ -153,12 +160,27 @@ impl ChunkStore for VoxelWorld {
         self.light_unload(c);
     }
     fn edit_chunk(&mut self, changes: &ChunkChanges) {
-        apply_chunk_changes(self, changes);
-        if self.light().is_some() {
-            let base = changes.coord.map(|v| v * CHUNK_SIZE);
-            let cells: Vec<[i32; 3]> = changes
+        // Only the cells whose light rules changed are relit: a water level's rise or fall
+        // (water to water) passes and gives light as it did (owner, 2026-11-24: a blown dam's flood
+        // relit every cell of each of its writes).
+        let lit = self.light().is_some();
+        let relit: Vec<&dwell_protocol::VoxelChange> = if lit {
+            changes
                 .changes
                 .iter()
+                .filter(|v| {
+                    self.voxel(changes.coord, v.index)
+                        .is_none_or(|old| light_differs(old, v.material))
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        apply_chunk_changes(self, changes);
+        if !relit.is_empty() {
+            let base = changes.coord.map(|v| v * CHUNK_SIZE);
+            let cells: Vec<[i32; 3]> = relit
+                .into_iter()
                 .map(|v| {
                     let i = i32::from(v.index);
                     [
@@ -671,6 +693,11 @@ pub struct ChunkStreamer<S, G, M: Mesher, V> {
     /// Chunks whose water surface was redrawn without a re-mesh → mesh-dirty passes since their
     /// last level change: re-meshed at [`WATER_SETTLE_PASSES`].
     settling: HashMap<Coord, u32>,
+    /// Chunks whose water alone changed since the last `mesh_dirty`, to redraw from their levels
+    /// there, once each (owner, 2026-11-24: a blown dam's flood lagged: each water write redrew
+    /// its chunk and every neighbour it touched at once, the same chunks many times a frame).
+    levels_pending: Vec<Coord>,
+    levels_pending_set: HashSet<Coord>,
     level_redraws: u64,
     /// First worldgen failure (the workers are unusable).
     pub error: Option<String>,
@@ -728,6 +755,8 @@ where
             generated: HashMap::default(),
             stale: HashSet::default(),
             settling: HashMap::default(),
+            levels_pending: Vec::new(),
+            levels_pending_set: HashSet::default(),
             level_redraws: 0,
             error: None,
         }
@@ -1028,6 +1057,7 @@ where
     ) -> usize {
         let start = now();
         let deadline = start + budget.ms;
+        self.redraw_pending_levels();
         // Water redrawn from its levels alone is re-meshed once it has settled.
         let mut settled = Vec::new();
         self.settling.retain(|c, passes| {
@@ -1639,7 +1669,7 @@ where
             });
         self.store.edit_chunk(changes);
         self.loaded.insert(key, changes.revision);
-        if !(levels_only && self.levels_only(key)) {
+        if !(levels_only && self.levels_later(key)) {
             self.dirty.mark(changes.coord);
         }
         // Neighbours whose mesh block holds a changed voxel, diagonals included: their border
@@ -1673,12 +1703,40 @@ where
             let c = add(changes.coord, n);
             if self.loaded.contains_key(&c)
                 && !self.air.contains(&c)
-                && !(levels_only && self.levels_only(c))
+                && !(levels_only && self.levels_later(c))
             {
                 self.dirty.mark(c);
             }
         }
         self.relit();
+    }
+
+    /// Whether chunk `c`'s water surface may be redrawn alone, at the next `mesh_dirty` (queued
+    /// once however many writes touch it before then): its shown mesh is current. Whether the view
+    /// can is asked there; if not, it is re-meshed then.
+    fn levels_later(&mut self, c: Coord) -> bool {
+        if !self.meshed.contains(&c) || self.dirty.contains(&c) || self.meshing.contains_key(&c) {
+            return false;
+        }
+        if self.levels_pending_set.insert(c) {
+            self.levels_pending.push(c);
+        }
+        true
+    }
+
+    /// The water surfaces queued by [`Self::levels_later`]: each redrawn from its levels, or
+    /// re-meshed if it no longer can be.
+    fn redraw_pending_levels(&mut self) {
+        let pending = std::mem::take(&mut self.levels_pending);
+        self.levels_pending_set.clear();
+        for c in pending {
+            if !self.loaded.contains_key(&c) || self.air.contains(&c) {
+                continue;
+            }
+            if !self.levels_only(c) {
+                self.dirty.mark(c);
+            }
+        }
     }
 
     /// Redraws chunk `c`'s water surface alone (its tile) when the view can and the chunk's
@@ -2657,11 +2715,12 @@ mod tests {
         s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         flush(&mut s);
 
-        // A level change inside the chunk: its tile is redrawn, no mesh job is queued.
+        // A level change inside the chunk: its tile is redrawn at the frame's mesh pump, no mesh
+        // job is queued.
         s.on_voxel_modification(&[modification([0, 0, 0], 4, &[5 | (5 << 5), low])]);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         assert_eq!(s.view().tiled, vec![[0, 0, 0]]);
         assert_eq!(s.level_redraws(), 1);
-        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         assert!(s.mesher().jobs.is_empty(), "no re-mesh while it moves");
         // Once it has been still for the settle passes it is re-meshed once (its sides catch up).
         for _ in 1..WATER_SETTLE_PASSES {
@@ -2682,6 +2741,50 @@ mod tests {
         s.on_voxel_modification(&[modification([0, 0, 0], 6, &[5 | (5 << 5), low])]);
         s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         assert_eq!(jobs(&s), vec![[0, 0, 0]]);
+    }
+
+    #[test]
+    fn a_water_level_change_needs_no_relight_and_the_wet_front_does() {
+        // Owner, 2026-11-24: a blown dam's flood relit every cell it wrote. Water to water at
+        // another fill passes and gives light as before; air to water does not, nor stone to air.
+        let water = dwell_blocks::require("dwell:water");
+        let low = dwell_blocks::liquid_at_fill(water, 0.5);
+        let stone = dwell_blocks::require("dwell:stone");
+        assert!(!light_differs(water, low), "a level change");
+        assert!(!light_differs(water, water));
+        assert!(light_differs(stone, dwell_blocks::AIR), "a block broken");
+        let air_to_water = light_differs(dwell_blocks::AIR, water);
+        let filters = dwell_blocks::info(water).light_filter
+            != dwell_blocks::info(dwell_blocks::AIR).light_filter;
+        assert_eq!(
+            air_to_water, filters,
+            "the wet front relights where water filters light"
+        );
+    }
+
+    #[test]
+    fn many_water_writes_to_a_chunk_in_a_frame_redraw_its_tile_once() {
+        // Owner, 2026-11-24: a dam blown open lagged. The flood's writes come several times a
+        // second, many to the same chunks: each redrew its chunk's tile (and its neighbours') as
+        // it arrived. Queued, a chunk is redrawn once at the frame's mesh pump.
+        let water = dwell_blocks::require("dwell:water");
+        let low = dwell_blocks::liquid_at_fill(water, 0.5);
+        let (mut s, _) = setup();
+        s.view_mut().tiles = true;
+        s.on_chunk_data(explicit([0, 0, 0], 3, water));
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        flush(&mut s);
+        for k in 0..8u16 {
+            let fill = if k % 2 == 0 { low } else { water };
+            s.on_voxel_modification(&[modification(
+                [0, 0, 0],
+                4 + u32::from(k),
+                &[(5 + k) | (5 << 5), fill],
+            )]);
+        }
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        assert_eq!(s.level_redraws(), 1, "redrawn once for its 8 writes");
+        assert_eq!(s.view().tiled, vec![[0, 0, 0]]);
     }
 
     dwell_world::both_faces!(

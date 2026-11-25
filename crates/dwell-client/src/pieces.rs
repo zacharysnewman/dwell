@@ -18,6 +18,16 @@ use dwell_protocol::{CHUNK_SIZE, EntitySpawn, PieceState, players};
 use dwell_world::hash::HashMap;
 use dwell_world::{CELL_H, FaceFrame};
 
+/// How far a piece's farthest cell's centre is from its origin (m).
+fn reach_of(blocks: &[([i32; 3], StateId)]) -> f64 {
+    blocks
+        .iter()
+        .map(|&(o, _)| {
+            DVec3::new(f64::from(o[0]), f64::from(o[1]) * CELL_H, f64::from(o[2])).length()
+        })
+        .fold(0.0, f64::max)
+}
+
 /// How many snapshot poses a piece keeps (the interpolation needs the two round its draw time).
 const KEEP: usize = 8;
 
@@ -63,6 +73,8 @@ struct Piece {
     /// Its cells' offsets and states (this client's), for its settle glide, its edits and aiming
     /// at it.
     blocks: Vec<([i32; 3], StateId)>,
+    /// How far its farthest cell's centre is from its origin (m): kept with `blocks`.
+    reach: f64,
     /// Its kind (`dwell_sim::felling::BODY_KINDS`; 0 natural).
     kind: u8,
     poses: VecDeque<Pose>,
@@ -176,6 +188,7 @@ impl Pieces {
             e.id,
             Piece {
                 cells: boxes,
+                reach: reach_of(&cells),
                 blocks: cells.clone(),
                 kind: e.kind,
                 poses: VecDeque::from([pose]),
@@ -201,14 +214,7 @@ impl Pieces {
             let Some(last) = p.poses.back() else {
                 return false;
             };
-            let reach = p
-                .blocks
-                .iter()
-                .map(|&(o, _)| {
-                    DVec3::new(f64::from(o[0]), f64::from(o[1]) * CELL_H, f64::from(o[2])).length()
-                })
-                .fold(0.0, f64::max);
-            last.position.distance(at) <= reach + SETTLE_REACH_M
+            last.position.distance(at) <= p.reach + SETTLE_REACH_M
         })
     }
 
@@ -239,6 +245,7 @@ impl Pieces {
         }
         p.cells = piece_boxes(&p.blocks, p.kind);
         p.air = air_box(&p.blocks, p.up_step);
+        p.reach = reach_of(&p.blocks);
         Some(piece_meshes(&p.blocks))
     }
 

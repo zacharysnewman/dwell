@@ -341,7 +341,9 @@ into the page's local world before a take and run on the take's clock:
   bed — by block name); the **structures** (`wall`: a dam across the valley at `atM`, `heightBlocks` blocks of
   `blockM` — 1 m blocks or ½ m cells — over the floor there, `thicknessM`, its material); the **water** (`lake`: every
   open cell upstream of a structure filled to `levelM`, or `belowTopM` under its top); **events** (`{atS, do:
-  "remove", target}`: a structure deleted all at once); `waterClock` (`game`, the world's; `real`, the world's water
+  "remove", target}`: a structure deleted all at once; `{atS, do: "blast", target, explosive, fuseS, charges}`: an
+  explosive set at each charge, `[across m, over the floor m, along m from the structure's upstream face]`, and lit, as
+  `dam_blast.json`'s 12 yellow dynamite; a surface-grid water runs under no bridge, so a blast must take a dam's top); `waterClock` (`game`, the world's; `real`, the world's water
   speed set so a second of water is a second of play: a 20-minute day otherwise runs the water 72× real time). The
   engine is that fixed vocabulary; a scene is data, and `cargo test -p dwell-sim scene` parses every file.
 - **The builder** (`Scene::cells`, face-local through the scene's `FaceFrame`): each column's ground from the valley's
@@ -364,7 +366,7 @@ into the page's local world before a take and run on the take's clock:
   ten 1 m blocks 100 m down, 4 m thick; the lake 9 m deep behind it): natively, 20 s after the dam goes the lake has
   fallen 3.5 m and the flood has run 116 m down the valley (`tests/scenes.rs`).
 - **Not yet:** a river with a source (the grid has no springs to feed one: G1's map sources), terrain other than the
-  valley, structures other than a wall, events other than removal.
+  valley, structures other than a wall, events other than removal and blasts.
 
 ## 7. Multiplayer, permissions and the simulation viewpoint
 

@@ -5851,7 +5851,37 @@ impl Server {
             .events
             .get(i)
             .ok_or_else(|| format!("scene {:?} has no event {i}", scene.name))?;
-        let crate::scene::Action::Remove(target) = &e.action;
+        let target = match &e.action {
+            crate::scene::Action::Remove(target) => target,
+            crate::scene::Action::Blast(b) => {
+                // Each charge set lit in the structure and its fuse lit (as a torch would).
+                let Some(index) = dwell_world::explosives::EXPLOSIVES
+                    .iter()
+                    .position(|x| x.name == b.explosive)
+                else {
+                    return Err(format!("no explosive {:?}", b.explosive));
+                };
+                let lit =
+                    dwell_world::explosives::lit_state(&dwell_world::explosives::EXPLOSIVES[index])
+                        .ok_or_else(|| format!("{} has no lit state", b.explosive))?;
+                let lit = scene.frame.state(lit);
+                let cells = scene.charge_cells(b);
+                let mut changes = TickChanges::default();
+                for &c in &cells {
+                    changes.set(&mut self.world, c, lit);
+                }
+                self.broadcast_changes(changes, VoxelModificationReason::Edit);
+                for &c in &cells {
+                    self.light_fuse(c, index, b.fuse_s);
+                }
+                return Ok(format!(
+                    "{{\"event\":{i},\"charges\":{},\"explosive\":{:?},\"tick\":{}}}",
+                    cells.len(),
+                    b.explosive,
+                    self.tick
+                ));
+            }
+        };
         let wall = scene
             .walls
             .iter()

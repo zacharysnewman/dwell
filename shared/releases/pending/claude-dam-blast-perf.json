@@ -1,0 +1,6 @@
+{
+  "changes": [
+    "A dam blown open floods out much more smoothly: the water's updates cost the frame a third of what they did",
+    "Water filling or draining no longer briefly hides water next to floating pieces"
+  ]
+}
