@@ -47,12 +47,17 @@ fn cannon_scene(fx: &mut Fixture, f: FaceFrame) -> [[i32; 3]; 4] {
 }
 
 fn use_it(fx: &mut Fixture, f: FaceFrame, cell: [i32; 3]) {
+    use_face(fx, f, cell, 1);
+}
+
+/// A Use of `cell` through its face `face` (face-local: 1 −x, 5 −z), as seen from the player.
+fn use_face(fx: &mut Fixture, f: FaceFrame, cell: [i32; 3], face: usize) {
     fx.send(
         1,
         Message::BlockEditRequest(BlockEditRequest {
             action: BlockEditAction::Place,
             cell,
-            face: f.cell_face(1) as u8,
+            face: f.cell_face(face) as u8,
             material: dwell_blocks::require("dwell:dirt"),
             rows: 1,
             down: false,
@@ -364,5 +369,56 @@ both_faces!(
                 }
             }
         }
+    }
+);
+
+both_faces!(
+    fn a_ball_shoves_a_player_in_front_of_the_cannon(f: FaceFrame) {
+        // Owner (2026-11-25, BUGS.md #242): "I'd like you to also be shoved by them when hit with
+        // them. So if you stand in front of a cannon when it's fired, it should launch you forward
+        // as expected from physics forces. Currently it seems to just pass through you." A fired
+        // ball (a one-cell piece of riders only) collided with the world and bodies, not players;
+        // now it collides with players too and throws them by its momentum, without hurting them
+        // ("Shove only"; 2026-11-18: "a ball doesn't hurt players").
+        let mut fx = Fixture::new(config(f));
+        let welcome = fx.join(1, &Client::new(1));
+        for _ in 0..10 {
+            fx.server.step();
+        }
+        let cells = cannon_scene(&mut fx, f);
+        // Standing in line with the barrel, 2 m north of its muzzle.
+        let at = f.point([2.5, m_of_row(BASE), -2.5]);
+        let feet = if f == FaceFrame::A {
+            at[1]
+        } else {
+            at[1] - 1.8
+        };
+        fx.move_to(welcome.player_id, at[0], feet, at[2]);
+        for _ in 0..10 {
+            fx.server.step();
+        }
+        let health = fx.server.health_of(welcome.player_id);
+        let h = fx.server.player_handle_of(welcome.player_id).unwrap();
+        let before = {
+            let (_, physics, players) = fx.server.sim();
+            f.point(players.position(physics, h).to_array())
+        };
+        use_face(&mut fx, f, cells[3], 5);
+        fx.server.last_ball().expect("fired");
+        for _ in 0..30 {
+            fx.server.step();
+        }
+        let h = fx.server.player_handle_of(welcome.player_id).unwrap();
+        let after = {
+            let (_, physics, players) = fx.server.sim();
+            f.point(players.position(physics, h).to_array())
+        };
+        assert!(
+            before[2] - after[2] > 2.0,
+            "thrown north along the barrel: z {} → {}",
+            before[2],
+            after[2]
+        );
+        assert_eq!(fx.server.health_of(welcome.player_id), health, "not hurt");
     }
 );

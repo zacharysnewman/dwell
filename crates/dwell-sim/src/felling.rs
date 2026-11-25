@@ -230,14 +230,20 @@ pub struct BreakOutcome {
 
 /// A cell's box in its piece (`offset` in the piece's grid): its block's mass, colliding as a
 /// carrier (logs: everything; falling sand: the world, it passes players) or a rider (leaves:
-/// nothing, or the world in a piece of riders only, which lands as leaves).
+/// nothing, or the world in a piece of riders only, which lands as leaves); a cannonball with
+/// everything.
 fn piece_box(offset: [i32; 3], m: StateId, carrier: bool, riders_only: bool) -> PieceCell {
     let s = info(m);
     PieceCell {
         center: offset_m(offset),
         half: DVec3::new(0.5, 0.5 * CELL_H, 0.5),
         mass: f64::from(s.density_kg_m3).max(1.0) * CELL_H,
-        collide: if carrier {
+        // A cannonball (a cannons-data ball) collides with everything, players too: it shoves them
+        // by its momentum (owner, 2026-11-25, BUGS.md #242); it hurts no one (`hits` counts only a
+        // piece's carriers).
+        collide: if dwell_physics::ball_of(m).is_some() {
+            Collide::All
+        } else if carrier {
             if s.support_role == dwell_blocks::SupportRole::Falls {
                 Collide::World
             } else {

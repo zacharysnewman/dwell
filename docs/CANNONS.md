@@ -94,7 +94,7 @@ filling the hull are next (with a hull's enclosed air as buoyancy).
   `muzzleSpeedMs` along the barrel, and broadcasts its `EntitySpawn` (no protocol change: clients draw it as any body's
   cells). Its collider is a sphere of the radius and the ball's mass (`dwell_physics::ball_of`, `piece_hull` gives a
   ball cell its own collider; on face B it sits toward +y), CCD on; gravity, water and settling as any natural body: at
-  rest it settles as its block. A piece's riders-only groups: it hits the world and bodies, not players (yet).
+  rest it settles as its block. It collides with everything, players included (owner, 2026-11-25, BUGS.md #242: "if you stand in front of a cannon when it's fired, it should launch you forward as expected from physics forces"): a hit throws a player by the ball's momentum (the controller absorbs it as any knock) and hurts no one ("Shove only"; `Felling::hits` counts a piece's carriers only); until then its riders-only groups hit the world and bodies, not players, and it passed through them.
 - **Rolling resistance** (the browser, 2026-11-17: a fired ball rolled past 200 m on the flat; rapier has no rolling
   friction): each ball's data `rollDamping` (1/s, the iron ball 1.5) damps its speed while a solid cell lies just under
   it (the server's `roll_balls`, every tick before the physics step), the air's usual damping otherwise. The iron ball
@@ -118,7 +118,7 @@ filling the hull are next (with a hull's enclosed air as buoyancy).
 - **Explode** (the explosive ball: dynamite, from 6 m/s): the ball's body is destroyed and its explosive's blast set off
   at its cell (`blast_at`, the dynamite blast's body split from its fuse check: the same destroy, fling, water,
   knockback and damage, `Explosion` so clients flash and boom).
-- **Not yet:** a ball's hit on a player or a moving body's cells (C4), the impact's own sound and dust.
+- **Not yet:** a ball's hit on a moving body's cells (C4), the impact's own sound and dust. (A ball's hit on a player shoves them since 2026-11-25.)
 - **Tests** (`dwell-sim` `tests/cannons.rs`, both faces): `an_iron_ball_knocks_loose_the_cells_round_where_it_strikes_a_wall`
   (the hit cell among those gone, no more than `maxCells` a strike), `an_explosive_ball_blows_up_where_it_strikes`
   (the ball gone, more of the wall than a knock, not all of it), and the flat roll knocks nothing. `set_cannon_ball`
