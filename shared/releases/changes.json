@@ -2,6 +2,15 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.76.17",
+      "changes": [
+        "Cannons can stand pointing up (place one looking down) or hang pointing down (place one looking up), and fire straight along the barrel.",
+        "Placed blocks now fall when nothing connects them to the ground: cut a pillar and what's above falls as one piece.",
+        "A cannon no longer breaks apart when the block under it goes: it stays up while anything holds it and falls whole when nothing does.",
+        "Air drag halved: falls and long slides reach higher top speeds."
+      ]
+    },
+    {
       "version": "0.76.16",
       "changes": [
         "Cannonballs now hit players: stand in front of a cannon when it fires and the ball throws you forward (it doesn't hurt)."
