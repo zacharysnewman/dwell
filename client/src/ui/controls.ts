@@ -142,7 +142,7 @@ export const KEYBOARD: ControlGroup[] = [
       {
         action: 'Right a tipped boat',
         keys: ['Hold E'],
-        when: 'aimed at it, in both modes',
+        when: 'aimed at it, one with a helm, in both modes',
       },
       {
         action: 'Bail a flooded hull',

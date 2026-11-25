@@ -1255,9 +1255,11 @@ both_faces!(
 
 /// A 4 × 2 plank raft (two rows thick) turned `degrees` about +x (face-local), its centre at
 /// face-local `centre`, player 1 standing 3 m from it at `feet`: holding E for `ticks`, its
-/// tilt from its build's up after (degrees).
+/// tilt from its build's up after (degrees). `helm`: a helm on its deck.
+#[allow(clippy::too_many_arguments)]
 fn tilt_after_holding_e(
     f: FaceFrame,
+    helm: bool,
     degrees: f64,
     centre: [f64; 3],
     feet: [f64; 3],
@@ -1283,9 +1285,17 @@ fn tilt_after_holding_e(
         }
     }
     let planks = f.state(dwell_blocks::require("dwell:planks"));
-    let cells: Vec<_> = (0..4)
+    let mut cells: Vec<_> = (0..4)
         .flat_map(|x| (0..2).flat_map(move |z| [([x, 0, z], planks), ([x, up, z], planks)]))
         .collect();
+    // A helm on it (only a body with one is righted, owner 2026-11-24): in place of a top cell.
+    if helm {
+        cells.pop();
+        cells.push((
+            [3, up, 1],
+            f.state(dwell_blocks::require("dwell:helm[facing=north]")),
+        ));
+    }
     let turn = dwell_physics::DQuat::from_axis_angle(
         dwell_physics::DVec3::from(f.vector([1.0, 0.0, 0.0])),
         f.handed(degrees.to_radians()),
@@ -1315,6 +1325,7 @@ both_faces!(
         for mode in ["creative", "adventure"] {
             let (before, after) = tilt_after_holding_e(
                 f,
+                true,
                 90.0,
                 [2.0, ground + 1.2, 1.0],
                 [2.0, ground, -3.0],
@@ -1334,6 +1345,7 @@ both_faces!(
         let water_top = m_of_row(BASE);
         let (before, after) = tilt_after_holding_e(
             f,
+            true,
             180.0,
             [2.0, water_top, 1.0],
             [2.0, water_top + 0.1, -2.5],
@@ -1343,6 +1355,28 @@ both_faces!(
         );
         assert!(before > 150.0, "it capsized: {before}°");
         assert!(after < 12.0, "righted: {before}° -> {after}°");
+    }
+);
+
+both_faces!(
+    fn holding_e_by_a_raft_without_a_helm_leaves_it_as_it_lies(f: FaceFrame) {
+        // Owner, 2026-11-24: "only flip a dynamic object when it has a helm".
+        let ground = m_of_row(BASE);
+        let (before, after) = tilt_after_holding_e(
+            f,
+            false,
+            90.0,
+            [2.0, ground + 1.2, 1.0],
+            [2.0, ground, -3.0],
+            "creative",
+            false,
+            240,
+        );
+        assert!(before > 60.0, "it lay on its side: {before}°");
+        assert!(
+            (after - before).abs() < 10.0,
+            "not righted: {before}° -> {after}°"
+        );
     }
 );
 
