@@ -4475,6 +4475,11 @@ impl<S: Scene> Game<S> {
         self.region.structure_ops = on;
     }
 
+    /// Whether the server pastes a body as a body (the `bodies.paste` capability).
+    pub fn set_body_ops(&mut self, on: bool) {
+        self.region.body_ops = on;
+    }
+
     /// The hits the server will take to break `block` with what is held now.
     fn hits_to_break(&self, block: &str) -> Option<u32> {
         dwell_protocol::damage::hits_to_break_for(
@@ -5475,8 +5480,24 @@ impl<S: Scene> Game<S> {
             eye: self.target_eye,
             now_ms,
         };
+        // Copy with no box selected, aimed at a moving body: the whole body, as it was built
+        // (owner, 2026-11-23: "Aim at it with the copy tool").
+        if action == ToolAction::Copy
+            && self.region.selection().is_none()
+            && let Some(b) = self.body_target
+            && let Some((size, cells)) = self.pieces.copy_of(b.body)
+        {
+            self.region.copy_body(size, cells);
+            self.show_region_boxes();
+            return false;
+        }
         // Through the streamer: it knows the Air chunks the client never stores.
         let sent = match self.region.act(action, &ctx, &mut self.streamer) {
+            // A body's paste is no edit of the world's cells: not predicted.
+            Some(m @ Message::BodyPaste(_)) => {
+                self.outbox.borrow_mut().push(Send::Control(m));
+                true
+            }
             Some(m) => {
                 self.send_edit(m, None);
                 true

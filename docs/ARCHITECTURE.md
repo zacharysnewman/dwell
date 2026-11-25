@@ -4914,7 +4914,10 @@ control: a `u32` body id), sent every 100 ms while interact (E, X on a controlle
 body's hull (from inside it, where the mode has the `bail` ability: creative; `Felling::bail`, a full hull in
 `hold.bailSeconds`) or else turns a body tipped past `hold.uprightDeg` back toward its build's up at
 `hold.rightRadPerS`, lifted off the ground by `hold.rightLiftMs`; within `hold.reachM`, never one held on its
-platform. Without it the client never sends one.
+platform. Without it the client never sends one. **[built, 0.76]** `bodies.paste`: `BodyPaste` 0x6F (C→S, control: a
+Paste's box, `RegionEdit`'s body) pastes a copied moving body as a moving body (STRUCTURES.md §9, `server/body_paste.rs`):
+its cells that aren't air or `KEEP` become one built body, in a mode with `structures`, within the region reach, clear
+of solid blocks. Without it the client refuses a body's paste with a note.
 ```
 S→C  WorldSettings field 0x85 (optional): u8 count (≤ 64), each str name (≤ 48 bytes, no repeat)
 C→S  Capabilities 0x69, control: the same form — the client's capabilities, once after Welcome,

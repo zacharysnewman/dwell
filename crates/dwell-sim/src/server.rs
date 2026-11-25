@@ -53,6 +53,7 @@ mod grids;
 pub use grids::{GridSlot, Grids};
 mod blueprints;
 mod body_hold;
+mod body_paste;
 pub use body_hold::HoldDone;
 mod ground;
 mod growth;
@@ -1217,6 +1218,8 @@ pub struct Server {
     holds: HashMap<SessionId, (u32, u32)>,
     /// What the last hold did on its tick (tests).
     hold_done: Option<HoldDone>,
+    /// The body the last `BodyPaste` made, or None (refused; tests).
+    last_body_paste: Option<u32>,
     /// Shots fired, ever (C1; C2 launches each one's ball).
     shots_fired: u64,
     last_ball: Option<u32>,
@@ -1510,6 +1513,7 @@ impl Server {
             helms: HashMap::default(),
             holds: HashMap::default(),
             hold_done: None,
+            last_body_paste: None,
             shots_fired: 0,
             last_ball: None,
             balls: Vec::new(),
@@ -2104,6 +2108,9 @@ impl Server {
             }
             Message::TheaterViewpoint(at) => self.theater_viewpoint(id, at),
             Message::BodyHold(body) => self.body_hold(id, body),
+            Message::BodyPaste(e) => {
+                self.last_body_paste = self.body_paste(id, e);
+            }
             Message::Markers(m) => self.set_markers(id, m),
             Message::Blueprints(m) => self.blueprints_message(id, m),
             Message::WorldgenRequest => {

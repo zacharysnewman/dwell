@@ -18,6 +18,8 @@ export interface ValidStructure {
   /** One character per cell: y-slices bottom up, z-rows north to south, x west to east. */
   cells: string;
   variants: Variant[];
+  /** A moving body's copy: pasted, it is a moving body again. */
+  body: boolean;
 }
 
 export const FORMAT: number;

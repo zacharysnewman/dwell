@@ -660,6 +660,10 @@ pub enum Message {
     /// a controller) is held aimed at moving body `u32` (`shared/physics/bodies.json` `hold`), sent
     /// a few times a second while it is; the server bails its hull or rights it while they come.
     BodyHold(u32),
+    /// C→S reliable, control channel, only to a server with the `bodies.paste` capability: a
+    /// copied body pasted as a moving body (`RegionEdit`'s Paste body: its `op` is Paste, its
+    /// cells world states, `KEEP` and air left out of the body).
+    BodyPaste(RegionEdit),
     /// Both ways, reliable, control channel, only with the `markers.private` capability on both
     /// sides (WORK_QUEUE item 53, docs/MAP_MARKERS.md): a player's map markers in this world, the
     /// whole record (`crate::markers::Markers`). S→C once after the client's `Capabilities`, that
@@ -1072,6 +1076,7 @@ impl Message {
             M::Swordplay(_) => MessageType::Swordplay,
             M::TheaterViewpoint(_) => MessageType::TheaterViewpoint,
             M::BodyHold(_) => MessageType::BodyHold,
+            M::BodyPaste(_) => MessageType::BodyPaste,
             M::Markers(_) => MessageType::Markers,
             M::Blueprints(_) => MessageType::Blueprints,
             M::SwingHello => MessageType::SwingHello,
@@ -1788,6 +1793,13 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
         M::Markers(m) => m.encode_into(w),
         M::Blueprints(m) => m.encode_into(w),
         M::BodyHold(body) => w.u32(*body),
+        M::BodyPaste(m) => {
+            write_coord(w, &m.min);
+            for &s in &m.size {
+                w.u8(s);
+            }
+            write_cells(w, m.volume(), |i| m.cells.get(i).copied().unwrap_or(0));
+        }
         M::TheaterViewpoint(at) => match at {
             None => w.u8(0),
             Some(p) => {
@@ -2432,6 +2444,30 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
         T::Markers => M::Markers(crate::markers::Markers::decode_from(r)),
         T::Blueprints => M::Blueprints(crate::blueprints::BlueprintsMessage::decode_from(r)),
         T::BodyHold => M::BodyHold(r.u32()),
+        T::BodyPaste => {
+            let min = read_coord(r);
+            let size = [r.u8(), r.u8(), r.u8()];
+            r.check(
+                size.iter()
+                    .all(|&s| s >= 1 && usize::from(s) <= region_edit::MAX_SIDE),
+            );
+            if !r.ok() {
+                return None;
+            }
+            let mut m = RegionEdit {
+                op: RegionEditOp::Paste,
+                min,
+                size,
+                material: 0,
+                from: 0,
+                cells: Vec::new(),
+            };
+            let volume = m.volume();
+            let mut cells = vec![0u16; volume];
+            read_cells(r, volume, |i, v| cells[i] = v);
+            m.cells = cells;
+            M::BodyPaste(m)
+        }
         T::TheaterViewpoint => M::TheaterViewpoint(match r.u8() {
             0 => None,
             1 => {

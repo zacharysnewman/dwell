@@ -1345,3 +1345,130 @@ both_faces!(
         assert!(after < 12.0, "righted: {before}° -> {after}°");
     }
 );
+
+both_faces!(
+    fn a_second_player_joining_is_sent_every_body_already_afloat(f: FaceFrame) {
+        // BUGS.md #222 (owner, 2026-11-23: "Pre-Existing dynamic objects should be synced across
+        // the network"): player 1 is in the world with a raft afloat and a body built after; player
+        // 2 joins later and is sent both, where they are.
+        let mut fx = Fixture::new(config(f));
+        fx.join(1, &Client::new(1));
+        let (raft, _) = harbour(&mut fx, f);
+        let mut seq = 0;
+        hold(&mut fx, &mut seq, Input::default(), 300);
+        let planks = f.state(dwell_blocks::require("dwell:planks"));
+        let c = f.cell([2, BASE + 6, 8]);
+        let other = fx.server.add_body(
+            1,
+            vec![([0, 0, 0], planks), ([1, 0, 0], planks)],
+            [
+                f64::from(c[0]),
+                f64::from(c[1]) * dwell_world::CELL_H,
+                f64::from(c[2]),
+            ],
+        );
+        hold(&mut fx, &mut seq, Input::default(), 300);
+        fx.take_all();
+        fx.join(2, &Client::new(2));
+        for _ in 0..30 {
+            fx.server.step();
+        }
+        let got: Vec<u32> = fx
+            .take(2)
+            .into_iter()
+            .filter_map(|(m, _)| match m {
+                Message::EntitySpawn(e) => Some(e.id),
+                _ => None,
+            })
+            .collect();
+        for id in [raft, other] {
+            assert!(got.contains(&id), "player 2 was sent body {id}: {got:?}");
+        }
+    }
+);
+
+/// A 4 × 1 × 3 box of planks (world states, face `f`) whose lowest face-local cell is `corner`
+/// (face-local), as a client's `BodyPaste` sends it.
+fn plank_box(f: FaceFrame, corner: [i32; 3]) -> dwell_protocol::RegionEdit {
+    let planks = f.state(dwell_blocks::require("dwell:planks"));
+    let a = f.cell(corner);
+    // The box's world lowest corner: on face B its one row is the same row.
+    dwell_protocol::RegionEdit {
+        op: dwell_protocol::RegionEditOp::Paste,
+        min: a,
+        size: [4, 1, 3],
+        material: 0,
+        from: 0,
+        cells: vec![planks; 12],
+    }
+}
+
+both_faces!(
+    fn a_copied_body_pastes_as_a_moving_body_that_floats(f: FaceFrame) {
+        // Owner, 2026-11-23: pasting a copied body is "A moving body again" (it floats if over
+        // water). In creative, over the pool, near player 1: a built body of its 12 cells.
+        let mut fx = Fixture::new(config(f));
+        fx.join(1, &Client::new(1));
+        assert!(fx.server.set_mode("creative"));
+        say_capabilities(&mut fx);
+        let (raft, _) = harbour(&mut fx, f);
+        fx.server.remove_body(raft);
+        let up = dwell_physics::DVec3::from(f.vector([0.0, 1.0, 0.0]));
+        stand(
+            &mut fx,
+            dwell_physics::DVec3::from(f.point([0.5, m_of_row(BASE + 4), -3.0])),
+            up,
+        );
+        fx.send(1, Message::BodyPaste(plank_box(f, [0, BASE + 2, 0])));
+        let body = fx.server.last_body_paste().expect("pasted as a body");
+        let mut seq = 0;
+        hold(&mut fx, &mut seq, Input::default(), 300);
+        let (at, _) = fx.server.body_pose(body).expect("still a body");
+        let y = f.point(at.to_array())[1];
+        assert!(
+            (y - m_of_row(BASE)).abs() < 0.6,
+            "afloat at the surface: {y} against {}",
+            m_of_row(BASE)
+        );
+        assert_eq!(
+            fx.server.bodies_report().matches("\"dwell:planks").count(),
+            12,
+            "its 12 cells"
+        );
+    }
+);
+
+both_faces!(
+    fn a_body_paste_is_refused_in_adventure_in_the_ground_or_without_the_capability(f: FaceFrame) {
+        let setup = |mode: &str, capable: bool| {
+            let mut fx = Fixture::new(config(f));
+            fx.join(1, &Client::new(1));
+            assert!(fx.server.set_mode(mode));
+            if capable {
+                say_capabilities(&mut fx);
+            }
+            let (raft, _) = harbour(&mut fx, f);
+            fx.server.remove_body(raft);
+            let up = dwell_physics::DVec3::from(f.vector([0.0, 1.0, 0.0]));
+            stand(
+                &mut fx,
+                dwell_physics::DVec3::from(f.point([0.5, m_of_row(BASE + 4), -3.0])),
+                up,
+            );
+            fx
+        };
+        let mut fx = setup("adventure", true);
+        fx.send(1, Message::BodyPaste(plank_box(f, [0, BASE + 2, 0])));
+        assert_eq!(fx.server.last_body_paste(), None, "adventure");
+        let mut fx = setup("creative", false);
+        fx.send(1, Message::BodyPaste(plank_box(f, [0, BASE + 2, 0])));
+        assert_eq!(fx.server.last_body_paste(), None, "no capability");
+        // Into the pool's stone bed (row BASE − 7).
+        let mut fx = setup("creative", true);
+        fx.send(1, Message::BodyPaste(plank_box(f, [0, BASE - 7, 0])));
+        assert_eq!(fx.server.last_body_paste(), None, "in the ground");
+        // Out of reach.
+        fx.send(1, Message::BodyPaste(plank_box(f, [300, BASE + 2, 0])));
+        assert_eq!(fx.server.last_body_paste(), None, "out of reach");
+    }
+);

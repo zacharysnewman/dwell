@@ -247,7 +247,10 @@ context) at a time with a choice to table it as well as the other options?" Answ
   Claude opens.
 - **Copying a body as a blueprint:** "Aim at it with the copy tool": with the region copy tool, aiming at a moving body
   and copying takes the whole body onto the clipboard in its original rotation (saved and exported from the Structures
-  panel). Pasting it: "A moving body again" (it floats if over water).
+  panel). Pasting it: "A moving body again" (it floats if over water). **Built 2026-11-24**
+  (`claude/body-copy-paste`, STRUCTURES.md §9): Ctrl+C aimed at a body with no box selected; the Structures page's
+  "The copied moving body" saves it marked `body`; its paste is a moving body (creative). Not yet checked in the
+  browser.
 - **Flipping a body upright:** "Hold E (think FPS controls like Halo, X on controller), Q is used for inventory", in
   "Both modes". Owner should see: holding E (X on a controller) by a capsized boat rights it. **Built 2026-11-24**
   (`claude/hold-e-drain-flip`): held 0.35 s aimed at a body tipped past 8°, it turns back upright (lifted off land);

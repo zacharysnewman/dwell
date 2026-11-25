@@ -736,7 +736,7 @@ fn a_saved_structure_goes_as_a_structure_placement_to_a_server_that_announced_it
     let stone = dwell_blocks::require("dwell:stone");
     let game = rig.game.as_mut().unwrap();
     game.region
-        .load_clipboard([1, 1, 1], vec![stone], Vec::new(), "Test")
+        .load_clipboard([1, 1, 1], vec![stone], Vec::new(), "Test", false)
         .expect("loads in creative");
     assert!(game.tool(ToolAction::Paste, rig.now), "the paste is sent");
     let placed = |r: &mut Rig| {
@@ -5827,4 +5827,127 @@ fn holding_e_at_a_raft_on_its_side_rights_it_and_a_tap_does_not() {
     rig.run_until(90, |_| false);
     let after = tilt(&mut rig);
     assert!(after < 12.0, "held, it rights: {lying}° -> {after}°");
+}
+
+#[test]
+fn a_raft_already_in_the_world_is_seen_by_a_player_joining() {
+    // face-a-only: the sandbox world is face A's; the join's spawns are face-blind.
+    // BUGS.md #222 (owner, 2026-11-23: "Pre-Existing dynamic objects should be synced across the
+    // network"): a body made and come to rest before the client joins is spawned, drawn and posed
+    // where the server has it.
+    // Where a player joins this world (a first rig's), then a second rig with the raft there first.
+    let spawn = {
+        let mut first = Rig::with_generator(GENERATOR_SANDBOX);
+        assert!(first.run_until(60 * 30, |r| r.game.is_some()));
+        first.game.as_ref().unwrap().debug_state().feet
+    };
+    let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+    let ground = f64::from(dwell_world::FLAT_TOP_Y) * dwell_world::CELL_H;
+    let planks = dwell_blocks::require("dwell:planks");
+    let cells: Vec<([i32; 3], u16)> = (0..4)
+        .flat_map(|x| (0..3).map(move |z| ([x, 0, z], planks)))
+        .collect();
+    let raft = rig
+        .core
+        .server()
+        .add_body(1, cells, [spawn[0] + 4.5, ground + 2.0, spawn[2] + 0.5]);
+    for _ in 0..600 {
+        rig.core.advance(1.0 / 60.0);
+        rig.core.take_outbox();
+    }
+    let (at, _) = rig.core.server().body_pose(raft).expect("the raft");
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    rig.run_until(300, |_| false);
+    assert!(rig.scene.borrow().pieces.contains(&raft), "the raft drawn");
+    let shown = rig
+        .scene
+        .borrow()
+        .poses
+        .iter()
+        .find(|p| p.0 == raft)
+        .map(|p| p.1);
+    let shown = shown.expect("the raft posed");
+    let off =
+        ((shown[0] - at.x).powi(2) + (shown[1] - at.y).powi(2) + (shown[2] - at.z).powi(2)).sqrt();
+    assert!(
+        off < 0.5,
+        "where the server has it: {shown:?} against {at:?}"
+    );
+}
+
+#[test]
+fn the_copy_tool_aimed_at_a_raft_copies_it_whole_and_it_pastes_as_a_moving_body() {
+    // face-a-only: the sandbox world is face A's; the body paste on both faces is the server's
+    // (dwell-sim ships.rs `a_copied_body_pastes_…`).
+    // Owner, 2026-11-23: copying a body is "Aim at it with the copy tool", in its original
+    // rotation; pasting it is "A moving body again".
+    let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    rig.run_until(60, |_| false);
+    rig.game.as_mut().unwrap().set_body_ops(true);
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    let ground = f64::from(dwell_world::FLAT_TOP_Y) * dwell_world::CELL_H;
+    let planks = dwell_blocks::require("dwell:planks");
+    let stone = dwell_blocks::require("dwell:stone");
+    // A 3 × 2 deck with a stone post on one corner, turned 30° about the up, on the ground 3 m
+    // ahead (+z).
+    let mut cells: Vec<([i32; 3], u16)> = (0..3)
+        .flat_map(|x| (0..2).map(move |z| ([x, 0, z], planks)))
+        .collect();
+    cells.push(([0, 1, 0], stone));
+    let turned = dwell_physics::DQuat::from_rotation_y(30f64.to_radians());
+    let raft = rig.core.server().add_body_turned(
+        1,
+        cells,
+        [feet[0] - 1.0, ground + 0.3, feet[2] + 3.5],
+        turned,
+    );
+    rig.run_until(90, |_| false);
+    let (at, _) = rig.core.server().body_pose(raft).unwrap();
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    let d = [at.x - feet[0], at.y - feet[1] - 1.62, at.z - feet[2]];
+    rig.input.look.yaw = d[0].atan2(d[2]).to_degrees();
+    rig.input.look.pitch = d[1].atan2(d[0].hypot(d[2])).to_degrees();
+    assert!(
+        rig.run_until(120, |r| r.game.as_ref().unwrap().body_aimed() == Some(raft)),
+        "the raft aimed at"
+    );
+    let now = rig.now;
+    let game = rig.game.as_mut().unwrap();
+    assert!(!game.tool(ToolAction::Copy, now));
+    let (size, copied, body) = game.region.clipboard().expect("copied");
+    assert!(body, "a body's copy");
+    assert_eq!(size, [3, 2, 2], "its own grid's box, unturned");
+    assert_eq!(copied.iter().filter(|&&m| m == planks).count(), 6);
+    assert_eq!(copied.iter().filter(|&&m| m == stone).count(), 1);
+    // Paste it behind the player, on the ground.
+    game.tool(ToolAction::PasteMode, now);
+    rig.input.look.yaw += 180.0;
+    rig.input.look.pitch = -40.0;
+    rig.run_until(30, |_| false);
+    let before = rig.core.server().body_count();
+    let now = rig.now;
+    assert!(
+        rig.game.as_mut().unwrap().tool(ToolAction::Paste, now),
+        "the body's paste is sent"
+    );
+    assert!(
+        rig.run_until(30, |r| r.core.server().body_count() == before + 1),
+        "a second moving body: {} bodies",
+        rig.core.server().body_count()
+    );
+    let report = rig.core.server().bodies_report();
+    assert_eq!(
+        report.matches("\"dwell:planks").count(),
+        12,
+        "two decks: {report}"
+    );
 }

@@ -158,6 +158,16 @@ fn decoded_fields_are_the_vectors_values() {
         panic!("body_edit_request_break")
     };
     assert_eq!((b.body, b.cell, b.face, b.material), (9, [0, 3, -1], 5, 0));
+    // A body pasted as a body (`bodies.paste`): the Paste body, round trip.
+    let paste = Message::BodyPaste(dwell_protocol::RegionEdit {
+        op: dwell_protocol::RegionEditOp::Paste,
+        min: [-4, 2300, 9],
+        size: [3, 1, 2],
+        material: 0,
+        from: 0,
+        cells: vec![0, 21, 21, 7, 0, 21],
+    });
+    assert_eq!(Message::decode(&paste.encode()), Some(paste));
     // Hold E on a body (`bodies.hold`).
     assert_eq!(
         Message::decode(&get("body_hold")),

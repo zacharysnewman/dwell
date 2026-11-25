@@ -238,6 +238,8 @@ export function checkTiled(
     anchor: [...anchor],
     palette: states,
     cells: cells.join(''),
+    // A tiled structure is a selection's, never a body's (a body pastes at most one edit's side).
+    body: false,
     variants: [],
   };
 }

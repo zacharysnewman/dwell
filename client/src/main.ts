@@ -1430,9 +1430,14 @@ async function start(): Promise<App | null> {
     read: (min, size) => client.voxels(...min, ...size),
     feet: () => (client.debugState() as GameDebugState | null)?.feet ?? null,
     target: () => (client.debugState() as GameDebugState | null)?.target?.cell ?? null,
+    copiedBody: () => {
+      const v = client.copiedBody();
+      if (v.length < 3) return null;
+      return { size: [v[0] ?? 0, v[1] ?? 0, v[2] ?? 0], cells: v.slice(3) };
+    },
     load: (s) => {
       const { cells, keep } = clipboardOf(s);
-      return client.loadStructure(s.size[0], s.size[1], s.size[2], cells, keep, s.name);
+      return client.loadStructure(s.size[0], s.size[1], s.size[2], cells, keep, s.name, s.body);
     },
     close: () => {
       settings.setOpen(false);
@@ -2195,7 +2200,15 @@ function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): vo
         if (entry?.status !== 'ok') return `${file} can't be placed by this version.`;
         const s = entry.structure;
         const { cells, keep } = clipboardOf(s);
-        const err = app.client.loadStructure(s.size[0], s.size[1], s.size[2], cells, keep, s.name);
+        const err = app.client.loadStructure(
+          s.size[0],
+          s.size[1],
+          s.size[2],
+          cells,
+          keep,
+          s.name,
+          s.body,
+        );
         if (!err) setInventoryOpen(app, false);
         return err;
       },

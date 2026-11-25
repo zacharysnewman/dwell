@@ -18,7 +18,7 @@ export const VARIANT_OPS = ['rotate', 'mirror', 'choices'];
 const ROTATIONS = [0, 90, 180, 270];
 const MIRROR_AXES = ['x', 'z'];
 const NAME = /^[a-z0-9_]+:[a-z0-9_]+$/;
-export const TOP_LEVEL = ['$comment', 'format', 'name', 'kind', 'size', 'anchor', 'palette', 'layers', 'variants'];
+export const TOP_LEVEL = ['$comment', 'format', 'name', 'kind', 'size', 'anchor', 'palette', 'layers', 'variants', 'body'];
 
 // ---- The block registry, from the generated vector (shared/blocks/vectors.txt) -------------------
 
@@ -140,6 +140,9 @@ export function validate(json, file, registry, parts = undefined) {
     fail('name', `must be namespace:name in [a-z0-9_], not ${JSON.stringify(json.name)}`);
   }
   if (!KINDS.includes(json.kind)) fail('kind', `unknown kind ${JSON.stringify(json.kind)} (known: ${KINDS.join(', ')})`);
+  // A moving body's copy (optional; owner, 2026-11-23: pasted it is "A moving body again"). Not
+  // in the canonical text: the cells are the structure.
+  if (json.body !== undefined && typeof json.body !== 'boolean') fail('body', 'must be true or false');
 
   // kind "voxels": size, anchor, palette, layers.
   const { size, anchor } = json;
@@ -228,7 +231,7 @@ export function validate(json, file, registry, parts = undefined) {
 
   const cells = layers.map((layer) => layer.join('')).join('');
   if (parts) checkWhole(cells, size, states, parts, fail);
-  return { name: json.name, kind: json.kind, size, anchor, palette: states, cells, variants };
+  return { name: json.name, kind: json.kind, size, anchor, palette: states, cells, variants, body: json.body === true };
 }
 
 // ---- Canonical form and hash (dwell-world structure.rs rebuilds the same text) --------------------

@@ -32,6 +32,9 @@ export interface StructuresDeps {
   feet(): Vec3 | null;
   /** The aimed-at block; null with none. */
   target(): Vec3 | null;
+  /** The moving body last copied (the copy tool aimed at one): its box and states (layer order),
+   * face-local; null with none. */
+  copiedBody?(): { size: Vec3; cells: Uint16Array } | null;
   /** Puts the structure on the clipboard in paste mode: an error message, or '' when done. */
   load(structure: ValidStructure): string;
   /** Closes the menu (to aim the paste). */
@@ -57,7 +60,7 @@ export const SCAN_AROUND: { side: number; below: number; above: number } = {
   above: 48,
 };
 
-export type SaveSource = 'selection' | 'built' | 'corners';
+export type SaveSource = 'selection' | 'body' | 'built' | 'corners';
 
 /** "12 3 -4" or "12, 3, -4" → a cell; null if it isn't three whole numbers. */
 export function parseCell(text: string): Vec3 | null {
@@ -106,6 +109,28 @@ export function saveBox(
     };
   }
   return box;
+}
+
+/** The copied body as a structure marked `body`: its air kept (`.`); an error message without
+ * one, or with a bad name. */
+export function bodyStructure(
+  copied: { size: Vec3; cells: Uint16Array } | null,
+  nameText: string,
+): { json: StructureJson; size: Vec3 } | { error: string } {
+  if (!copied) return { error: 'Copy a moving body first: aim at it and press Ctrl+C.' };
+  const name = structureName(nameText);
+  if ('error' in name) return name;
+  try {
+    const json = structureFromVoxels({
+      name: name.name,
+      size: copied.size,
+      cells: copied.cells,
+      kept: KEPT_ON_SAVE,
+    });
+    return { json: { ...json, body: true }, size: copied.size };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 /** A structure from the world's box; an error message if it isn't loaded or isn't valid. */
@@ -206,6 +231,7 @@ export class StructuresPanel {
     this.name.maxLength = 64;
     for (const [value, label] of [
       ['selection', 'The selected box (B, N)'],
+      ['body', 'The copied moving body (Ctrl+C aimed at it)'],
       ['built', 'Everything built near you'],
       ['corners', 'Between two corners'],
     ] as const) {
@@ -315,7 +341,11 @@ export class StructuresPanel {
   /** Called as the page opens: the source the save defaults to, and the list. */
   async refresh(): Promise<void> {
     this.drawBlueprints();
-    this.source.value = this.deps.selection() ? 'selection' : 'built';
+    this.source.value = this.deps.selection()
+      ? 'selection'
+      : this.deps.copiedBody?.()
+        ? 'body'
+        : 'built';
     this.cornersRow.hidden = true;
     await this.renderList();
   }
@@ -325,6 +355,10 @@ export class StructuresPanel {
   }
 
   private async save(): Promise<void> {
+    if (this.source.value === 'body') {
+      await this.saveBody();
+      return;
+    }
     const box = saveBox(this.source.value as SaveSource, this.deps, [
       this.cornerA.value,
       this.cornerB.value,
@@ -344,6 +378,26 @@ export class StructuresPanel {
       if (exists && !confirm(`Replace the saved ${file}?`)) return;
       await this.deps.store.save(made.json, { overwrite: exists });
       this.say(`Saved ${file} (${sizeLabel(box.size)}).`);
+    } catch (e) {
+      this.say(e instanceof Error ? e.message : String(e));
+    }
+    await this.renderList();
+  }
+
+  /** Saves the copied moving body as a structure marked `body` (owner, 2026-11-23: saved and
+   * exported from the Structures page, pasted as "A moving body again"). */
+  private async saveBody(): Promise<void> {
+    const made = bodyStructure(this.deps.copiedBody?.() ?? null, this.name.value);
+    if ('error' in made) {
+      this.say(made.error);
+      return;
+    }
+    const file = structureFile(String(made.json.name));
+    try {
+      const exists = (await this.deps.store.get(file)) !== null;
+      if (exists && !confirm(`Replace the saved ${file}?`)) return;
+      await this.deps.store.save(made.json, { overwrite: exists });
+      this.say(`Saved ${file}, a moving body (${sizeLabel(made.size)}).`);
     } catch (e) {
       this.say(e instanceof Error ? e.message : String(e));
     }
