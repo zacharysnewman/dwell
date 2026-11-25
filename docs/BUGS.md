@@ -1390,6 +1390,19 @@ the first ladder went there (it now waits for the cell).
 
 ## Fixed
 
+### 244. Holding E on a boat does nothing: no bailing, no righting (owner, 2026-11-25)
+
+"The dynamic object flipping and water emptying doesn't seem to work, I keep pressing and holding E while aiming at a
+block on the boat. I have a boat with water in it. And I've tried on an upside down boat. I'm not sure if it's not
+exerting enough force or what." Cause: the client sends `BodyHold` only once it knows the server takes it
+(`bodies.hold`), and it learned that only when the host changed the game mode (`app.rs`'s mode-change block), never at
+the join (its join block set the other capabilities but not this one), so a held E sent nothing. Fixed 2026-11-25
+(`claude/hold-e-join`): the join and a mode change set one list, `Game::set_server_capabilities` (structures, body
+paste, grid frames, swordplay, hits at contact, markers, blueprints, hold E). Red → green: `dwell-client`
+`game_local.rs` `the_join_switches_on_what_the_servers_capabilities_offer_hold_e_too` (with the old join, hold E off).
+The rules themselves are unchanged: righting needs a helm on the body; bailing needs creative (`bail`) and the player
+standing inside the hull.
+
 ### 243. A cannon breaks apart when the block under it breaks (owner, 2026-11-25)
 
 "they currently act unexpectedly by breaking apart when the block beneath them breaks, they shouldn't do that. All

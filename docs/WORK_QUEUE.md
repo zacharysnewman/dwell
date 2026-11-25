@@ -250,7 +250,11 @@ context) at a time with a choice to table it as well as the other options?" Answ
      placed blocks reaches as-generated ground; natural terrain never falls (sand as today). Queued after the air-per-grid
      merge and the page update. (1) built 2026-11-25 (`claude/ball-shove`, BUGS.md #242). (2) and (3) built 2026-11-25 (`claude/cannon-up-down`): up/down facings placed by the look's pitch, fired straight along the barrel; placed blocks held by their distance to natural ground, cut-off groups falling as one body (BUGS.md #243; FELLING.md §9, CANNONS.md §17).
      Owner (2026-11-25): "Cut air drag in half." `air.scale` 0.75 → 0.375 (PLAYER_CONTROLLER.md §6.15): a fall's top
-     speed ~101 m/s, a crouched slide's ~63 m/s down ½ m ramps and ~97 m/s down 45°. Owner (2026-11-25), on a shortcut: "like if a chain of blocks were
+     speed ~101 m/s, a crouched slide's ~63 m/s down ½ m ramps and ~97 m/s down 45°.
+     Owner (2026-11-25): "The dynamic object flipping and water emptying doesn't seem to work, I keep pressing and holding
+     E while aiming at a block on the boat." BUGS.md #244: hold E never switched on at the join; fixed
+     (`claude/hold-e-join`). Owner should see: holding E at a boat with a helm rights it; holding E standing in a boat's
+     hull in creative bails it. Owner (2026-11-25), on a shortcut: "like if a chain of blocks were
      already marked … all are already marked as connecting so the search would stop at the first marked unnatural
      block?"; a plain mark goes stale when a block on its path breaks, so a stored distance to natural ground instead:
      "I like the distance marks do that." Each placed block keeps its steps to as-generated ground (placing: the least

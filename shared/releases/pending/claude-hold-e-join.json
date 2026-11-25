@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Holding E on a boat works again: it rights a capsized boat with a helm, and in creative bails the water out while you stand in its hull."
+  ]
+}

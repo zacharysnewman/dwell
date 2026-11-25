@@ -375,11 +375,10 @@ impl Rig {
             game.set_loading_screen(self.loading_screen);
             // As the web app does (`app.rs`: always, the portals' shafts with the size).
             game.set_world(self.generator, self.seed, size);
-            // As the web app does: the moon's travel on a server that carries players there.
-            game.set_grid_frames(
-                self.session
-                    .capability(dwell_protocol::capability_names::GRID_FRAMES),
-            );
+            // As the web app does at the join: everything the server's capabilities switch on
+            // (the moon's travel, hold E, …).
+            let session = &self.session;
+            game.set_server_capabilities(&|c| session.capability(c));
             self.game = Some(game);
         }
         let Some(game) = &mut self.game else { return };
@@ -5952,5 +5951,24 @@ fn the_copy_tool_aimed_at_a_raft_copies_it_whole_and_it_pastes_as_a_moving_body(
         report.matches("\"dwell:planks").count(),
         12,
         "two decks: {report}"
+    );
+}
+
+#[test]
+fn the_join_switches_on_what_the_servers_capabilities_offer_hold_e_too() {
+    // BUGS.md #244 (owner, 2026-11-25): "The dynamic object flipping and water emptying doesn't
+    // seem to work, I keep pressing and holding E". The client learned the server's `bodies.hold`
+    // only when the host changed the mode, never at the join, so a held E sent nothing. Now the
+    // join and a mode change set the same list (`Game::set_server_capabilities`), as here.
+    let mut rig = Rig::new();
+    assert!(rig.run_until(60 * 30, |r| r.game.is_some()), "joined");
+    assert!(
+        rig.session
+            .capability(dwell_protocol::capability_names::BODIES_HOLD),
+        "the local server takes BodyHold"
+    );
+    assert!(
+        rig.game.as_ref().unwrap().body_hold_on(),
+        "hold E sends at the join"
     );
 }
