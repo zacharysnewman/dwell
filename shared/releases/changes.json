@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.76.15",
+      "changes": [
+        "Fall damage is back to its heights with air drag: 5 m is still the first drop that hurts, 15 m still kills.",
+        "No air on the moon: no drag there, so jumps and falls are as before."
+      ]
+    },
+    {
       "version": "0.76.14",
       "changes": [
         "Slides keep their speed along the ground: up a ramp they launch along it, and up into a wall they carry you straight up it.",

@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "Fall damage is back to its heights with air drag: 5 m is still the first drop that hurts, 15 m still kills.",
-    "No air on the moon: no drag there, so jumps and falls are as before."
-  ]
-}
