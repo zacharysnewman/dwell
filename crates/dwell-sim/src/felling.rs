@@ -813,73 +813,119 @@ impl Felling {
             if piece.cells.len() > self.rules.max_piece_cells || settles >= self.rules.max_settles {
                 continue;
             }
-            let reference = piece.cells[0];
-            let origin = cell_centre(reference);
-            let mut cells = Vec::with_capacity(piece.cells.len());
-            let mut boxes = Vec::with_capacity(piece.cells.len());
-            for (k, &c) in piece.cells.iter().enumerate() {
-                let m = world.get_voxel(c[0], c[1], c[2]);
-                let o = [
-                    c[0] - reference[0],
-                    c[1] - reference[1],
-                    c[2] - reference[2],
-                ];
-                let s = info(m);
-                // Carriers (logs, sand) hit everything; leaves riding them nothing; leaves
-                // falling on their own the world but not players, so they land. Sand passes
-                // players (it may hurt them, `hits`, but never rests on one: owner, 2026-10-28,
-                // "slide off").
-                boxes.push(piece_box(o, m, k < piece.carriers, piece.carriers == 0));
-                cells.push((o, m));
-                clear(world, c, if s.flooded { M.water } else { M.air });
-            }
-            let mass: f64 = boxes.iter().map(|b| b.mass).sum();
-            let body = physics.add_piece(origin, &boxes, false);
-            let reach = boxes.iter().map(|b| b.center.length()).fold(0.0, f64::max) + 0.9;
-            // Tipped away from who cut it: spun about the level axis across the line to them, about
-            // its foot (the bottom of its cells, face-local, under its centre of mass), so the foot
-            // starts still: a body's spin turns it about its centre of mass, which flung a tall
-            // trunk's foot back (60 m: 18 m/s; owner, 2026-10-30, "flip out").
-            // Every trunk at the same spin, short or tall (owner, 2026-11-16).
-            if let Some((from, share)) = away_from.filter(|_| piece.carriers > 0) {
-                let up = DVec3::Y * f64::from(FaceFrame::at_row(reference[1]).sign());
-                let mut d = origin - from;
-                d -= up * d.dot(up);
-                if d.length() > 1e-6 {
-                    let com = boxes.iter().map(|b| b.center * b.mass).sum::<DVec3>() / mass;
-                    let low = boxes
-                        .iter()
-                        .map(|b| b.center.dot(up) - b.half.y)
-                        .fold(f64::INFINITY, f64::min);
-                    let foot = com - up * (com.dot(up) - low);
-                    let spin = self.rules.topple_spin * share;
-                    let w = up.cross(d.normalize()) * spin;
-                    physics.set_angular_velocity(body, w);
-                    physics.set_velocity(body, w.cross(com - foot));
-                }
-            }
-            self.next_id += 1;
-            self.pieces.push(Falling {
-                id: self.next_id,
-                body,
-                cells,
-                carriers: piece.carriers,
-                kind: 0,
-                settles,
-                still: 0,
-                rest: None,
-                age: 0,
-                hurt: Vec::new(),
-                held: false,
-                pushed: 0,
-                anchored: false,
-                afloat: false,
-                dry: u32::MAX,
-                reach,
-            });
-            out.push(self.pieces.len() - 1);
+            out.push(self.spawn_piece(world, physics, &piece, settles, away_from, clear));
         }
         out
+    }
+
+    /// Detaches placed blocks cut off from the ground (`dwell_world::anchoring`, owner 2026-11-25:
+    /// "Always one body"): each group's cells are cleared (`clear`) and it becomes one body, all its
+    /// cells carriers (they collide with everything), however large. Returns the new pieces'
+    /// indices in `pieces`.
+    pub fn detach_groups(
+        &mut self,
+        world: &mut VoxelWorld,
+        physics: &mut Physics,
+        groups: Vec<Vec<[i32; 3]>>,
+        settles: u8,
+        clear: &mut dyn FnMut(&mut VoxelWorld, [i32; 3], StateId),
+    ) -> Vec<usize> {
+        if settles >= self.rules.max_settles {
+            return Vec::new();
+        }
+        groups
+            .into_iter()
+            .map(|cells| {
+                let carriers = cells.len();
+                let piece = dwell_world::support::Piece { cells, carriers };
+                self.spawn_piece(world, physics, &piece, settles, None, clear)
+            })
+            .collect()
+    }
+
+    /// One detached piece as a body: its cells cleared (`clear`), its boxes and mass, tipped away
+    /// from `away_from` when it carries; its index in `pieces`.
+    fn spawn_piece(
+        &mut self,
+        world: &mut VoxelWorld,
+        physics: &mut Physics,
+        piece: &dwell_world::support::Piece,
+        settles: u8,
+        away_from: Option<(DVec3, f64)>,
+        clear: &mut dyn FnMut(&mut VoxelWorld, [i32; 3], StateId),
+    ) -> usize {
+        let reference = piece.cells[0];
+        let origin = cell_centre(reference);
+        let mut cells = Vec::with_capacity(piece.cells.len());
+        let mut boxes = Vec::with_capacity(piece.cells.len());
+        // Every cell read before any is cleared: clearing one cell of a multi-cell block (a cannon)
+        // clears its other cells too (`parts`), which go in the same piece.
+        let states: Vec<StateId> = piece
+            .cells
+            .iter()
+            .map(|c| world.get_voxel(c[0], c[1], c[2]))
+            .collect();
+        for (k, &c) in piece.cells.iter().enumerate() {
+            let m = states[k];
+            let o = [
+                c[0] - reference[0],
+                c[1] - reference[1],
+                c[2] - reference[2],
+            ];
+            let s = info(m);
+            // Carriers (logs, sand) hit everything; leaves riding them nothing; leaves
+            // falling on their own the world but not players, so they land. Sand passes
+            // players (it may hurt them, `hits`, but never rests on one: owner, 2026-10-28,
+            // "slide off").
+            boxes.push(piece_box(o, m, k < piece.carriers, piece.carriers == 0));
+            cells.push((o, m));
+            clear(world, c, if s.flooded { M.water } else { M.air });
+        }
+        let mass: f64 = boxes.iter().map(|b| b.mass).sum();
+        let body = physics.add_piece(origin, &boxes, false);
+        let reach = boxes.iter().map(|b| b.center.length()).fold(0.0, f64::max) + 0.9;
+        // Tipped away from who cut it: spun about the level axis across the line to them, about
+        // its foot (the bottom of its cells, face-local, under its centre of mass), so the foot
+        // starts still: a body's spin turns it about its centre of mass, which flung a tall
+        // trunk's foot back (60 m: 18 m/s; owner, 2026-10-30, "flip out").
+        // Every trunk at the same spin, short or tall (owner, 2026-11-16).
+        if let Some((from, share)) = away_from.filter(|_| piece.carriers > 0) {
+            let up = DVec3::Y * f64::from(FaceFrame::at_row(reference[1]).sign());
+            let mut d = origin - from;
+            d -= up * d.dot(up);
+            if d.length() > 1e-6 {
+                let com = boxes.iter().map(|b| b.center * b.mass).sum::<DVec3>() / mass;
+                let low = boxes
+                    .iter()
+                    .map(|b| b.center.dot(up) - b.half.y)
+                    .fold(f64::INFINITY, f64::min);
+                let foot = com - up * (com.dot(up) - low);
+                let spin = self.rules.topple_spin * share;
+                let w = up.cross(d.normalize()) * spin;
+                physics.set_angular_velocity(body, w);
+                physics.set_velocity(body, w.cross(com - foot));
+            }
+        }
+        self.next_id += 1;
+        self.pieces.push(Falling {
+            id: self.next_id,
+            body,
+            cells,
+            carriers: piece.carriers,
+            kind: 0,
+            settles,
+            still: 0,
+            rest: None,
+            age: 0,
+            hurt: Vec::new(),
+            held: false,
+            pushed: 0,
+            anchored: false,
+            afloat: false,
+            dry: u32::MAX,
+            reach,
+        });
+        self.pieces.len() - 1
     }
 
     /// Breaks the cell `cell` (in its own grid) of the piece `id` (docs/BUILT_BODIES.md §4): its

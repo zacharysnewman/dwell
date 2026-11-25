@@ -213,7 +213,7 @@ pub struct Air {
     pub drag_area: f32,
     /// m²: the same, crouched (a tuck, ~0.4).
     pub crouch_drag_area: f32,
-    /// The multiplier on real drag (0.75).
+    /// The multiplier on real drag (0.375: owner, 2026-11-25, "Cut air drag in half" from 0.75).
     pub scale: f32,
 }
 
@@ -422,7 +422,7 @@ impl Default for PlayerControllerConfig {
                 density: 1.2,
                 drag_area: 0.7,
                 crouch_drag_area: 0.4,
-                scale: 0.75,
+                scale: 0.375,
             },
             damage: Damage {
                 impact_safe_height: 5.0,

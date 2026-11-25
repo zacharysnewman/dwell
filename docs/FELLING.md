@@ -25,7 +25,7 @@ data; a bad value fails generation):
 
 | Role | Meaning | Blocks today |
 |---|---|---|
-| `ground` (default) | Anchors whatever touches it; never falls. | Every block not listed below: terrain, player builds. |
+| `ground` (default) | Anchors whatever touches it; natural ground never falls; a placed one falls when cut off from the ground (§9). | Every block not listed below: terrain, player builds. |
 | `carrier` | Stands while a path of carriers leads to a `ground` block it touches; holds up the riders on it. | `dwell:log` |
 | `rider` | Holds nothing up; stays while a carrier it belongs to stands. | `dwell:leaves`, `dwell:snowy_leaves` |
 | `falls` | Rests on what is under it; with nothing solid there it falls, with what of its kind is stacked on it, and lands as itself. Anchors a carrier as `ground` does. (0.40.0, owner 2026-10-28: "make sand fall".) | `dwell:sand` |
@@ -247,3 +247,40 @@ A standing trunk cut past its wood's `fellFraction` (docs/adr/0067-stone-axe-and
 its cut cell, and the integrity pass takes what that cell held as one piece as §3 describes, tipped
 **toward the notch** (owner, 2026-11-08: real felling): the uncut side is the hinge, so the piece
 is tipped away from a point out past the side opposite the deepest notch. The stump stays.
+
+## 9. Placed blocks cut off from the ground (owner, 2026-11-25; WORK_QUEUE first pass 3a)
+
+Owner: *"All blocks should behave like that, falling when disconnected from their supporting (connecting to solid
+ground) blocks"*; a cut-off build falls *"Always one body"*; what anchors: *"natural terrain anchors"*; how:
+*"I like the distance marks do that"* (a plain "connected" mark goes stale when a block on its path breaks).
+Built in `dwell_world::anchoring` (BUGS.md #243: a cannon broke apart when the block under it broke).
+
+- **Who.** A **placed** block: of the `ground` role, solid (not passable), with no `needsSupport` rule of its own (a
+  torch, a ladder, a door, grass keep theirs), and different from its cell as generated
+  (`VoxelWorld::generated_voxel`, an edited chunk generated again into a small cache). **Anchors** (distance 0):
+  natural solid ground (a cell as generated), and a block with its own support role (a log, sand, leaves: their own
+  rules, §2, hold them). Natural terrain never falls (sand as before); the moon of natural terrain falling too is
+  tabled (FUTURE.md).
+- **The distance marks.** Each placed block keeps its fewest face steps through placed blocks to an anchor. Placing
+  sets it to its least neighbour's + 1 and lowers any neighbour it gives a shorter way down. A removal (a break, a
+  blast, a dug anchor, a tree or sand detached, a block replaced by one of another kind) re-checks only the blocks
+  whose distance may have run through it: a block still touching a neighbour one step nearer keeps its distance and
+  the walk stops there (a block broken at the foot of a 40 × 30 wall re-checks at most its column; one high in it,
+  none: `Anchoring::walked`); the rest are refilled from the blocks round them that kept theirs (and from what was
+  placed or became an anchor), and what the refill never reaches is **cut off**.
+- **Falling.** Each 6-connected group of cut-off blocks becomes one natural piece (`Felling::detach_groups`, every
+  cell a carrier: it hits everything), however large, cleared in the same `Collapse` modification as the trees' and
+  sand's pieces, after them (in `Server::fell_tipped`, which every edit, blast, ball impact, chop and settle goes
+  through). It lands and settles as any piece (§4); its rebaked cells take distances again.
+- **Unknown distances.** A placed block with none (loaded from a save; written before this rule or straight into the
+  world) gets one the first time a change reaches it: its placed component is walked once and filled outward from
+  the anchors and kept distances round it; what that doesn't reach is cut off then. Distances are not saved.
+- **A test world's switch.** `ServerConfig::placed_blocks_fall` (on): off only in test worlds whose ground is written
+  by hand into an empty generator, all of it "placed" with no natural ground under it.
+- **Tests.** `dwell-world` `anchoring` (both faces: a cut pillar drops what was over the cut as one group; a broken
+  wall stays; a bridge stands on either pier and falls whole without both; dug ground drops what stood on it; unknown
+  distances worked out when a change reaches them; a block against a log is held; an L falls as one; a new block
+  shortens its neighbours' way down; a break in a big wall re-checks only round it; every kept distance against a
+  fresh search). `dwell-sim` `cannon_support.rs` (face A, the flat world's ground: a cannon on two plank pillars
+  stays on either and falls whole with them once both are cut — red with the cannon's old `needsSupport: below`,
+  its cell over the cut dropped and the cannon broken apart).

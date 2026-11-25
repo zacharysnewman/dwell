@@ -21,6 +21,8 @@ const BASE: i32 = FLAT_TOP_Y + 40;
 fn scene(f: FaceFrame, mode: &str) -> Fixture {
     let mut fx = Fixture::new(ServerConfig {
         generator_override: Some(empty_generator()),
+        // Ground written by hand into an empty world: all of it "placed".
+        placed_blocks_fall: false,
         spawn: Some(f.point([0.5, m_of_row(BASE), 0.5])),
         mode: mode.into(),
         ..flat()

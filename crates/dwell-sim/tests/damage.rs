@@ -20,6 +20,8 @@ const DIRT: [i32; 3] = [2, BASE - 1, 0];
 fn config(f: FaceFrame, mode: &str) -> ServerConfig {
     ServerConfig {
         generator_override: Some(empty_generator()),
+        // Ground written by hand into an empty world: all of it "placed".
+        placed_blocks_fall: false,
         spawn: Some(f.point([0.5, m_of_row(BASE), 0.5])),
         mode: mode.into(),
         one_hit_breaks: false,

@@ -329,6 +329,8 @@ fn near_scene_in(f: FaceFrame, ecology: bool, size: f64, store: Option<WorldStor
     let mut fx = Fixture::new(ServerConfig {
         store,
         generator_override: Some(dwell_world::empty_generator()),
+        // Ground written by hand into an empty world: all of it "placed".
+        placed_blocks_fall: false,
         spawn: Some(f.point([0.5, dwell_world::m_of_row(BASE), 0.5])),
         ecology,
         ecology_speed: 1.0,

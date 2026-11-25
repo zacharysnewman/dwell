@@ -6,13 +6,6 @@ pins it.
 
 ## Open
 
-### 243. A cannon breaks apart when the block under it breaks (owner, 2026-11-25)
-
-"they currently act unexpectedly by breaking apart when the block beneath them breaks, they shouldn't do that. All
-blocks should behave like that, falling when disconnected from their supporting (connecting to solid ground) blocks."
-Suspect: the cannon's four cells are `needsSupport: below`, so losing the block under them removes or detaches its
-cells one by one, not as one body. WORK_QUEUE first pass 3a.
-
 ### 240. The dam-break scene is built 544 m underground since 0.76
 
 Found 2026-11-24 (building `dam_blast`): `shared/theater/scenes/dam_break.json` puts its land at 32 m, the flat world's
@@ -1396,6 +1389,19 @@ the first ladder went there (it now waits for the cell).
 
 
 ## Fixed
+
+### 243. A cannon breaks apart when the block under it breaks (owner, 2026-11-25)
+
+"they currently act unexpectedly by breaking apart when the block beneath them breaks, they shouldn't do that. All
+blocks should behave like that, falling when disconnected from their supporting (connecting to solid ground) blocks."
+Suspect: the cannon's four cells are `needsSupport: below`, so losing the block under them removes or detaches its
+cells one by one, not as one body. WORK_QUEUE first pass 3a.
+
+Fixed 2026-11-25 (`claude/cannon-up-down`): the cannon has no `needsSupport`; every placed block is held by a way
+through placed blocks to natural ground, kept as a distance per block (`dwell_world::anchoring`, FELLING.md §9), and
+what a change cuts off falls as one body per connected group. Red → green: `dwell-sim` `cannon_support.rs`
+`a_cannon_on_two_pillars_falls_whole_once_both_are_cut` (with the old `needsSupport: below`, the cell over the cut
+dropped and only 3 of the cannon's 4 cells fell).
 
 ### 242. Cannonballs pass through players (owner, 2026-11-25)
 

@@ -41,7 +41,10 @@ Place building a run). The stored ramps' stone family is placeable (`"palette": 
 - `state`: the property values it places (`{"shape": "ramp", "half": "bottom", "flooded": "false"}`).
 - `facing`: `toward` turns the state's `facing` property to point back at the player (a stored
   ramp's facing is its downhill side, so uphill is ahead), `away` along the look; the nearest
-  compass direction to the look's level part (`block_interaction::faced`). On face B the state is
+  compass direction to the look's level part (`block_interaction::faced`). `away` looking more
+  down than out (pitch below −45°) places it facing `up`, more up than out (above 45°) facing
+  `down`, when its facing property has those values (owner, 2026-11-25: a cannon placed pointing up
+  or hanging pointing down; `vertical_facing`). On face B the state is
   mirrored (`FaceFrame::state`: `half` turned over).
 - `upper`: a 2-row piece whose upper cell is another state (the steep slope: `shape: steep_upper`
   over its `steep_lower`). It goes as two ordinary places, its lower half against the face aimed at,

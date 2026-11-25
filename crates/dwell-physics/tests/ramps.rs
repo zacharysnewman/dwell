@@ -1165,19 +1165,20 @@ fn a_slide_has_no_speed_cap_downhill() {
 
 #[test]
 fn the_air_holds_a_fall_to_its_top_speed() {
-    // Owner (2026-11-25): "add air drag … Ideally like 0.75 what actual air drag is." Falling, the
-    // drag (0.75 × ½ ρ Cd·A v² ÷ m, standing: 1.2 kg/m³, 0.7 m², 80 kg) meets gravity (20 m/s²) at
-    // √(g ÷ k) ≈ 71 m/s; without it a fall kept speeding up (240 m/s after 12 s).
+    // Owner (2026-11-25): "add air drag … Ideally like 0.75 what actual air drag is", then "Cut air
+    // drag in half." Falling, the drag (`air.scale` × ½ ρ Cd·A v² ÷ m, standing: 1.2 kg/m³, 0.7 m²,
+    // 80 kg) meets gravity (20 m/s²) at √(g ÷ k): ~101 m/s at 0.375 (71 at 0.75); without it a fall
+    // kept speeding up (320 m/s after 16 s).
     let mut w = PlayerTestWorld::new();
     let e = w.spawn(Vec3::new(0.5, 4000.0, 0.5));
-    w.step(ticks(12.0));
+    w.step(ticks(16.0));
     let a = w.config.air;
     let k = a.scale * 0.5 * a.density * a.drag_area / w.config.body.mass;
     let top = libm::sqrtf(w.config.body.gravity / k);
     let speed = -w.vel(e).y;
     assert!(
         (speed - top).abs() < 0.02 * top,
-        "falling at {speed} m/s after 12 s (the air's top speed {top})"
+        "falling at {speed} m/s after 16 s (the air's top speed {top})"
     );
 }
 

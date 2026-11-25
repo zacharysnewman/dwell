@@ -362,7 +362,9 @@ fn brush_strokes_reach_256_m_in_every_world() {
             join_streaming(&mut f, 1);
         }
         f.server.step();
-        f.send(1, fill([200, G + 3, 0], [2, 2, 2], M.stone));
+        // On the ground (a cube in the air falls: placed blocks cut off from the ground do,
+        // FELLING.md §9).
+        f.send(1, fill([200, G, 0], [2, 2, 2], M.stone));
         f.server.step();
         let stats = f.server.stats_of(1).unwrap();
         assert_eq!(
@@ -370,7 +372,7 @@ fn brush_strokes_reach_256_m_in_every_world() {
             RegionCheck::Ok,
             "sandbox {sandboxed}"
         );
-        assert_eq!(f.server.world().get_voxel(200, G + 3, 0), M.stone);
+        assert_eq!(f.server.world().get_voxel(200, G + 1, 0), M.stone);
         // Still bounded: 300 m is out of reach.
         f.send(1, fill([300, G + 3, 0], [1, 1, 1], M.stone));
         f.server.step();

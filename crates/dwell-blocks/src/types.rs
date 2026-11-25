@@ -16,6 +16,10 @@ pub enum Facing {
     East,
     South,
     West,
+    /// Up its face's sky (a cannon placed looking down; owner, 2026-11-25): no wall or compass side.
+    Up,
+    /// Down toward its face's ground (a cannon placed looking up).
+    Down,
 }
 
 /// A typed block property: its values are `PROPERTY_VALUES[first_value..][..value_count]`.
@@ -116,14 +120,15 @@ impl Cross {
 }
 
 /// The level unit vector (face-local, x and z) `facing` points along: north −z, east +x, south +z,
-/// west −x; zero for none.
+/// west −x; zero for none, up and down.
 pub fn facing_vector(facing: Facing) -> [f64; 3] {
     match facing {
         Facing::North => [0.0, 0.0, -1.0],
         Facing::East => [1.0, 0.0, 0.0],
         Facing::South => [0.0, 0.0, 1.0],
         Facing::West => [-1.0, 0.0, 0.0],
-        Facing::None => [0.0; 3],
+        // No level direction (a cannon standing up or hanging down).
+        Facing::None | Facing::Up | Facing::Down => [0.0; 3],
     }
 }
 

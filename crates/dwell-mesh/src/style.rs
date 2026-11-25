@@ -123,7 +123,7 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
         Facing::West => Some(1),
         Facing::South => Some(4),
         Facing::North => Some(5),
-        Facing::None => None,
+        Facing::None | Facing::Up | Facing::Down => None,
     };
     MaterialStyle {
         look,

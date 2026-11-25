@@ -330,6 +330,9 @@ fn an_edited_chunk_the_air_test_calls_empty_is_kept_and_streamed_explicitly() {
     let mut f = Fixture::new(ServerConfig {
         world_seed: 5,
         one_hit_breaks: true,
+        // A floating block in the sky, put by the test: held, not falling (FELLING.md §9), for
+        // the chunk's streaming under test.
+        placed_blocks_fall: false,
         ..ServerConfig::default()
     });
     let w = f.join(1, &Client::new(1));

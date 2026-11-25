@@ -376,3 +376,23 @@ Chrome on the M1, seed 0): saves hold only edited chunks and streaming loads the
 browser read the same (load 4.6 s against 7.2 s, GPU frame p50 9.0 against 8.7 ms, run to run noise); a chunk wholly in
 the core is filled with stone at once (no portal near), 0.37 ms a chunk when one is dug to.
 
+
+## 17. Standing up, hanging down, falling whole, shoving players (owner, 2026-11-25)
+
+WORK_QUEUE first pass 3a. Owner: *"I'd like to be able to place cannons pointing upward"*, *"Looking more down than
+out, it should place a cannon pointing up"* and, asked, *"Yes, down too"*; *"they currently act unexpectedly by
+breaking apart when the block beneath them breaks, they shouldn't do that"* (BUGS.md #243); and a ball's hit shoves a
+player, *"Shove only"* (BUGS.md #242, §6).
+
+- **Up and down.** The cannon's `facing` takes `up` and `down` (BLOCK_REGISTRY.md: a vertical facing stacks a column
+  along it). Placed (`facing: away`) looking more down than out it stands on end pointing up, looking more up than
+  out it hangs pointing down (ITEMS.md); its four cells one 1 m column 4 rows (2 m) tall from the cell placed on, up
+  or down. It fires straight along its barrel (no `elevationDeg`) from over its end's middle, as far past the end as
+  a level cannon's muzzle is past its front (`muzzleForwardM` + ½ m from the rear end); on a body the facing turns
+  with it. A ball fired up can carry a player standing on it, and comes back down.
+- **Held as any placed block.** The cannon has no `needsSupport`: a way through placed blocks to the ground holds it
+  (FELLING.md §9), so one standing on two pillars stays while either does, hung under a beam stays, and cut off it
+  falls whole as one body with whatever is cut off with it. (Before, each cell needed the one under it: losing one
+  dropped that cell and the rest went with it, `parts`, the cannon broken apart.)
+- **Tests.** `dwell-sim` `cannon_support.rs` (placed up: four rows, its ball straight up from over its top; placed
+  down under a beam: four rows hanging, no body; falling whole), `cannons.rs` `a_ball_shoves_a_player_…`.

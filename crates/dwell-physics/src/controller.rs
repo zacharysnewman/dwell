@@ -431,7 +431,7 @@ fn facing_vector(f: Facing) -> Vec3 {
         Facing::East => Vec3::new(1.0, 0.0, 0.0),
         Facing::South => Vec3::new(0.0, 0.0, 1.0),
         Facing::West => Vec3::new(-1.0, 0.0, 0.0),
-        Facing::None => Vec3::new(0.0, 0.0, 1.0),
+        Facing::None | Facing::Up | Facing::Down => Vec3::new(0.0, 0.0, 1.0),
     }
 }
 

@@ -29,6 +29,8 @@ const SECOND: u32 = SIM_HZ;
 fn config(f: FaceFrame, mode: &str) -> ServerConfig {
     ServerConfig {
         generator_override: Some(empty_generator()),
+        // Ground written by hand into an empty world: all of it "placed".
+        placed_blocks_fall: false,
         // Beside the crater, not in it.
         spawn: Some(f.point([8.5, m_of_row(BASE), 0.5])),
         mode: mode.into(),
