@@ -3252,6 +3252,29 @@ impl<S: Scene> Game<S> {
         self.body_hold = on;
     }
 
+    /// Whether a held interact sends `BodyHold` (the server said `bodies.hold`).
+    pub fn body_hold_on(&self) -> bool {
+        self.body_hold
+    }
+
+    /// Everything the server's capabilities switch on (`has`: whether it said one), set at the join
+    /// and again when the host changes the mode, from this one list (BUGS.md #244: hold E was set
+    /// only on a mode change, so at the join it never sent). Not the theater viewpoint, which
+    /// needs the mode too, or the grid capability list.
+    pub fn set_server_capabilities(&mut self, has: &dyn Fn(&str) -> bool) {
+        use dwell_protocol::capability_names as c;
+        self.set_structure_ops(has(c::STRUCTURES_PLACE));
+        self.set_body_ops(has(c::BODIES_PASTE));
+        // The moon (MOON_WORLD.md §7.3): the predictor and the view follow the player onto
+        // another grid only on a server that carries it there.
+        self.set_grid_frames(has(c::GRID_FRAMES));
+        self.set_swordplay(has(c::WEAPONS_CLASH));
+        self.set_hits_at_contact(has(c::HITS_AT_CONTACT));
+        self.set_markers_synced(has(c::MARKERS_PRIVATE));
+        self.set_blueprints_synced(has(c::BLUEPRINTS_WORLD));
+        self.set_body_hold(has(c::BODIES_HOLD));
+    }
+
     /// Interact held this frame (E, or X on a controller; owner, 2026-11-23: "Hold E"): once held
     /// `HOLD.hold_seconds` aimed at a moving body (not at a block of it that has a use: that was
     /// the tap's), `BodyHold` goes to the server every `BODY_HOLD_EVERY_MS`, which bails its hull

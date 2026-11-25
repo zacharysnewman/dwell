@@ -651,32 +651,9 @@ impl Client {
                 game.set_vitals_rules(session.vitals_rules());
                 game.set_instant_breaks(session.instant_breaks());
                 game.set_structures(session.structures());
-                game.set_structure_ops(
-                    session.capability(dwell_protocol::capability_names::STRUCTURES_PLACE),
-                );
-                game.set_body_ops(
-                    session.capability(dwell_protocol::capability_names::BODIES_PASTE),
-                );
-                // The moon (MOON_WORLD.md §7.3): the predictor and the view follow the player
-                // onto another grid only on a server that carries it there.
-                game.set_grid_frames(
-                    session.capability(dwell_protocol::capability_names::GRID_FRAMES),
-                );
-                game.set_swordplay(
-                    session.capability(dwell_protocol::capability_names::WEAPONS_CLASH),
-                );
-                game.set_hits_at_contact(
-                    session.capability(dwell_protocol::capability_names::HITS_AT_CONTACT),
-                );
-                game.set_markers_synced(
-                    session.capability(dwell_protocol::capability_names::MARKERS_PRIVATE),
-                );
-                game.set_blueprints_synced(
-                    session.capability(dwell_protocol::capability_names::BLUEPRINTS_WORLD),
-                );
-                game.set_body_hold(
-                    session.capability(dwell_protocol::capability_names::BODIES_HOLD),
-                );
+                // Everything the server's capabilities switch on (one list for the join and a
+                // mode change: BUGS.md #244, hold E was set only here, never at the join).
+                game.set_server_capabilities(&|c| session.capability(c));
                 // The theater camera as a simulation viewpoint (THEATER_MODE.md §7): creative
                 // on a server that takes it.
                 game.set_theater_viewpoint(
@@ -4265,29 +4242,15 @@ impl Inner {
             game.set_vitals_rules(s.vitals_rules());
             game.set_instant_breaks(s.instant_breaks());
             game.set_structures(s.structures());
-            game.set_structure_ops(
-                s.capability(dwell_protocol::capability_names::STRUCTURES_PLACE),
-            );
-            game.set_body_ops(s.capability(dwell_protocol::capability_names::BODIES_PASTE));
+            // Everything the server's capabilities switch on (the same list as a mode change's:
+            // BUGS.md #244, hold E was never set at the join).
+            game.set_server_capabilities(&|c| s.capability(c));
             game.set_grid_capabilities(
                 dwell_protocol::capability_names::ALL
                     .iter()
                     .filter(|c| s.capability(c))
                     .map(|c| c.to_string())
                     .collect(),
-            );
-            game.set_grid_frames(s.capability(dwell_protocol::capability_names::GRID_FRAMES));
-            game.set_swordplay(s.capability(dwell_protocol::capability_names::WEAPONS_CLASH));
-            game.set_hits_at_contact(
-                s.capability(dwell_protocol::capability_names::HITS_AT_CONTACT),
-            );
-            game.set_markers_synced(
-                s.capability(dwell_protocol::capability_names::MARKERS_PRIVATE),
-            );
-            // Set at the start too, not only when the host changes the mode: without it no
-            // blueprint could be placed (Blueprint, Test in town) until a mode change.
-            game.set_blueprints_synced(
-                s.capability(dwell_protocol::capability_names::BLUEPRINTS_WORLD),
             );
             game.set_theater_viewpoint(
                 s.capability(dwell_protocol::capability_names::THEATER_VIEWPOINT)
