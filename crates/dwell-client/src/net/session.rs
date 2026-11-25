@@ -51,6 +51,10 @@ pub enum SessionState {
     },
 }
 
+/// The most messages kept from the other channels during the handshake (`Session::early`): the
+/// bodies, blueprints and first chunks a join sends; past it they are dropped as before.
+const EARLY_MAX: usize = 8192;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct SessionStats {
     /// Smoothed round-trip time over the reliable control stream, ms.
@@ -91,6 +95,11 @@ pub struct Session {
     /// Gameplay messages (snapshots, player events, chunks, LOD), with their bytes, in arrival
     /// order: reliable ones wait here until the game drains them, so none is lost while it loads.
     game: VecDeque<(Message, Vec<u8>)>,
+    /// Messages on the other channels that came during the handshake (BUGS.md #222: on WebRTC
+    /// each channel arrives on its own, so the world channel's spawns can overtake the control
+    /// channel's registry and `Welcome`), as they came, replayed once it is over: at most
+    /// `EARLY_MAX`.
+    early: Vec<(Channel, Vec<u8>)>,
     changed: bool,
     /// The host changed the world's mode (`take_abilities_changed`).
     abilities_changed: bool,
@@ -149,6 +158,7 @@ impl Session {
             stats: SessionStats::default(),
             out: Vec::new(),
             game: VecDeque::new(),
+            early: Vec::new(),
             changed: true,
             abilities_changed: false,
             registry_parts: Vec::new(),
@@ -722,6 +732,23 @@ impl Session {
     }
 
     pub fn on_reliable(&mut self, channel: Channel, bytes: &[u8], now: f64) {
+        // Ahead of the handshake's end (its registry maps their ids): kept for after it.
+        if channel != Channel::Control && self.state == SessionState::Handshaking {
+            if self.early.len() < EARLY_MAX {
+                self.early.push((channel, bytes.to_vec()));
+            }
+            return;
+        }
+        self.on_reliable_now(channel, bytes, now);
+        // The handshake over: what came ahead of it, in order.
+        if self.state != SessionState::Handshaking && !self.early.is_empty() {
+            for (channel, bytes) in std::mem::take(&mut self.early) {
+                self.on_reliable_now(channel, &bytes, now);
+            }
+        }
+    }
+
+    fn on_reliable_now(&mut self, channel: Channel, bytes: &[u8], now: f64) {
         let Some(mut m) = Message::decode(bytes) else {
             self.malformed();
             return;
@@ -1144,6 +1171,54 @@ mod tests {
         assert!(matches!(s.state(), SessionState::Joined { .. }));
         s.take_out();
         s
+    }
+
+    #[test]
+    fn a_world_message_that_overtakes_the_welcome_is_kept_for_the_game() {
+        // BUGS.md #222 (owner, 2026-11-24: two Chrome windows, "Host" and a code from the menu:
+        // "Any dynamic bodies added before joining were not visible"). On WebRTC each channel
+        // arrives on its own, so the world channel's spawns of the bodies already there can come
+        // before the control channel's registry and `Welcome`: they were dropped. Kept and handed
+        // to the game once joined, their ids mapped by the registry that came after them.
+        let (payload, p) = ladderless_registry();
+        let sand = server_id(&p, "dwell:sand[flooded=false]");
+        assert_ne!(
+            sand,
+            dwell_blocks::require("dwell:sand"),
+            "shifted on the server"
+        );
+        let (_, mut s) = setup();
+        let spawn = Message::EntitySpawn(EntitySpawn {
+            id: 9,
+            origin: [1.5, 2300.25, -4.5],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            kind: 1,
+            carriers: 0,
+            cells: vec![dwell_protocol::PieceCellNet {
+                offset: [0, 0, 0],
+                state: sand,
+            }],
+        });
+        s.on_reliable(Channel::World, &spawn.encode(), 1000.0);
+        send_registry(&mut s, &payload, 1 << 16);
+        s.on_reliable(Channel::Control, &welcome(0).encode(), 1000.0);
+        // A registry unlike this build's asks the player first (Confirming).
+        s.accept_registry();
+        assert!(s.joined(), "joined");
+        let got: Vec<Message> = std::iter::from_fn(|| s.next_game())
+            .map(|(m, _)| m)
+            .collect();
+        let Some(Message::EntitySpawn(e)) =
+            got.iter().find(|m| matches!(m, Message::EntitySpawn(_)))
+        else {
+            panic!("the spawn reached the game: {got:?}");
+        };
+        assert_eq!(e.id, 9);
+        assert_eq!(
+            dwell_blocks::info(e.cells[0].state).name,
+            "dwell:sand[flooded=false]",
+            "its state in this client's ids"
+        );
     }
 
     #[test]
