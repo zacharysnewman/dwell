@@ -793,7 +793,9 @@ fn a_slide_up_a_ramp_flies_off_its_top_at_the_ramps_angle() {
     let peak: fn(i32, i32) -> i32 = |_, z| if (0..3).contains(&z) { z + 1 } else { 0 };
     let steep: fn(i32, i32) -> i32 = |_, z| if z < 3 { 0 } else { 2 };
     for (name, rows, speed, angle) in [
-        ("one ½ m ramp", one, 9.6, 26.57),
+        // (A 9.6 m/s case until 2026-11-25: with the slide's speed turned along the face, its
+        // friction along the slope and the climb paid for, a slide that slow tops a single ½ m
+        // ramp at ~7 m/s and leaves at ~21° within a tick of gravity; the faster cases pin it.)
         ("one ½ m ramp", one, 11.6, 26.57),
         ("two ½ m ramps", two, 11.6, 26.57),
         ("three ½ m ramps to a peak", peak, 11.6, 26.57),
@@ -849,4 +851,418 @@ fn a_slide_down_a_hill_keeps_to_its_ramps() {
             );
         }
     }
+}
+
+/// Flat ground to z = 0, then four ½ m ramps (26.57°) rising toward +z, then `steep` 1 m ramps
+/// (45°), then `end`: a plateau at the top, a drop to the floor, or a wall 100 m high.
+fn launch_course(steep: i32, end: i32) -> impl Fn(i32, i32) -> i32 + Clone {
+    move |_, z| {
+        let top = 4 + 2 * steep;
+        if z < 0 {
+            0
+        } else if z < 4 {
+            z + 1
+        } else if z < 4 + steep {
+            4 + 2 * (z - 3)
+        } else {
+            match end {
+                0 => top,
+                1 => 0,
+                _ => 200,
+            }
+        }
+    }
+}
+
+/// A slide along +z at `speed` m/s from z = −24 over `rows` (crouch and forward held). The 3D
+/// speed just before the first ramp, the velocity (rise, along) the tick it left the ground past
+/// the ramps' foot, and the deepest the feet went under the surface or the body into a wall at
+/// z = `wall`.
+fn launch(rows: &dyn Fn(i32, i32) -> i32, speed: f32, wall: f32) -> (f32, Option<(f32, f32)>, f32) {
+    let mut w = PlayerTestWorld::new();
+    terrain(&mut w, (-4, -40, 4, 40), rows);
+    // Kicked 24 m before the ramps (at 50 m/s it lands into its slide ~9 m out): it arrives a few
+    // m/s under the speed asked (the slide's friction and the air), and climbs on its momentum.
+    let e = w.spawn(Vec3::new(0.5, 0.3, -24.0));
+    w.kick(0, e, Vec3::new(0.0, 0.0, speed));
+    w.set_input(|_, _| input(0.0, 1.0, false, false, true, 0.0, 0.0));
+    let radius = w.players.config(e).body.radius;
+    let (mut before, mut left, mut deepest) = (0.0, None, 0.0f32);
+    for _ in 0..ticks(3.0) {
+        w.step(1);
+        let (p, v) = (w.pos(e), w.vel(e));
+        if p.z < 38.0 {
+            // (Past the built ground the body falls on.)
+            deepest = deepest
+                .max(surface(rows, p.x, p.z) - w.feet(e))
+                .max(p.z + radius - wall);
+        }
+        if p.z < 0.0 {
+            before = v.length();
+        } else if left.is_none() && !w.c(e).ground.grounded {
+            left = Some((v.y, v.z));
+        }
+    }
+    (before, left, deepest)
+}
+
+#[test]
+fn a_slide_launches_along_the_last_surface_it_slid_up() {
+    // Owner (2026-11-24): "Sliding off ramps should maintain velocity in the ramps direction,
+    // flat -> shallow slope = shallow launch vector, flat -> shallow -> steep slope = steep launch
+    // vector, flat -> shallow -> steep -> wall = vertical launch vector. Use 25m/s as the test
+    // velocity. Test 50m/s for overpenetrating terrain, shouldn't." A slide kept its flat speed
+    // onto every steeper ramp and added the climb on top (25 m/s became 24 m/s after 7 m of
+    // ramps, 50 m/s 66 m/s: faster up a hill than along the flat), and into a wall it stopped dead
+    // and slid back down. Now each steeper face turns the slide's whole speed along it, and a wall
+    // turns it straight up.
+    for speed in [25.0, 50.0] {
+        for (name, rows, wall, angle) in [
+            ("a shallow ramp", launch_course(0, 1), f32::MAX, 26.57),
+            ("shallow then steep", launch_course(4, 0), f32::MAX, 45.0),
+            (
+                "shallow, steep, then a wall",
+                launch_course(4, 2),
+                8.0,
+                90.0,
+            ),
+        ] {
+            let (before, left, deepest) = launch(&rows, speed, wall);
+            let (rise, along) = left.unwrap_or_else(|| panic!("{name} at {speed}: never left"));
+            let leaving = libm::atan2f(rise, along).to_degrees();
+            let out = libm::hypotf(rise, along);
+            assert!(
+                (leaving - angle).abs() < 4.0,
+                "{name} at {speed} m/s: left at {leaving}° (the last surface {angle}°)"
+            );
+            assert!(
+                out <= before && out > 0.4 * before,
+                "{name} at {speed} m/s: left at {out} m/s, arriving at {before}"
+            );
+            assert!(
+                deepest < 0.05,
+                "{name} at {speed} m/s: {deepest} m into the terrain"
+            );
+        }
+    }
+}
+
+#[test]
+fn holding_into_a_wall_in_the_air_never_catches_on_its_cells() {
+    // Found with the slide's wall launch (2026-11-24, BUGS.md #241): holding forward into a wall in
+    // the air, the capsule sank a millimetre or two into the wall and caught on the faces between
+    // its cells, crossing at most one cell a tick along the wall (up it ½ m a tick: 40 m/s held to
+    // 30; along it 1 m a tick: 80 m/s held to 60) and, slower, stopping at every other one. Fixed in
+    // collision (owner, 2026-11-25): the capsule's contact skin holds it 5 mm off terrain walls.
+    let wall: fn(i32, i32) -> i32 = |_, z| if z >= 8 { 200 } else { 0 };
+    let dt = 1.0 / 60.0;
+    for (name, kick, ticks_run) in [
+        ("up the wall", Vec3::new(0.0, 40.0, 0.0), ticks(3.5)),
+        ("along the wall", Vec3::new(80.0, 20.0, 0.0), 30),
+    ] {
+        let mut w = PlayerTestWorld::new();
+        terrain(&mut w, (-60, -10, 60, 12), &wall);
+        let e = w.spawn(Vec3::new(-50.0, 0.3, 7.6));
+        w.kick(10, e, kick);
+        w.set_input(|_, _| input(0.0, 1.0, false, false, false, 0.0, 0.0));
+        w.step(11);
+        let mut worst = 0.0f32;
+        for _ in 0..ticks_run {
+            let (p, v) = (w.pos(e), w.vel(e));
+            w.step(1);
+            if !w.c(e).ground.grounded {
+                // Each tick moves the body by its velocity (gravity's part aside).
+                let moved = w.pos(e) - p;
+                let off = libm::hypotf(moved.x - v.x * dt, moved.y - v.y * dt) - 20.0 * dt * dt;
+                worst = worst.max(off);
+            }
+        }
+        assert!(
+            worst < 0.05,
+            "{name}: caught on the wall, {worst} m off a tick's motion"
+        );
+    }
+}
+
+/// A named course's column heights (rows) by (x, z).
+type Course = Box<dyn Fn(i32, i32) -> i32>;
+
+/// The launch courses' tick-by-tick traces for the owner's before/after chart (2026-11-25):
+/// `DWELL_TRACE_OUT=<file> cargo test -p dwell-physics --test ramps trace_launch_courses -- --ignored`.
+#[test]
+#[ignore]
+fn trace_launch_courses() {
+    let downhill = |_: i32, z: i32| -> i32 {
+        if z < 0 {
+            16
+        } else if z < 4 {
+            16 - 2 * (z + 1)
+        } else {
+            (8 - (z - 3)).max(0)
+        }
+    };
+    let courses: Vec<(&str, Course)> = vec![
+        ("shallow", Box::new(launch_course(0, 1))),
+        ("steep", Box::new(launch_course(4, 0))),
+        ("wall", Box::new(launch_course(4, 2))),
+        ("flat_wall", Box::new(|_, z| if z >= 0 { 200 } else { 0 })),
+        ("downhill", Box::new(downhill)),
+    ];
+    let mut out = String::from("[");
+    for (name, rows) in &courses {
+        for speed in [25.0f32, 50.0] {
+            let mut w = PlayerTestWorld::new();
+            terrain(&mut w, (-4, -40, 4, 40), rows);
+            let e = w.spawn(Vec3::new(0.5, surface(rows, 0.5, -30.0) + 0.3, -30.0));
+            w.kick(0, e, Vec3::new(0.0, 0.0, speed));
+            w.set_input(|_, _| input(0.0, 1.0, false, false, true, 0.0, 0.0));
+            let mut pts = Vec::new();
+            for t in 0..ticks(3.0) {
+                w.step(1);
+                let (p, v) = (w.pos(e), w.vel(e));
+                if (-8.0..38.0).contains(&p.z) {
+                    pts.push(format!(
+                        "[{t},{:.3},{:.3},{:.2},{:.2},{}]",
+                        p.z,
+                        w.feet(e),
+                        v.z,
+                        v.y,
+                        u8::from(w.c(e).ground.grounded)
+                    ));
+                }
+            }
+            if out.len() > 1 {
+                out.push(',');
+            }
+            let ground: Vec<String> = (-80..380)
+                .map(|i| format!("{:.3}", surface(rows, 0.5, i as f32 * 0.1)))
+                .collect();
+            out += &format!(
+                "{{\"course\":\"{name}\",\"speed\":{speed},\"ground\":[{}],\"pts\":[{}]}}",
+                ground.join(","),
+                pts.join(",")
+            );
+        }
+    }
+    out.push(']');
+    std::fs::write(
+        std::env::var("DWELL_TRACE_OUT").expect("DWELL_TRACE_OUT"),
+        out,
+    )
+    .unwrap();
+}
+
+/// Slides on long even slopes for the owner's friction comparison (2026-11-25):
+/// `DWELL_TRACE_OUT=<file> cargo test -p dwell-physics --test ramps trace_slide_slopes -- --ignored`.
+#[test]
+#[ignore]
+fn trace_slide_slopes() {
+    let courses: Vec<(&str, Course)> = vec![
+        ("flat", Box::new(|_, _| 0)),
+        ("down_half", Box::new(|_, z| 80 - (z + 40).clamp(0, 80))),
+        (
+            "down_steep",
+            Box::new(|_, z| 160 - 2 * (z + 40).clamp(0, 80)),
+        ),
+        ("up_half", Box::new(|_, z| (z + 32).clamp(0, 80))),
+        ("up_steep", Box::new(|_, z| 2 * (z + 32).clamp(0, 80))),
+    ];
+    let mut out = String::from("[");
+    for (name, rows) in &courses {
+        for speed in [9.5f32, 25.0] {
+            let mut w = PlayerTestWorld::new();
+            terrain(&mut w, (-4, -42, 4, 42), rows);
+            let e = w.spawn(Vec3::new(0.5, surface(rows, 0.5, -30.0) + 0.3, -30.0));
+            w.kick(0, e, Vec3::new(0.0, 0.0, speed));
+            w.set_input(|_, _| input(0.0, 1.0, false, false, true, 0.0, 0.0));
+            let mut pts = Vec::new();
+            for t in 0..ticks(4.0) {
+                w.step(1);
+                let (p, v) = (w.pos(e), w.vel(e));
+                if p.z > 38.0 || p.z < -40.0 {
+                    break;
+                }
+                pts.push(format!(
+                    "[{t},{:.3},{:.3},{:.2},{}]",
+                    p.z,
+                    w.feet(e),
+                    libm::hypotf(v.y, v.z) * if v.z < 0.0 { -1.0 } else { 1.0 },
+                    u8::from(w.c(e).ground.grounded)
+                ));
+            }
+            if out.len() > 1 {
+                out.push(',');
+            }
+            out += &format!(
+                "{{\"course\":\"{name}\",\"speed\":{speed},\"pts\":[{}]}}",
+                pts.join(",")
+            );
+        }
+    }
+    out.push(']');
+    std::fs::write(
+        std::env::var("DWELL_TRACE_OUT").expect("DWELL_TRACE_OUT"),
+        out,
+    )
+    .unwrap();
+}
+
+/// Long even slopes along +z (rows): flat, ½ m ramps (26.57°) or 1 m ramps (45°), down or up.
+fn slope(steep: bool, down: bool) -> impl Fn(i32, i32) -> i32 + Clone {
+    let per = if steep { 2 } else { 1 };
+    move |_, z| {
+        let run = (z + 40).clamp(0, 80);
+        if down { per * (80 - run) } else { per * run }
+    }
+}
+
+/// A crouched slide kicked along +z at `speed` from z = `from` over `rows`, for `seconds`: each
+/// tick's (z, feet, whole speed, grounded).
+fn slide_trace(
+    rows: &dyn Fn(i32, i32) -> i32,
+    from: f32,
+    speed: f32,
+    seconds: f32,
+) -> Vec<(f32, f32, f32, bool)> {
+    let mut w = PlayerTestWorld::new();
+    terrain(&mut w, (-4, -42, 4, 42), rows);
+    let e = w.spawn(Vec3::new(0.5, surface(rows, 0.5, from) + 0.3, from));
+    w.kick(0, e, Vec3::new(0.0, 0.0, speed));
+    w.set_input(|_, _| input(0.0, 1.0, false, false, true, 0.0, 0.0));
+    let mut out = Vec::new();
+    for _ in 0..ticks(seconds) {
+        w.step(1);
+        let (p, v) = (w.pos(e), w.vel(e));
+        if !(-41.0..41.0).contains(&p.z) {
+            break;
+        }
+        out.push((p.z, w.feet(e), v.length(), w.c(e).ground.grounded));
+    }
+    out
+}
+
+#[test]
+fn a_slide_has_no_speed_cap_downhill() {
+    // Owner (2026-11-25): "I definitely want to remove the two speed caps." A slide down ½ m ramps
+    // was held at 14 m/s across (15.7 along the slope), and a crouched one down 45° at 16.1; now
+    // gravity, the slide's friction and the air's drag alone set its speed, so it keeps speeding
+    // up past them on a long hill (toward the air's top speed, ~45 m/s on ½ m ramps).
+    for (name, steep, seconds, cap) in [("½ m ramps", false, 4.0, 15.7), ("45°", true, 2.5, 16.1)]
+    {
+        let rows = slope(steep, true);
+        let trace = slide_trace(&rows, -38.0, 9.5, seconds);
+        let fastest = trace
+            .iter()
+            .filter(|t| t.3)
+            .map(|t| t.2)
+            .fold(0.0f32, f32::max);
+        assert!(
+            fastest > cap + 3.0,
+            "down {name}: {fastest} m/s at most (the old cap {cap})"
+        );
+    }
+}
+
+#[test]
+fn the_air_holds_a_fall_to_its_top_speed() {
+    // Owner (2026-11-25): "add air drag … Ideally like 0.75 what actual air drag is." Falling, the
+    // drag (0.75 × ½ ρ Cd·A v² ÷ m, standing: 1.2 kg/m³, 0.7 m², 80 kg) meets gravity (20 m/s²) at
+    // √(g ÷ k) ≈ 71 m/s; without it a fall kept speeding up (240 m/s after 12 s).
+    let mut w = PlayerTestWorld::new();
+    let e = w.spawn(Vec3::new(0.5, 4000.0, 0.5));
+    w.step(ticks(12.0));
+    let a = w.config.air;
+    let k = a.scale * 0.5 * a.density * a.drag_area / w.config.body.mass;
+    let top = libm::sqrtf(w.config.body.gravity / k);
+    let speed = -w.vel(e).y;
+    assert!(
+        (speed - top).abs() < 0.02 * top,
+        "falling at {speed} m/s after 12 s (the air's top speed {top})"
+    );
+}
+
+#[test]
+fn a_slides_gravity_and_friction_act_along_the_surface() {
+    // Owner (2026-11-25), on how Dwell differs from reality: friction follows the slope (μ g cos θ)
+    // and the slide's speed is along the surface, not across. Up ½ m ramps a slide now slows along
+    // the slope by g sin θ + μ g cos θ (+ the air): 8.9 + 4.5 m/s². Before, 8.9 + 5 m/s² came off
+    // its run across, 15.6 m/s² along the slope.
+    let rows = slope(false, false);
+    let trace = slide_trace(&rows, -36.0, 20.0, 1.5);
+    let on: Vec<_> = trace.iter().filter(|t| t.0 > -30.0 && t.3).collect();
+    assert!(on.len() > 30, "slid up the ramps: {} ticks", on.len());
+    let (a, b) = (on[0], on[20]);
+    let measured = (a.2 - b.2) / (20.0 / 60.0);
+    let w = PlayerTestWorld::new();
+    let (g, mu) = (w.config.body.gravity, w.config.sprint_slide.friction);
+    let air = w.config.air;
+    let k = air.scale * 0.5 * air.density * air.crouch_drag_area / w.config.body.mass;
+    let (sin, cos) = (0.5f32 / libm::sqrtf(1.25), 1.0 / libm::sqrtf(1.25));
+    let mid = 0.5 * (a.2 + b.2);
+    let expected = g * sin + mu * g * cos + k * mid * mid;
+    assert!(
+        (measured - expected).abs() < 0.04 * expected,
+        "slowed {measured} m/s² along the slope (expected {expected})"
+    );
+}
+
+#[test]
+fn every_corner_keeps_a_slides_speed() {
+    // Owner (2026-11-25): "Corner rule, keep speed at corner." Over an edge onto a 45° downslope the
+    // glue kept the run and added the drop (12 → 17 m/s at once); at a 45° hill's bottom the slide
+    // kept only its run (×0.71). Now the speed along the surface carries through every corner:
+    // only gravity, friction and the air change it, a tick or two's worth.
+    let over: fn(i32, i32) -> i32 = |_, z| if z < 0 { 24 } else { (24 - 2 * z).max(0) };
+    let bottom: fn(i32, i32) -> i32 = |_, z| if z < 0 { (-2 * z).min(24) } else { 0 };
+    for (name, rows, from, speed, corner) in [
+        ("over an edge onto 45°", over, -6.0, 12.0, 0.0),
+        ("a 45° hill's bottom", bottom, -9.0, 10.0, 0.0),
+    ] {
+        let trace = slide_trace(&rows, from, speed, 2.0);
+        let before = trace
+            .iter()
+            .rev()
+            .find(|t| t.0 < corner - 0.3 && t.3)
+            .expect("before")
+            .2;
+        let after = trace
+            .iter()
+            .find(|t| t.0 > corner + 0.6 && t.3)
+            .expect("after")
+            .2;
+        assert!(
+            (after - before).abs() < 1.5,
+            "{name}: {before} → {after} m/s"
+        );
+    }
+}
+
+#[test]
+fn a_ceiling_takes_only_the_speed_into_it() {
+    // Owner (2026-11-25): "Ceiling shouldn't hard stop, should work like walls." The ceiling probe
+    // zeroed every rise it met, 10 cm before the contact and whatever the ceiling's angle, so a
+    // jump into the 45° underside of a ramp stopped dead. Now, as against a wall, the contact takes
+    // only the speed into it: the rise turns along the underside.
+    let mut w = PlayerTestWorld::new();
+    w.floor();
+    let cells = steep_cells("dwell:grass", dwell_world::ramps::RampFacing::North, true)
+        .expect("hanging steep ramp");
+    for x in -3..=3 {
+        for z in -3..=3 {
+            for (k, &c) in cells.iter().enumerate() {
+                w.set_cell(x, 8 + k as i32, z, c);
+            }
+        }
+    }
+    let e = w.spawn(Vec3::new(0.5, 0.0, 0.5));
+    w.kick(5, e, Vec3::new(0.0, 14.0, 0.0));
+    let mut across = 0.0f32;
+    for _ in 0..ticks(1.0) {
+        w.step(1);
+        across = across.max(libm::hypotf(w.vel(e).x, w.vel(e).z));
+    }
+    assert!(
+        across > 2.0,
+        "turned along the underside: at most {across} m/s across"
+    );
 }

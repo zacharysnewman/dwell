@@ -119,9 +119,9 @@ fn friction_slows_the_slide_to_the_crouch_speed_where_it_ends() {
         last = s;
         ticks_sliding += 1;
     }
-    // (start − crouch speed) / friction: 1.32 s at the defaults.
+    // (start − crouch speed) / (μ g): 1.32 s at the defaults (the air's drag takes a little more).
     let s = w.config.sprint_slide;
-    let expected = (start - w.config.crouch.speed) / s.friction;
+    let expected = (start - w.config.crouch.speed) / (s.friction * w.config.body.gravity);
     let took = ticks_sliding as f32 / 60.0;
     assert!(
         (took - expected).abs() < 0.1,
@@ -251,7 +251,7 @@ fn releasing_crouch_under_a_low_ceiling_stays_crouched_and_stands_once_clear() {
 #[test]
 fn a_jump_out_of_a_slide_keeps_its_momentum() {
     let jump_distance = |sprint: bool| {
-        let mut w = PlayerTestWorld::new();
+        let mut w = PlayerTestWorld::with_config(without_air());
         w.floor_at(0, 48);
         let e = w.spawn(v(0.5, 0.0, -30.0));
         let jump = 75;
@@ -661,7 +661,7 @@ fn landing_with_crouch_held_slides_without_sprint_held() {
     // … you should start sliding regardless of sprint being held." Before, letting go of sprint in
     // the air steered a crouched player's speed down to the walk speed (5 m/s), under
     // `min_start_speed`, so the landing only crouched.
-    let mut w = PlayerTestWorld::new();
+    let mut w = PlayerTestWorld::with_config(without_air());
     let e = run_off_a_ledge(&mut w, true);
     w.set_input(|_, _| input(0.0, 1.0, false, false, true, 0.0, 0.0));
     let at = w.horizontal_speed(e);

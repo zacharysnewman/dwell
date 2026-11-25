@@ -491,7 +491,7 @@ fn air_control_scales_airborne_acceleration() {
 /// Runs (or walks) off a 1 m ledge along +z, then in the air holds forward with run `air_run`.
 /// The horizontal speed at the edge, and the slowest and fastest in the air until landing.
 fn off_a_ledge_then(run: bool, air_run: bool) -> (f32, f32, f32) {
-    let mut w = PlayerTestWorld::new();
+    let mut w = PlayerTestWorld::with_config(without_air());
     w.floor_at(0, 64);
     w.fill(-4, 0, -40, 4, 1, -10, cube_block());
     let e = w.spawn(v(0.5, 2.0, -30.0));
@@ -546,7 +546,7 @@ fn a_ground_kick_is_absorbed_then_decays() {
 
 #[test]
 fn an_air_kick_keeps_its_momentum() {
-    let mut w = PlayerTestWorld::new();
+    let mut w = PlayerTestWorld::with_config(without_air());
     let e = w.spawn(v(0.0, 30.0, 0.0));
     w.kick(5, e, v(6.0, 0.0, 0.0));
     w.step(8 + 60);
@@ -649,7 +649,7 @@ fn crouching_against_a_wall_never_moves_the_player_backwards() {
 /// Run along +z for 1 s, jump on the last tick, then `air` for `seconds` in the air: the horizontal
 /// velocity (x, z) at the end, and whether it stayed in the air throughout.
 fn running_jump_then(air: Input, seconds: f32) -> (Vec3, bool) {
-    let mut w = PlayerTestWorld::new();
+    let mut w = PlayerTestWorld::with_config(without_air());
     w.floor();
     let e = w.spawn(v(0.5, 0.05, 0.5));
     let go = ticks(1.0);
@@ -737,7 +737,7 @@ fn a_kick_and_walking_do_not_stack() {
     // Until 0.49.18 the player's own speed was added on top of a knockback's: kicked at 12 m/s
     // with run held, the body went 17 m/s on the ground and 15 (10 + 5) in the air. Now holding
     // forward adds nothing to a body already faster than the target.
-    let mut w = PlayerTestWorld::new();
+    let mut w = PlayerTestWorld::with_config(without_air());
     w.floor();
     let e = w.spawn(v(0.5, 0.05, 0.5));
     w.step(5);
@@ -760,7 +760,7 @@ fn a_kick_and_walking_do_not_stack() {
         approx(w.horizontal_speed(e), 8.0, 0.05),
         "friction to the run speed"
     );
-    let mut w = PlayerTestWorld::new();
+    let mut w = PlayerTestWorld::with_config(without_air());
     w.floor();
     let e = w.spawn(v(0.5, 30.0, 0.5));
     w.kick(0, e, v(0.0, 0.0, 10.0));

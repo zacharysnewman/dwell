@@ -722,7 +722,8 @@ impl Physics {
                 {
                     Self::TIER1_CONTACT_REACH
                 } else {
-                    prediction
+                    // A wall the skin holds the player off (`PLAYER_WALL_SKIN`) is still touched.
+                    prediction + PLAYER_WALL_SKIN
                 };
                 for m in pair.manifolds() {
                     let touching = m
@@ -779,11 +780,12 @@ impl PhysicsHooks for PinchGrip {
         };
         let ((u1, y1), (u2, y2)) = (user(ctx.rigid_body1), user(ctx.rigid_body2));
         let player = |u: u128| u != 0 && u != TIER1_BODY;
-        // The push-out normal toward the player (the manifold's points from collider 1 to 2).
-        let (sign, y) = if player(u2) && u1 == TIER1_BODY {
-            (1.0, y2)
-        } else if player(u1) && u2 == TIER1_BODY {
-            (-1.0, y1)
+        // The push-out normal toward the player (the manifold's points from collider 1 to 2), and
+        // what the player touches.
+        let (sign, y, other) = if player(u2) {
+            (1.0, y2, u1)
+        } else if player(u1) {
+            (-1.0, y1, u2)
         } else {
             return;
         };
@@ -791,12 +793,28 @@ impl PhysicsHooks for PinchGrip {
             return;
         };
         let n = *m.normal * sign;
-        let down = -FaceFrame::at_height(y).vector(n.to_array())[1];
-        if down > PINCH_MIN_DOWN {
+        let up = FaceFrame::at_height(y).vector(n.to_array())[1];
+        // The capsule's contact skin (`PLAYER_WALL_SKIN`) holds it off the terrain's walls only:
+        // every other contact (the ground, ramps, ceilings, pieces, players) takes it back.
+        if other != 0 || up.abs() > WALL_SKIN_MAX_UP {
+            for c in m.solver_contacts.iter_mut() {
+                c.dist += PLAYER_WALL_SKIN;
+            }
+        }
+        if other == TIER1_BODY && -up > PINCH_MIN_DOWN {
             *m.friction = PIECE_FRICTION;
         }
     }
 }
+
+/// The player capsule's contact skin (m), kept on the terrain's walls only ([`PinchGrip`] takes it
+/// back from every other contact). Held into a wall of cells, the bare capsule sank a millimetre or
+/// two into it and caught on the faces between its cells, moving along the wall at most a cell a
+/// tick and stopping at every other one slower (BUGS.md #241); 5 mm off the wall it never meets them.
+pub const PLAYER_WALL_SKIN: f64 = 0.005;
+/// A contact whose push-out normal's face-local y is within this of 0 is a wall (steeper than
+/// ~64°: a 45° ramp is not one).
+pub const WALL_SKIN_MAX_UP: f64 = 0.44;
 
 /// A piece cell's friction coefficient (rapier averages the two colliders' coefficients).
 pub const PIECE_FRICTION: f64 = 0.8;

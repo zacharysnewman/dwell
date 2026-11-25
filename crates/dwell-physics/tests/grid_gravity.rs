@@ -13,8 +13,10 @@ use dwell_physics::controller::Input;
 const MOON: f32 = 0.1667;
 
 /// The highest the feet rise over the floor after one jump, under `scale` × the config's gravity.
+/// Without the air's drag (PLAYER_CONTROLLER.md §6.15): the rule under test is gravity's scale (the
+/// moon has no air; the drag is one air everywhere for now, asked of the owner 2026-11-25).
 fn jump_height(scale: f32) -> (f32, i32) {
-    let mut w = PlayerTestWorld::new();
+    let mut w = PlayerTestWorld::with_config(without_air());
     w.floor_at(0, 40);
     let e = w.spawn(Vec3::new(0.5, 0.0, 0.5));
     w.players.set_gravity_scale(e, scale);

@@ -157,7 +157,7 @@ The server tick (ARCHITECTURE §4.2) runs, for every player, **before** `Physics
 | # | Pass | PPC origin | Job |
 |---|---|---|---|
 | 1 | `step_input` | `PPCInputSystem` | `previous_input = input`; take this tick's input; switch face if across the midplane (§11); clamp `|move| <= 1` |
-| 2 | `step_probe` | `PPCProbeSystem` | Ground ring (16 + centre), ceiling ring, 4 axis wall rays via `VoxelQuery` + moving bodies (§5) |
+| 2 | `step_probe` | `PPCProbeSystem` | Ground ring (16 + centre), ceiling ring (the debug overlay's flag only since 2026-11-25: ceilings stop a rise by their contact, §6.11), 4 axis wall rays via `VoxelQuery` + moving bodies (§5) |
 | 3 | `step_platform` | `PPCPlatformSystem` | Velocity of the ground under the player (`v + ω × r` for Tier 1 bodies; zero for terrain; zero for players unless `carried_by_characters`) |
 | 4 | `step_fly` | — (Dwell) | Exclusive creative-flight layer while `fly` is held (§6.7) |
 | 5 | `step_crouch` | `PPCCrouchSystem` | Hold-to-crouch; shape swap; feet planted when grounded, head kept in the air; stand-up overlap test; the sprint slide's cooldown and start, and its start on landing crouched (§6.9) |
@@ -165,10 +165,10 @@ The server tick (ARCHITECTURE §4.2) runs, for every player, **before** `Physics
 | 7 | `step_climb` | `PPCClimbSystem` | Exclusive layer on climbable voxels (§6.3); not while flying |
 | 8 | `step_swim` | — (Dwell) | Exclusive layer in water voxels (§6.4) and in the flip band (§11); not while climbing or flying |
 | 9 | `step_horizontal` | `PPCMovementLayerSystem` | Absorb external; on ground steeper than 44° the slide (§6.8); else during a sprint slide the sprint slide (§6.9); else the walking rule on the whole velocity in the platform's frame: on the ground accel/reverse along the input up to the walking speed, friction above it and when nothing is held; in the air input only adds, up to `max(walk speed, |v|)`, and turns a faster body (§6.12); step-up; edge guard |
-| 10 | `step_vertical` | `PPCVerticalLayerSystem` | Gravity; walk-off keeps platform Y; ceiling cancel; launch detection; ground following + snap |
+| 10 | `step_vertical` | `PPCVerticalLayerSystem` | Gravity and the air's drag (§6.15); walk-off keeps platform Y; launch detection; ground following + snap; a slide's wall launch (§6.11) |
 | 10b | `step_fall` | — (Dwell) | In a waterfall's sheet (`dwell_world::falls::push_at`): drawn down and out, never rising; on the ground carried out (§6.4) |
 | 10c | `step_portal` | — (Dwell) | In the top of a portal's shaft (`VoxelWorld::portals`, `PortalShafts::exit_push`): airborne and rising fast, pushed along the facing so it arcs out of the opening (BIFACIAL_WORLD.md §12.3) |
-| 10a | `step_impact` | — (Dwell) | This tick's hit from the new contacts, the landing and a ceiling cancel: `IMPACTED` (§6.10) |
+| 10a | `step_impact` | — (Dwell) | This tick's hit from the new contacts and the landing: `IMPACTED` (§6.10) |
 | 11 | `step_aggregate` | `PPCAggregateSystem` | `target = exclusive ? layer.velocity : horizontal.contribution + (0, vertical.target_y, 0)`; set the body's linear velocity |
 | 12 | `step_state` | `PPCStateSystem` | Priority: Climbing > Swimming > Flying > Sliding (§6.8, §6.9) > Crouching > Jumping/Falling > Running/Walking/Idle; ◆ moving is the target velocity less the platform's carry (`base_velocity`): still on a moving body is `Idle`, walking against its motion `Walking` (0.50.65) |
 | 13 | `step_vitals` | — (Dwell) | Stamina and oxygen (§6.13): this tick's activity (running, swimming, treading water) spends stamina, else it rests; the head under water spends air |
@@ -645,9 +645,12 @@ data (`PlayerControllerConfig::slide`, §7).
 - **How it moves.** The slide replaces the walking part of the horizontal layer (`slide()` in
   `controller.rs`); the vertical layer's ground following keeps the body on the slope as when
   walking. With θ the slope and `down` its horizontal downhill direction, the slope pulls with
-  `g (sin θ − friction cos θ)` (`slide.friction` 0.3; g = 20 m/s²) up to `terminal_speed` (14 m/s)
-  along the slope; quantities along the slope are taken to the horizontal with `cos θ`. Above the
-  terminal speed (braking, or arriving faster) the slide slows at `brake_deceleration`.
+  `g (sin θ − friction cos θ)` (`slide.friction` 0.3; g = 20 m/s²) along the slope, less the air's
+  drag (§6.15); quantities along the slope are taken to the horizontal with `cos θ`. There is no
+  terminal speed (owner, 2026-11-25: "I definitely want to remove the two speed caps"; it was 14
+  m/s, 16.1 crouched): only holding up the slope brakes, at `brake_deceleration`, toward
+  `terminal_speed × (1 − brake × hold)`. A crouched slide fast enough to slide on is the sprint
+  slide's (§6.9) on steep ground too.
 - **Momentum.** The slide's whole velocity is split between the layer's two terms: the first
   walking speed's worth (the tick's walk, run or crouch speed) is the player's own `current`,
   which walks on where the slope ends; the rest is `external`, which ground friction
@@ -758,21 +761,27 @@ Fortnite-style. The numbers below are defaults chosen for this, all data
   throughout; crouch must stay held. Releasing it ends the slide and stands up only where the
   standing capsule fits, as crouch always does, so under a low ceiling the player stays crouched
   and crouch-walks out.
-- **Motion** (`sprint_slide()` in `controller.rs`, in the horizontal pass in place of walking). The
-  slide keeps its speed in its direction of travel. Friction takes `friction` (5 m/s²; 6 until 2026-11-02); the ground's
-  horizontal tilt along the slide (`under_normal`'s horizontal part · the direction, > 0 downhill)
-  adds `gravity × slope_gravity × tilt` (`slope_gravity` 1: plain gravity, owner, 2026-11-06,
-  slides "feel like pure physics". It was 1.5 from 2026-11-02, when the owner found slides didn't
-  "continue very well … flat->shallow->flat->shallow downhills", which also cost 1.5× gravity up
-  every ½ m ramp; with friction 5 a slide now nearly keeps its speed down terraces of a flat cell
-  and a ½ m slope, ~0.6 m/s lost over 2 s,
-  `a_slide_nearly_keeps_its_speed_down_terraces_of_a_flat_cell_and_a_slope`). On flat ground a slide from
-  a sprint (8 → 9.5 m/s) lasts ~1.6 s; on a 15° slope downhill gravity (5.2 m/s²) out-pulls friction
-  and the slide speeds up to `max_speed` (14 m/s) and goes on while the slope does; uphill it lasts
-  ~0.7 s. It steps up half steps as walking does (along the slide's direction; any shift paid the
-  same way, §4). On ground
-  steeper than `slide.min_angle` the steep slide (§6.8) moves the player instead; the sprint slide
-  stays on and carries on from that momentum where the ground is gentle again.
+- **Motion** (`sprint_slide()` in `controller.rs`, in the horizontal pass in place of walking).
+  Owner (2026-11-25): remove the two speed caps; friction follows the slope; the slide's speed is
+  along the surface; every corner keeps it; the air's drag (§6.15). The slide's state is its
+  **speed along the surface** (`current`, in its direction of travel; resumable and on the wire as
+  before, no protocol change). Each tick that speed is pointed along the ground under it: the run
+  (`contribution`) is speed × cos θ and the vertical layer's ground following gives the rise,
+  speed × sin θ, for θ the ground's slope along the travel (`ground.normal`, the one the vertical
+  layer follows). So **every corner keeps the speed**: up onto a steeper face (the launch rule,
+  §6.11), over an edge onto a downslope (until 2026-11-25 the glue kept the run and added the drop,
+  12 → 17 m/s onto 45°), and onto the flat at a hill's bottom (it kept only the run, × 0.71 off
+  45°). Along the surface the speed changes by gravity's part `g × slope_gravity × sin θ` (down
+  speeds it up, up slows it), **friction `μ g cos θ`** (`sprint_slide.friction` μ = 0.25: 5 m/s² on
+  flat ground, as before, 4.5 on ½ m ramps, 3.5 on 45°) and the air's drag; **nothing caps it**
+  (`max_speed` 14 m/s held a downhill slide until 2026-11-25; it now only caps the start boost). A
+  crouched slide is this on any ground it stands on, steep included (it was the steep slide's on
+  ground over 44°, §6.8); there, too steep to stand on, gravity across the slope also turns it
+  downhill. It steps up half steps as walking does (along the slide's direction; any shift paid
+  the same way, §4). Starting (from a sprint, landing crouched, or a fast crouched steep slide)
+  takes the run it has along the ground under it (a landing keeps its run, §6.9's landing rule).
+  On flat ground a slide from a sprint (8 → 9.5 m/s) lasts ~1.5 s; down ½ m ramps it speeds up
+  toward the air's top speed (~45 m/s), up them it lasts ~0.6 s.
 - **Steering.** Move input (camera-relative, as walking) turns the slide's direction toward it at
   up to `steer_rate` (90 °/s), keeping the speed; there is no braking. Angles come from `libm`
   (`atan2f`, `sinf`, `cosf`), so native and WASM agree.
@@ -826,12 +835,12 @@ Owner (2026-10-21): fall damage became **impact damage**, by the angle of the su
   of "up to lethal fall damage" on slopes), kept as data for a mode that hurts on walls.
 - **The surfaces:** each of the tick's contacts (`Physics::contact_normals`, from the last step)
   that is new; the ground's normal when the tick lands (`LANDED`: the ground probe meets the ground
-  before the capsule does, and the ground snap then closes the gap gently); and a rise the ceiling
-  probe cancels (normal −y), which likewise stops the body short of the ceiling.
+  before the capsule does, and the ground snap then closes the gap gently). A ceiling is met by its
+  contact (the probe's cancel went in 2026-11-25, §6.11).
 - **Ground only** (`damage.impact_surfaces`, default `Ground`): of those, only a normal whose
   face-local slope is walkable counts, no steeper than `probes.max_slope_angle` (56°, the slope the
   ground probe stands on): floors and ramps of either pitch. Walls, steep faces and ceilings (the
-  ceiling probe's −y) never hit, at any speed. (0.49.2 counted flat ground only,
+  contacts facing down) never hit, at any speed. (0.49.2 counted flat ground only,
   `damage.impact_max_slope_angle` 10°, so ramps never hurt: the owner's report was of fast
   horizontal hits, which the downward speed answers instead.) A step's side is a wall like any other, so it
   needs no rule of its own (0.24.8's step-as-ramp normal, which made it hit as the ramp it stands
@@ -953,6 +962,35 @@ air held the body over its lip; a run over a downhill edge was held to the face 
   gravity does in a tick, so on one plane the ground never takes any. A non-crouched slide on a
   steep face keeps the walking limit: its `uphill_deceleration` (60 m/s²) would otherwise read as
   lost rise and hop it off the toe it walked into.
+- **A slide launches along the last surface it slid up** (owner, 2026-11-24: *"Sliding off ramps
+  should maintain velocity in the ramps direction, flat -> shallow slope = shallow launch vector,
+  flat -> shallow -> steep slope = steep launch vector, flat -> shallow -> steep -> wall = vertical
+  launch vector"*, at 25 m/s, and at 50 m/s never through the terrain). Before, a slide kept its
+  flat speed onto every steeper ramp and the ground following added the climb on top, so it sped up
+  going uphill (25 m/s over 4 m of ½ m ramps and 4 m of 45° ones left at 24 m/s; 50 m/s at 66), and
+  into a wall it stopped dead and slid back. Now the slide's speed is along the surface (§6.9):
+  onto a steeper rising face it turns along it, and over the top it flies on at the last surface's
+  angle (over a crest the slide keeps last tick's run, so the vertical layer's launch, with last
+  tick's rise, leaves along that surface, never with the run pointed along the ground ahead). Against
+  a wall ahead (a contact steeper than ~64°, `WALL_LAUNCH_MIN_FLAT`, facing the travel) while rising
+  faster than `WALL_LAUNCH_MIN_RISE` (0.5 m/s, so a slide on flat ground into a wall still stops),
+  the slide ends and its whole speed goes straight up the wall (the run 0, leaving the ground).
+  Climbing costs speed honestly: gravity, the slide's friction and the air (a 25 m/s slide clears
+  6 m of ramps at ~16 m/s).
+- **Ceilings work like walls** (owner, 2026-11-25: *"Ceiling shouldn't hard stop, should work like
+  walls"*). The ceiling probe zeroed every rise it met, 10 cm before the contact and whatever the
+  ceiling's angle. Now a ceiling is met by its contact, which takes only the speed into it (the
+  airborne layer absorbs what the contact stopped, as against a wall): a flat ceiling stops the rise
+  and keeps the run; the 45° underside of a ramp turns the rise along it.
+- **Walls hold the capsule off** (BUGS.md #241, found 2026-11-24; owner, 2026-11-25: fix the
+  capsule sinking in, in collision). Held into a wall of cells, the bare capsule sank a millimetre
+  or two into it and caught on the faces between its cells: it crossed at most one cell a tick
+  along the wall (up it ½ m: 40 m/s held to 30; along it 1 m) and, slower, stopped at every other
+  one (a jump or a fall along a cliff with forward held, a slide along one). The capsule has a
+  contact skin of `physics::PLAYER_WALL_SKIN` (5 mm) that the physics hook (`PinchGrip`) keeps on
+  the terrain's walls only (a contact whose normal is within `WALL_SKIN_MAX_UP` of level, steeper
+  than ~64°) and takes back from every other contact (the ground, ramps, ceilings, pieces, players
+  stand exactly as before): 5 mm off a wall the capsule never meets the faces between its cells.
 
 | Case | Rise lost / extra pull | Result |
 |---|---|---|
@@ -976,7 +1014,17 @@ air held the body over its lip; a run over a downhill edge was held to the face 
   unchanged. Both faces. A slide's limits (0.49.18): `ramps.rs`
   `a_slide_up_a_ramp_flies_off_its_top_at_the_ramps_angle` (red before: one ½ m ramp at 8 m/s never
   left the ground) and `a_slide_down_a_hill_keeps_to_its_ramps` (red before: off ½ m ramps' top at
-  12 m/s).
+  12 m/s).  The speed along the surface (2026-11-24/25): `ramps.rs`
+  `a_slide_launches_along_the_last_surface_it_slid_up` (flat → ½ m ramps, → 45° ramps, → a wall, at
+  25 and 50 m/s: leaves at 26.57°, 45° and 90° within 4°, no faster than it arrived, never 5 cm into
+  the ground or the wall; red before: faster than it arrived, 20.47 against 20.33 m/s),
+  `every_corner_keeps_a_slides_speed` (red before: 11.4 → 16.1 m/s over an edge onto 45°),
+  `a_slides_gravity_and_friction_act_along_the_surface` (red before: 15.6 m/s² along ½ m ramps
+  against 13.4), `a_slide_has_no_speed_cap_downhill` (red before: 16.5 m/s at most down ½ m ramps),
+  `a_ceiling_takes_only_the_speed_into_it` (red before: 0 m/s across under a 45° underside) and
+  `holding_into_a_wall_in_the_air_never_catches_on_its_cells` (red before: 0.48 m off a tick's
+  motion); `a_slide_up_a_ramp_flies_off_its_top_at_the_ramps_angle` lost its slowest case (9.6 m/s:
+  with the climb paid for, a slide that slow tops a single ½ m ramp at ~7 m/s and leaves at ~21°).
 
 ### 6.12 The walking rule: input only adds (Dwell addition) **[built, 0.49.18]**
 
@@ -1069,6 +1117,22 @@ While set, each tick's move input is kept aside as `steer` ([x right, y forward]
 as any platform). A jump pressed (held this tick, not the last) clears it. On the wire as `slide_flags::HELM` (protocol
 v24), so a replay and the server agree; the client never sets it itself.
 
+### 6.15 The air's drag (Dwell addition) **[built, 2026-11-25]**
+Owner (2026-11-25): *"Let's add air drag and also tune this with a multiplier. Ideally like 0.75
+what actual air drag is."* The air slows the player by `scale × ½ ρ Cd·A × v² ÷ m` against the
+velocity, relative to the ground's carry (a platform's air moves with it): `air.density` 1.2
+kg/m³, `air.drag_area` (Cd·A) 0.7 m² standing and `air.crouch_drag_area` 0.4 m² crouched, the
+body's mass 80 kg, `air.scale` 0.75. It acts walking, running, sliding (ground or steep), jumping
+and falling; climbing, swimming and flying keep their own drags. At walking speeds it is nothing
+(0.25 m/s² at 8 m/s, which input makes up); it gives every downhill its top speed now that the
+slides have no caps (crouched down ½ m ramps ~45 m/s, down 45° ~69 m/s) and a fall its terminal
+speed, √(g ÷ k): ~71 m/s standing. Gravity stays 20 m/s² (owner, 2026-11-25). A long fall lands a
+little softer than its drop (§6.10 reads the landing speed as a height): a 10 m drop lands at 19.6
+m/s (a 9.6 m drop without the air), 15 m at 23.8 (14.2 m).
+Tests: `ramps.rs` `the_air_holds_a_fall_to_its_top_speed` (red before: 240 m/s after 12 s); the
+air-rule tests (momentum kept in the air, the fall damage curve by drop height) run without the air
+(`common::without_air`).
+
 ## 7. Configuration
 
 `PlayerControllerConfig` lives in `crates/dwell-physics/src/config.rs` — both sides compile the
@@ -1113,12 +1177,13 @@ PPC default for voxels.
 | `band` ◆ | `boost_gravities` | 2 | — | The flip band (§11) |
 | `fly` ◆ | `speed` / `run_factor` / `drag` | 8 m/s / 2.5 / 8 /s | — | Dwell addition (§6.7): speed × 2^(speed level / 2), the same at every height (11 m/s with a speed-up by height until 2026-10-26) |
 | | `position_limit` | 33,553 km | — | \|x\|, \|y\|, \|z\| (the wire range; no world limit, Phase 16) |
-| `slide` ◆ | `min_angle` / `friction` / `terminal_speed` | 44° / 0.3 / 14 m/s | — | Dwell addition (§6.8): ground steeper than `min_angle` slides; pull `g (sin θ − friction cos θ)`; speed along the slope |
+| `slide` ◆ | `min_angle` / `friction` / `terminal_speed` | 44° / 0.3 / 14 m/s | — | Dwell addition (§6.8): ground steeper than `min_angle` slides; pull `g (sin θ − friction cos θ)`; `terminal_speed` is only what braking slows toward (no cap since 2026-11-25) |
 | | `steering` / `steer_speed` | 0.4 × `acceleration` / 5 m/s | — | Across the slope (0.40.11 lowered it to 1.5 m/s by mistake; back to 5, owner 2026-11-02) |
-| | `brake` / `brake_deceleration` / `uphill_deceleration` | 0.5 / 10 m/s² / 60 m/s² | — | Up-slope input lowers the terminal speed by up to 50 % (60 % until 2026-11-02); momentum up a steep face dies fast (walking and running) |
+| | `brake` / `brake_deceleration` / `uphill_deceleration` | 0.5 / 10 m/s² / 60 m/s² | — | Up-slope input brakes toward the terminal speed less up to 50 % (60 % until 2026-11-02); momentum up a steep face dies fast (walking and running) |
 | | `crouch_terminal_factor` / `crouch_friction` / `crouch_uphill_deceleration` | 1.15 / 0.2 / 0 m/s² | — | A crouched slide; its momentum carries up steep faces against gravity and friction alone (owner, 2026-11-06) |
-| `sprint_slide` ◆ | `min_start_speed` / `start_boost` / `max_speed` | 6.5 m/s / 1.5 m/s / 14 m/s | — | Dwell addition (§6.9): crouch while sprinting; horizontal speeds |
-| | `friction` / `slope_gravity` | 5 m/s² / 1 | — | Deceleration; `gravity × slope_gravity × tilt` along the slide (6 / 1 until 2026-11-02; 1.5 from then to 0.49.5; 1 again, owner 2026-11-06: plain gravity) |
+| `sprint_slide` ◆ | `min_start_speed` / `start_boost` / `max_speed` | 6.5 m/s / 1.5 m/s / 14 m/s | — | Dwell addition (§6.9): crouch while sprinting; speeds along the surface; `max_speed` caps only the start boost (it held downhill slides until 2026-11-25) |
+| | `friction` / `slope_gravity` | 0.25 / 1 | — | Friction's coefficient: `μ g cos θ` along the surface (owner, 2026-11-25; 5 m/s² across, any slope, until then; 6 until 2026-11-02); `gravity × slope_gravity × sin θ` along the surface (1.5 from 2026-11-02 to 0.49.5; 1 again, owner 2026-11-06: plain gravity) |
+| `air` ◆ | `density` / `drag_area` / `crouch_drag_area` / `scale` | 1.2 kg/m³ / 0.7 m² / 0.4 m² / 0.75 | — | The air's drag (§6.15, owner 2026-11-25): `scale × ½ ρ Cd·A v² ÷ m` |
 | | `steer_rate` / `cooldown_ticks` | 90 °/s / 30 ticks (0.5 s, at most 255: the wire's `u8`) | — | Turning toward the move input; before another slide |
 | `damage` ◆ | `impact_safe_height` / `impact_lethal_height` / `impact_curve_exponent` | 5 m / 15 m / 2 (14.1 / 24.5 m/s) | — | From the `IMPACTED` event's speed into the surface, read as a fall height (§6.10, 0.49.18; until then 12 m/s and 8 points per m/s, linear) |
 | | `impact_surfaces` / `impact_measure` | `Ground` / `DownwardIntoSurface` | — | The contacts that hit (§6.10): `Ground`, a normal no steeper than `probes.max_slope_angle` (floors and ramps); `All`, every contact. The speed: `DownwardIntoSurface`, the downward speed × the surface's cos θ (owner, 2026-11-06); `IntoSurface`, the whole speed into the normal |
