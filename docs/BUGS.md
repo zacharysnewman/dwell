@@ -13,12 +13,6 @@ blocks should behave like that, falling when disconnected from their supporting 
 Suspect: the cannon's four cells are `needsSupport: below`, so losing the block under them removes or detaches its
 cells one by one, not as one body. WORK_QUEUE first pass 3a.
 
-### 242. Cannonballs pass through players (owner, 2026-11-25)
-
-"I'd like you to also be shoved by them when hit with them. So if you stand in front of a cannon when it's fired, it
-should launch you forward as expected from physics forces. Currently it seems to just pass through you." (Standing on a
-ball fired upward does carry the player.) WORK_QUEUE first pass 3a.
-
 ### 240. The dam-break scene is built 544 m underground since 0.76
 
 Found 2026-11-24 (building `dam_blast`): `shared/theater/scenes/dam_break.json` puts its land at 32 m, the flat world's
@@ -1402,6 +1396,17 @@ the first ladder went there (it now waits for the cell).
 
 
 ## Fixed
+
+### 242. Cannonballs pass through players (owner, 2026-11-25)
+
+"I'd like you to also be shoved by them when hit with them. So if you stand in front of a cannon when it's fired, it
+should launch you forward as expected from physics forces. Currently it seems to just pass through you." (Standing on a
+ball fired upward does carry the player.) WORK_QUEUE first pass 3a.
+
+Fixed 2026-11-25 (`claude/ball-shove`): a fired ball was a one-cell piece of riders only, whose groups take the world and
+bodies but not players; a cannons-data ball now collides with everything (`felling.rs` `piece_box`), throwing a player
+by its momentum and hurting no one ("Shove only"). Red → green: `dwell-sim` `cannons.rs`
+`a_ball_shoves_a_player_in_front_of_the_cannon` (both faces; z −2.5 → −2.5 before, the ball through the player).
 
 ### 241. Held into a wall, the player catches on its cells (found 2026-11-24, `claude/slide-launch`)
 
