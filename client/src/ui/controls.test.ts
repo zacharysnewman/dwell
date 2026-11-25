@@ -85,10 +85,12 @@ describe('controls', () => {
     }
     expect(keyLabel('KeyU')).toBe('U');
     expect(keyLabel('Semicolon')).toBe(';');
-    // No brush key is a region-tools or movement key.
-    const others = KEYBOARD.filter((g) => g.title !== 'Brushes').flatMap((g) =>
-      g.controls.flatMap((c) => c.keys),
-    );
+    // No brush key is a region-tools or movement key. Q and E are the inventory and interact
+    // with the brush off, its presets while it is on (main.ts, input.rs: the brush's come first).
+    const others = KEYBOARD.filter((g) => g.title !== 'Brushes')
+      .flatMap((g) => g.controls)
+      .filter((c) => !['Inventory', 'Use a door, helm or cannon'].includes(c.action))
+      .flatMap((c) => c.keys);
     for (const k of ['V', 'Q', 'E', 'Z', 'P', '[', ']'])
       expect(others.filter((o) => o === k)).toEqual([]);
   });

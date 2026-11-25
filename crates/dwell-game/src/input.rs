@@ -83,6 +83,10 @@ pub fn quantize_input(input: &PlayerInputState, seq: u32) -> InputFrame {
 
 /// The key that turns creative flight on or off (`KeyboardEvent.code`), where the world allows it.
 pub const FLY_KEY: &str = "KeyF";
+/// The interact key (owner, 2026-11-23: "Q inventory, E interact"): a tap uses the block aimed at
+/// that has a use (a door, a helm, a cannon), never placing anything; the inventory is Q (the
+/// shell's `backpackKey`).
+pub const INTERACT_KEY: &str = "KeyE";
 
 /// Block interaction actions (§6.5).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -108,6 +112,8 @@ pub enum InputEvent {
     BuildMode,
     /// A hotbar step key (`items::HOTBAR_PREV_KEY` / `HOTBAR_NEXT_KEY`, data): −1 or +1 slot.
     HotbarStep(i32),
+    /// The interact key ([`INTERACT_KEY`]), tapped while playing: use what is aimed at.
+    Interact,
 }
 
 /// Turns a stream of wheel deltas on one axis into hotbar steps (docs/ITEMS.md §6). A mouse sends
@@ -377,6 +383,9 @@ impl KeyboardMouseInput {
         }
         if code.starts_with("Digit") && !repeat {
             events.push(InputEvent::Digit(code.to_owned()));
+        }
+        if code == INTERACT_KEY && self.pointer_locked && !repeat && !ctrl && !meta {
+            events.push(InputEvent::Interact);
         }
         KeyDown {
             prevent_default: code == "Space"
@@ -657,7 +666,7 @@ mod tests {
     fn brush_keys_only_where_brushes_are_allowed_and_while_the_tool_is_on() {
         let mut input = KeyboardMouseInput::new();
         input.pointer_locked = true;
-        // A world without brushes: V and E are not taken (nothing else binds them).
+        // A world without brushes: V is not taken (nothing else binds it).
         assert!(
             input
                 .key_down("KeyV", false, false, false)
@@ -670,11 +679,10 @@ mod tests {
             input.key_down("KeyV", false, false, false).events,
             vec![InputEvent::Brush(BrushAction::Toggle)]
         );
-        assert!(
-            input
-                .key_down("KeyE", false, false, false)
-                .events
-                .is_empty()
+        // With the brush off E is interact (owner, 2026-11-23: "Q inventory, E interact").
+        assert_eq!(
+            input.key_down("KeyE", false, false, false).events,
+            vec![InputEvent::Interact]
         );
         input.blur();
         input.brush_active = true;
@@ -839,5 +847,38 @@ mod tests {
         let down = input.key_down("F8", false, false, false);
         assert!(down.prevent_default);
         assert_eq!(down.events, vec![InputEvent::Toggle("F8".to_owned())]);
+    }
+
+    #[test]
+    fn e_is_interact_while_playing_and_the_brushs_preset_key_while_it_is_on() {
+        // Owner, 2026-11-23: "Q inventory, E interact". E tapped while playing asks to use what is
+        // aimed at; held, it repeats nothing; with the mouse free (a menu) it is nothing; with the
+        // brush on, E stays its next preset.
+        let mut input = KeyboardMouseInput::new();
+        assert!(
+            input
+                .key_down(INTERACT_KEY, false, false, false)
+                .events
+                .is_empty()
+        );
+        input.pointer_locked = true;
+        assert_eq!(
+            input.key_down(INTERACT_KEY, false, false, false).events,
+            vec![InputEvent::Interact]
+        );
+        assert!(
+            input
+                .key_down(INTERACT_KEY, true, false, false)
+                .events
+                .is_empty()
+        );
+        input.blur();
+        input.pointer_locked = true;
+        input.brushes = true;
+        input.brush_active = true;
+        assert_eq!(
+            input.key_down(INTERACT_KEY, false, false, false).events,
+            vec![InputEvent::Brush(BrushAction::NextPreset)]
+        );
     }
 }

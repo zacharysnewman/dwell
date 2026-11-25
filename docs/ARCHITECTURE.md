@@ -3511,7 +3511,7 @@ not Rapier bodies: a point that falls toward the midplane through `FaceFrame` an
 of the first solid cell. Currency items (a `value`) go to the wallet, whole items up to its
 capacity. The client draws loose items as small turning copies of their block through the pieces'
 renderer (`dwell-client` `loose_items.rs`), and in such a world its hotbar is the inventory's first
-six slots with counts and the wallet, and E opens the backpack screen (`client/src/ui/backpack.ts`) with its Combine section. Pieces,
+six slots with counts and the wallet, and Q opens the backpack screen (E until 0.76.5; E is interact since: a tap uses the door, helm or cannon aimed at, `dwell-game` `input.rs` `INTERACT_KEY`, `Game::interact`) (`client/src/ui/backpack.ts`) with its Combine section. Pieces,
 combining and tool wear (0.52.46, ADR 0066's amendment, docs/ITEMS.md §9): a ½ m cell breaks into 8
 pieces of its material (its `drops`); recipes are `inventory.json` `recipes`, applied by the server on
 `InventoryAction::Combine` (a recipe-name hash) where it sets `inventory_flags::COMBINE` (16); tools wear

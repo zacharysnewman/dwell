@@ -1607,7 +1607,7 @@ async function start(): Promise<App | null> {
       // The map's key is the shell's (ADR 0068), as a real key press is.
       if (down && code === 'KeyM') app.minimap?.toggleBig();
       // The backpack's key is the shell's too (ADR 0066 §10).
-      else if (down && code === 'KeyE' && app.backpack?.usable)
+      else if (down && code === 'KeyQ' && app.backpack?.usable)
         setInventoryOpen(app, !inventoryOpen(app));
       else if (down) app.minimap?.key(code);
     },
@@ -2108,6 +2108,8 @@ function inventoryOpen(app: App): boolean {
  * opening and lock it again on closing.
  */
 function setInventoryOpen(app: App, open: boolean): void {
+  // Its key's sound (the controls' sound coverage): as the menu's.
+  if (open !== inventoryOpen(app)) audio().action(open ? 'menu_open' : 'menu_close');
   if (open) app.panels.open('inventory');
   else app.panels.close('inventory');
 }
@@ -2207,7 +2209,8 @@ function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): vo
     if (name === 'save') app.settings?.openStructures();
   });
   app.client.select(0);
-  // The backpack screen (ADR 0066): E opens and closes it in a world that uses items.
+  // The backpack screen (ADR 0066): Q opens and closes it in a world that uses items (E until
+  // 2026-11-24; E is interact now).
   app.backpack = new Backpack(
     document.body,
     itemPicture,
@@ -2224,7 +2227,9 @@ function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): vo
       if (!app.playing || (app.settings?.isOpen ?? false)) return;
       // Typing in the inventory's search: only Escape is the view's.
       if (e.target instanceof HTMLInputElement && e.code !== 'Escape') return;
-      // E is the inventory only: a ground item is knocked loose by the break action (ADR 0071).
+      // Q is the inventory only: a ground item is knocked loose by the break action (ADR 0071).
+      // With the brush tool on, Q is its previous preset (dwell-game brush_tool.rs).
+      if (e.code === 'KeyQ' && app.client.brushActive()) return;
       const open = backpackKey(e.code, e.repeat, inventoryOpen(app), true);
       if (open === null) return;
       setInventoryOpen(app, open);

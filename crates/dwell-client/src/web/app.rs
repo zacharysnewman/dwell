@@ -1839,6 +1839,16 @@ impl Client {
     /// `toggle`, `preset:<name>`, `size:<n>`, `nextBrush`, `nextPerformer`, `apply` (left click),
     /// `gunpowder` (right click), `pick` (middle click). True if it did (for `apply` and
     /// `gunpowder`: queued a stroke).
+    /// Whether the brush tool is on (its keys, Q and E among them, are its own then).
+    #[wasm_bindgen(js_name = brushActive)]
+    pub fn brush_active(&self) -> bool {
+        self.inner
+            .borrow()
+            .game
+            .as_ref()
+            .is_some_and(|g| g.brush_active())
+    }
+
     pub fn brush(&self, command: &str, now_ms: f64) -> bool {
         use dwell_game::brush_tool::BrushAction as B;
         let mut s = self.inner.borrow_mut();
@@ -3980,6 +3990,11 @@ impl Inner {
                 }
             }
             InputEvent::BuildMode => self.cycle_build_mode(),
+            InputEvent::Interact => {
+                if let Some(g) = &mut self.game {
+                    g.interact(now_ms);
+                }
+            }
         }
     }
 

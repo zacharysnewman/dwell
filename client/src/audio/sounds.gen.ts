@@ -665,6 +665,13 @@ export const SOUND_DATA: SoundData = {
       "action:menu_open",
       "action:menu_close"
     ],
+    "Inventory": [
+      "action:menu_open",
+      "action:menu_close"
+    ],
+    "Use a door, helm or cannon": [
+      "event:place"
+    ],
     "Debug overlay": [
       "action:overlay_on",
       "action:overlay_off"

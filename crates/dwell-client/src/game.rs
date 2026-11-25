@@ -3203,6 +3203,36 @@ impl<S: Scene> Game<S> {
         }
     }
 
+    /// The interact key (`dwell_game::input::INTERACT_KEY`; owner, 2026-11-23: "Q inventory, E
+    /// interact"): uses the block aimed at that has a `use` (a door, a helm, a cannon), in the
+    /// world or on a moving body, as Place aimed at it does; never places a block. Whether it used
+    /// one.
+    pub fn brush_active(&self) -> bool {
+        self.brush.active()
+    }
+
+    pub fn interact(&mut self, now_ms: f64) -> bool {
+        // Used: a `use` (a helm, a cannon) or a `toggle` (a door's `open`).
+        let usable = |m: dwell_blocks::StateId| {
+            dwell_blocks::try_info(m).is_some_and(|s| s.use_action.is_some() || s.toggle.is_some())
+        };
+        let on_body = self
+            .body_target
+            .is_some_and(|b| self.pieces.block_at(b.body, b.cell).is_some_and(usable));
+        let in_world = !on_body
+            && self.interaction.target().is_some_and(|t| {
+                let m = self
+                    .streamer
+                    .store_mut()
+                    .get_voxel(t.cell[0], t.cell[1], t.cell[2]);
+                usable(m)
+            });
+        if !on_body && !in_world {
+            return false;
+        }
+        self.edit(EditAction::Place, now_ms)
+    }
+
     /// Whether `action` is a Place aimed at a world block with a `use` (a cannon on land, a door):
     /// the one thing a world click does at the helm.
     fn world_use_aimed(&mut self, action: EditAction) -> bool {

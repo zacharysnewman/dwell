@@ -52,10 +52,10 @@ export function moveFor(
 }
 
 /**
- * What a key does to the backpack screen: E toggles it (where the world uses items), Escape closes
- * it; the new open state, or null when the key is not the backpack's. E does nothing else: a
- * ground item is knocked loose by the break action, not picked up with E (ADR 0071, amended
- * 2026-11-09).
+ * What a key does to the backpack screen: Q toggles it (owner, 2026-11-23: "Q inventory, E
+ * interact"; E was it before), Escape closes it; the new open state, or null when the key is not
+ * the backpack's. A ground item is knocked loose by the break action, not picked up (ADR 0071,
+ * amended 2026-11-09).
  */
 export function backpackKey(
   code: string,
@@ -63,7 +63,7 @@ export function backpackKey(
   open: boolean,
   usable: boolean,
 ): boolean | null {
-  if (code === 'KeyE' && !repeat && usable) return !open;
+  if (code === 'KeyQ' && !repeat && usable) return !open;
   if (code === 'Escape' && open) return false;
   return null;
 }

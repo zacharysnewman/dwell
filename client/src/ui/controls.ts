@@ -132,7 +132,15 @@ export const KEYBOARD: ControlGroup[] = [
   },
   {
     title: 'Game',
-    controls: [{ action: 'Menu and settings', keys: ['Esc'] }],
+    controls: [
+      { action: 'Inventory', keys: ['Q'] },
+      {
+        action: 'Use a door, helm or cannon',
+        keys: ['E', 'Right click'],
+        when: 'aimed at it, on land or on a ship',
+      },
+      { action: 'Menu and settings', keys: ['Esc'] },
+    ],
   },
 ];
 

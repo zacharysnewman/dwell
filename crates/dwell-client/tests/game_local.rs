@@ -5671,3 +5671,86 @@ fn a_blueprint_placed_in_a_local_world_comes_back_as_a_ghost_with_its_panel() {
         "the client draws its ghost and the panel shows aimed into its box"
     );
 }
+
+#[test]
+fn e_uses_the_door_aimed_at_and_places_nothing_on_bare_ground() {
+    // face-a-only: the sandbox world is face A's; doors' use on both faces is the server's
+    // (dwell-sim doors.rs).
+    // Owner, 2026-11-23: "Q inventory, E interact": E (the interact key) uses the block aimed at
+    // that has a use, here a door, as right click does; aimed at plain ground it places nothing.
+    let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    rig.run_until(60, |_| false);
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    let (x, z) = (feet[0].floor() as i32, feet[2].floor() as i32 + 3);
+    let g = dwell_world::FLAT_TOP_Y;
+    let part = |p: &str, open: bool| {
+        dwell_blocks::require(&format!(
+            "dwell:door[facing=north,hinge=left,open={open},part={p}]"
+        ))
+    };
+    let parts = ["bottom", "lower", "upper", "top"];
+    // In the server's world and the client's alike (as a placed door is: the test has no
+    // broadcast for cells set directly).
+    for (k, p) in parts.iter().enumerate() {
+        rig.core
+            .server()
+            .world()
+            .set_voxel(x, g + k as i32, z, part(p, false));
+        rig.game
+            .as_mut()
+            .unwrap()
+            .world()
+            .set_voxel(x, g + k as i32, z, part(p, false));
+    }
+    // Its bottom half aimed at.
+    let look_at = |rig: &mut Rig, p: [f64; 3]| {
+        let feet = rig.game.as_ref().unwrap().debug_state().feet;
+        let d = [p[0] - feet[0], p[1] - feet[1] - 1.62, p[2] - feet[2]];
+        rig.input.look.yaw = d[0].atan2(d[2]).to_degrees();
+        rig.input.look.pitch = d[1].atan2(d[0].hypot(d[2])).to_degrees();
+    };
+    look_at(
+        &mut rig,
+        [f64::from(x) + 0.5, f64::from(g) * 0.5 + 0.4, f64::from(z)],
+    );
+    assert!(
+        rig.run_until(240, |r| r
+            .game
+            .as_ref()
+            .unwrap()
+            .debug_state()
+            .target
+            .is_some_and(|t| t.cell[0] == x && t.cell[2] == z && t.cell[1] >= g)),
+        "the door aimed at"
+    );
+    let now = rig.now;
+    assert!(rig.game.as_mut().unwrap().interact(now), "E used the door");
+    assert!(
+        rig.run_until(60, |r| server_voxel(r, [x, g, z]) == part("bottom", true)),
+        "the door opened"
+    );
+    // Bare ground: nothing to use, nothing placed.
+    look_at(
+        &mut rig,
+        [feet[0] - 2.0, f64::from(g) * 0.5 - 0.25, feet[2]],
+    );
+    rig.run_until(10, |_| false);
+    let t = rig
+        .game
+        .as_ref()
+        .unwrap()
+        .debug_state()
+        .target
+        .expect("the ground");
+    let above = [t.cell[0], t.cell[1] + 1, t.cell[2]];
+    let before = server_voxel(&mut rig, above);
+    let now = rig.now;
+    assert!(!rig.game.as_mut().unwrap().interact(now), "nothing to use");
+    rig.run_until(30, |_| false);
+    assert_eq!(server_voxel(&mut rig, above), before, "nothing placed");
+}
