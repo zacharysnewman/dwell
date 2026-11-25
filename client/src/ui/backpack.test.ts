@@ -40,18 +40,18 @@ describe('backpack', () => {
   });
 });
 
-// E is the backpack's only (ADR 0071, amended 2026-11-09): ground items are knocked loose by the
-// break action, so E no longer picks one up first.
+// Q is the backpack's (owner, 2026-11-23: "Q inventory, E interact"; E until 2026-11-24): ground
+// items are knocked loose by the break action (ADR 0071, amended 2026-11-09).
 describe('the backpack key', () => {
-  it('E opens and closes the backpack where the world uses items', () => {
-    expect(backpackKey('KeyE', false, false, true)).toBe(true);
-    expect(backpackKey('KeyE', false, true, true)).toBe(false);
+  it('Q opens and closes the backpack where the world uses items', () => {
+    expect(backpackKey('KeyQ', false, false, true)).toBe(true);
+    expect(backpackKey('KeyQ', false, true, true)).toBe(false);
   });
 
-  it('a held E, E in creative, and other keys leave it', () => {
-    expect(backpackKey('KeyE', true, false, true)).toBeNull();
-    expect(backpackKey('KeyE', false, false, false)).toBeNull();
-    expect(backpackKey('KeyQ', false, false, true)).toBeNull();
+  it('a held Q, Q where the world has no items, and E (interact) leave it', () => {
+    expect(backpackKey('KeyQ', true, false, true)).toBeNull();
+    expect(backpackKey('KeyQ', false, false, false)).toBeNull();
+    expect(backpackKey('KeyE', false, false, true)).toBeNull();
   });
 
   it('Escape closes it, and only when open', () => {

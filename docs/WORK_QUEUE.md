@@ -164,7 +164,10 @@ context) at a time with a choice to table it as well as the other options?" Answ
   "Make these all a \"second pass\" moving those hard items I mentioned before into it. Then we'll move the blocked
   item from section 8 into it too, and also all the following hard items from each section."
   **First pass**, in order:
-  2. Section 1, moving bodies: the glide (#220, done 2026-11-24); the Q/E rebinding with draining a hull and flipping a body upright;
+  2. Section 1, moving bodies (owner, 2026-11-24: "You can proceed with Q/E rebinding, once that's done, set a
+     reminder for 5:30pm today to work on the rest of section 1, don't wait for my approval, I'm giving it now"):
+     the glide (#220, done 2026-11-24); the Q/E rebinding (done 2026-11-24: Q the inventory, E a tap's use of the door,
+     helm or cannon aimed at; right click still uses them; held E comes with draining and flipping) with draining a hull and flipping a body upright;
      pre-existing bodies synced on join (#222); copying a body as a blueprint.
   2a. **Status bar shows everything, and memory (owner, 2026-11-24):** "I think we're running out of memory, with a
      memory leak. Hard to debug because our status bar with FPS etc is truncated instead of showing everything. And
