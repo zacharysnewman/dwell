@@ -4,9 +4,9 @@
 //! physics step, and sends the voxel changes and the entity messages.
 
 use dwell_blocks::{Axis, StateId, info, state_property, with_property};
-use dwell_physics::Collide;
 use dwell_physics::frame::{GridMaps, grid_of_pose};
 use dwell_physics::predictor::WaterDrag;
+use dwell_physics::{AIR_DAMPING, Collide};
 use dwell_physics::{BodyHandle, DQuat, DVec3, Physics, PieceCell};
 use dwell_world::support::{SupportRules, detached_pieces};
 use dwell_world::{CELL_H, FaceFrame, M, VoxelWorld, m_of_row, row_of_m};
@@ -99,6 +99,11 @@ pub struct WaterRules {
     /// The drag coefficient of a body moving through water: the water's resistance is
     /// ½ · its density · this · the area under water facing the motion · speed².
     pub drag_coefficient: f64,
+    /// The speed (m/s, relative to the water) the speed-squared drag takes away only above
+    /// (BUGS.md #220; owner, 2026-11-23: "in real water boats don't often come to a stop, they keep
+    /// moving in the same direction for a while"): a boat let go glides on under the gentle linear
+    /// `drag` alone, and a fast one is still slowed hard down to it.
+    pub glide_speed: f64,
     /// A further slowing of a body's sideways velocity in water (/s), by how much of it is under:
     /// what stills a slow drift, which the speed-squared drag barely touches.
     pub drag: f64,
@@ -170,6 +175,7 @@ pub fn water_drag_with(
         kx: k * depth * size.z,
         kz: k * depth * size.x,
         linear: WATER.drag * share,
+        glide: WATER.glide_speed,
         current: [f64::from(cu), f64::from(cv)],
         fall,
         face: dwell_world::FaceFrame::at_height(centre[1]),
@@ -411,6 +417,8 @@ pub struct Falling {
     /// (docs/BUILT_BODIES.md §6): a kind that doesn't settle afloat (`settles_afloat`) keeps
     /// drifting with the current instead of settling (owner, 2026-11-12).
     afloat: bool,
+    /// In water, its air damping lifted (the water's drag slows it instead; BUGS.md #220).
+    wet: bool,
     /// Ticks since it was last afloat (`beach_ticks` before it may settle on dry ground).
     dry: u32,
 }
@@ -819,6 +827,7 @@ impl Felling {
                 pushed: 0,
                 anchored: false,
                 afloat: false,
+                wet: false,
                 dry: u32::MAX,
                 reach,
             });
@@ -919,6 +928,7 @@ impl Felling {
                 pushed: 0,
                 anchored: false,
                 afloat: false,
+                wet: false,
                 dry: u32::MAX,
                 reach,
             };
@@ -1262,6 +1272,7 @@ impl Felling {
             reach,
             anchored: false,
             afloat: false,
+            wet: false,
             dry: u32::MAX,
         });
         self.pieces.len() - 1
@@ -1432,6 +1443,13 @@ impl Felling {
                 p.dry = 0;
             } else {
                 p.dry = p.dry.saturating_add(1);
+            }
+            // In water the water's drag slows it, not the air's damping on every body (0.05/s,
+            // which took a let-go boat's glide in a minute: BUGS.md #220); back out, the air's
+            // again. Only on the change: a cannonball sets its own damping each tick.
+            if (under > 0.0) != p.wet {
+                p.wet = under > 0.0;
+                physics.set_linear_damping(p.body, if p.wet { 0.0 } else { AIR_DAMPING });
             }
             if under > 0.0 {
                 let share = under / p.cells.len() as f64;
@@ -2234,6 +2252,7 @@ mod tests {
             pushed: 0,
             anchored: false,
             afloat: false,
+            wet: false,
             dry: u32::MAX,
             reach: 1.0,
         }
@@ -2813,6 +2832,7 @@ mod tests {
             pushed: 0,
             anchored: false,
             afloat: false,
+            wet: false,
             dry: u32::MAX,
             reach: 1.0,
         });

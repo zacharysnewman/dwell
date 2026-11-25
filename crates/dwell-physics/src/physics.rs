@@ -275,7 +275,7 @@ impl Physics {
     pub fn add_piece(&mut self, origin: DVec3, cells: &[PieceCell], dominant: bool) -> BodyHandle {
         let body = RigidBodyBuilder::dynamic()
             .translation(origin)
-            .linear_damping(0.05)
+            .linear_damping(AIR_DAMPING)
             .angular_damping(0.2)
             .can_sleep(false)
             .ccd_enabled(true)
@@ -966,6 +966,10 @@ fn octagon_prisms(
         });
     }
 }
+
+/// A piece's linear damping (/s) out of water: the air's drag on a falling body. In water the
+/// water's drag replaces it (the sim's felling step).
+pub const AIR_DAMPING: f64 = 0.05;
 
 /// How far (m) each face of a piece cell's box is drawn in from the cell's. Cells detached together
 /// lie face to face with their neighbours and the walls round them: boxes the cells' size touch

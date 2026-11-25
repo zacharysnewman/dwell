@@ -115,7 +115,7 @@ import type { LoadingStageId } from './ui/loading.gen';
 import { LAUNCH_AT_KEY, pageStartMs, type StageRun } from './ui/loadingStages';
 import { runStartStages } from './ui/startStages';
 import { START_HINT, TOUCH_START_HINT } from './ui/controls';
-import { formatMemory, jsHeapBytes, type MemoryReport } from './ui/memory';
+import { formatMemory, jsHeapBytes, memoryTotal, type MemoryReport } from './ui/memory';
 import type { LoopbackTransport } from './net/loopback';
 import {
   findPlace,
@@ -2805,6 +2805,8 @@ async function connect(app: App): Promise<void> {
     let asking = false;
     const perf = element('perf-status', HTMLDivElement);
     const tickRate = new TickRate();
+    let memoryAt = -Infinity;
+    let memoryNow: { total: number; js: number | null } | null = null;
     const showStatus = () => {
       const s = client.sessionState() as SessionReport;
       const stats = s.stats ?? {
@@ -2820,7 +2822,16 @@ async function connect(app: App): Promise<void> {
         tickRate.sample(performance.now(), stats.serverTick);
         const [cpuMs = null, gpuMs = null, pacedShare = null, noSurfaceShare = null] =
           client.perf();
+        // The memory once a second (a report reads every worker's): a climb while playing shows.
+        const now = performance.now();
+        if (now - memoryAt >= 1000) {
+          memoryAt = now;
+          const report = memoryReport(app);
+          memoryNow = report ? { total: memoryTotal(report), js: report.jsHeapBytes } : null;
+        }
         perf.textContent = formatPerf({
+          memoryBytes: memoryNow?.total ?? null,
+          jsHeapBytes: memoryNow?.js ?? null,
           fps: app.fps.fps,
           animationFps: app.fps.animationFps,
           pacedShare,

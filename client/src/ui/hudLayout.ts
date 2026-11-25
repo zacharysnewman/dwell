@@ -271,6 +271,13 @@ export function applyLayout(doc: Document, layout: HudLayout, touch: boolean): S
           )
         : 0;
     el.style.maxWidth = `${String(Math.floor(r.w - edges))}px`;
+    // Placed after a part that has since wrapped onto more lines (narrowed by its max-width, so
+    // taller than measured; owner, 2026-11-24: the status lines shown in full): kept below it.
+    const prev = p.after === undefined ? null : els.get(p.after);
+    if (prev && !p.anchor?.startsWith('bottom')) {
+      const below = prev.getBoundingClientRect().bottom + layout.gapPx;
+      if (r.y < below) el.style.top = `${String(below - parent.top)}px`;
+    }
   }
   return solved;
 }

@@ -140,14 +140,6 @@ clipping, not column-based, since dynamic objects don't align with columns." H3 
 hides the lake in each hull's turned dry-air box (the four nearest); the owner still sees it. Owner should see: no
 water drawn in a hull's dry inside from any side, at any turn. WORK_QUEUE §1.
 
-### 220. Boats stop dead in still water instead of gliding on
-
-Owner, 2026-11-23: "Floating objects need more inertia, boats essentially never stop moving."; clarified: "in real water
-boats don't often come to a stop, they keep moving in the same direction for a while even without wind or a motor
-before the tide/currents exert enough force to move in that direction." The linear water drag (`water.drag` 0.15/s)
-stops a slow boat in seconds. Owner should see: a boat let go of keeps gliding, slowing gently over about a minute, and
-drifts with a current. WORK_QUEUE "Owner's list, 2026-11-23" §1.
-
 ### 219. A Realistic snow line's edge reads speckled (small patches)
 
 Found 2026-11-18 (0.76's deeper seas moved the biome-border windows `realistic_bands` samples): on seed 4065579781 face
@@ -1365,6 +1357,21 @@ the first ladder went there (it now waits for the cell).
 
 
 ## Fixed
+
+### 220. Boats stop dead in still water instead of gliding on
+
+Owner, 2026-11-23: "Floating objects need more inertia, boats essentially never stop moving."; clarified: "in real water
+boats don't often come to a stop, they keep moving in the same direction for a while even without wind or a motor
+before the tide/currents exert enough force to move in that direction." The linear water drag (`water.drag` 0.15/s)
+stops a slow boat in seconds. Owner should see: a boat let go of keeps gliding, slowing gently over about a minute, and
+drifts with a current. WORK_QUEUE "Owner's list, 2026-11-23" §1. **Fixed (2026-11-24):** three drags stopped a let-go raft (1 m/s: 0.25 m/s
+5 s on, 0.1 at 10 s): the linear water drag (0.15/s, now 0.02), the speed-squared drag acting at every speed (now only
+on the speed above `water.glideSpeed`, 1.5 m/s: a fast boat is still slowed hard, a slow one glides), and the air's
+damping on every piece (0.05/s, now lifted while it is in water). A raft let go at 1 m/s: 0.9 at 10 s, ~0.5 at 30 s,
+~0.3 a minute on. The same drag carries it with a current, gradually (about half the current's speed in a minute).
+Red → green: `built_bodies.rs` `a_boat_let_go_glides_on_for_about_a_minute`; the 2 s glide and the current's drift
+tests follow.
+
 
 ### 226. Builders lay a blueprint's slopes facing their own way, not the blueprint's
 

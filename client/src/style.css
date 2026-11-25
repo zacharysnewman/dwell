@@ -2514,13 +2514,14 @@ body.menu-open #main-menu .mm-shell {
   overflow: hidden;
   padding: 6px 12px;
   border: 1px solid var(--glass-line);
-  border-radius: 999px;
+  border-radius: 14px;
   background: var(--glass);
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   font: 12px var(--font-mono);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Every figure shown, wrapping onto more lines where it is narrow (owner, 2026-11-24: "our status
+     bar with FPS etc is truncated instead of showing everything"). */
+  overflow-wrap: anywhere;
 }
 
 /* What holds the frame back (ui/perfLine.ts): a pill under the connection line. */
@@ -2538,13 +2539,14 @@ body.menu-open #main-menu .mm-shell {
   overflow: hidden;
   padding: 4px 12px;
   border: 1px solid var(--glass-line);
-  border-radius: 999px;
+  border-radius: 14px;
   background: var(--glass);
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   font: 11px var(--font-mono);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Every figure shown, wrapping onto more lines where it is narrow (owner, 2026-11-24: "our status
+     bar with FPS etc is truncated instead of showing everything"). */
+  overflow-wrap: anywhere;
 }
 
 /* The build: in the menus (their own lines), not over the game. */
