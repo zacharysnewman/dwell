@@ -5773,9 +5773,12 @@ fn holding_e_at_a_raft_on_its_side_rights_it_and_a_tap_does_not() {
     let feet = rig.game.as_ref().unwrap().debug_state().feet;
     let ground = f64::from(dwell_world::FLAT_TOP_Y) * dwell_world::CELL_H;
     let planks = dwell_blocks::require("dwell:planks");
-    let cells: Vec<([i32; 3], u16)> = (0..4)
+    let mut cells: Vec<([i32; 3], u16)> = (0..4)
         .flat_map(|x| (0..2).flat_map(move |z| [([x, 0, z], planks), ([x, 1, z], planks)]))
         .collect();
+    // A helm on its deck: only a body with one is righted (owner, 2026-11-24).
+    cells.pop();
+    cells.push(([3, 1, 1], dwell_blocks::require("dwell:helm[facing=north]")));
     let on_side =
         dwell_physics::DQuat::from_axis_angle(dwell_physics::DVec3::X, std::f64::consts::FRAC_PI_2);
     let raft = rig.core.server().add_body_turned(

@@ -5,8 +5,9 @@
 //! second while E is held aimed at a body, once `HOLD.hold_seconds` have passed. While they keep
 //! coming (none missed for `GAP_TICKS`), each tick: where the player stands inside the body's hull
 //! and the world's mode has the `bail` ability (creative; "Hold E inside the hull"), its water
-//! bails out, a full hull in `HOLD.bail_seconds`; else a body tipped more than `HOLD.upright_deg`
-//! from its build's up turns back toward it ("Both modes"), lifted off the ground it lies on.
+//! bails out, a full hull in `HOLD.bail_seconds`; else a body with a helm (owner, 2026-11-24: "only
+//! flip a dynamic object when it has a helm") tipped more than `HOLD.upright_deg` from its build's
+//! up turns back toward it ("Both modes"), lifted off the ground it lies on.
 //! Within `HOLD.reach_m` of the body's nearest cell only, and never a body held still (on its
 //! build platform).
 
@@ -96,7 +97,16 @@ impl Server {
                 return Some(HoldDone::Bailed(left));
             }
         }
-        // Righting: turn its build's up back to the face's.
+        // Righting: only a body with a helm (owner, 2026-11-24: "only flip a dynamic object when it
+        // has a helm"), its build's up back to the face's.
+        let p = self.felling.pieces.iter().find(|p| p.id == body)?;
+        if !p
+            .cells
+            .iter()
+            .any(|&(_, m)| dwell_world::cannons::helm(dwell_blocks::block_of(m).name).is_some())
+        {
+            return None;
+        }
         let up = rot * face_up;
         let tilt = up.angle_between(face_up);
         if tilt.to_degrees() <= HOLD.upright_deg {

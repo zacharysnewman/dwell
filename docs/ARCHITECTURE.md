@@ -4912,7 +4912,7 @@ control: a `u32` body id), sent every 100 ms while interact (E, X on a controlle
 `shared/physics/bodies.json` `hold.holdSeconds` (`dwell-client` `Game::hold_interact`); the server
 (`dwell-sim` `server/body_hold.rs`) keeps each player's hold a quarter second after the last one and each tick bails the
 body's hull (from inside it, where the mode has the `bail` ability: creative; `Felling::bail`, a full hull in
-`hold.bailSeconds`) or else turns a body tipped past `hold.uprightDeg` back toward its build's up at
+`hold.bailSeconds`) or else turns a body with a helm (owner, 2026-11-24) tipped past `hold.uprightDeg` back toward its build's up at
 `hold.rightRadPerS`, lifted off the ground by `hold.rightLiftMs`; within `hold.reachM`, never one held on its
 platform. Without it the client never sends one. **[built, 0.76]** `bodies.paste`: `BodyPaste` 0x6F (C→S, control: a
 Paste's box, `RegionEdit`'s body) pastes a copied moving body as a moving body (STRUCTURES.md §9, `server/body_paste.rs`):

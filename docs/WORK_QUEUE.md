@@ -255,6 +255,9 @@ context) at a time with a choice to table it as well as the other options?" Answ
   "Both modes". Owner should see: holding E (X on a controller) by a capsized boat rights it. **Built 2026-11-24**
   (`claude/hold-e-drain-flip`): held 0.35 s aimed at a body tipped past 8°, it turns back upright (lifted off land);
   tunables in `shared/physics/bodies.json` `hold`; X on a controller, the spyglass moved to the right stick press.
+  Owner, 2026-11-24: "If we can, make it so you can only flip a dynamic object when it has a helm." Owner should see:
+  holding E rights a tipped boat with a helm; a raft or felled log without one stays as it lies. **Built 2026-11-24**
+  (`claude/flip-needs-helm`).
 - **Draining a flooded hull (creative):** "Hold E inside the hull": bails it dry over a second or two. **Built
   2026-11-24** (same branch): a full hull in 1.5 s, faster than a hole lets water in; creative only (the `bail`
   ability).
