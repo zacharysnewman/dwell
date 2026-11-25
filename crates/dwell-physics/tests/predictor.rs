@@ -589,3 +589,148 @@ fn a_crossing_predicted_a_tick_apart_is_no_snap() {
     );
     assert_eq!(p.stats().snaps, snaps, "no snap");
 }
+
+/// Where a player standing on a turning deck predicts itself against where the deck really is
+/// (owner, 2026-11-24: on a sailing boat "the players are twitching and twitch falling, sliding
+/// around"): a 5 × 1 m slab turning about its centre at `spin` rad/s, its pose arriving every 6
+/// ticks 6 ticks old (as over a link), the player standing still 1.5 m from its centre. The
+/// rider's largest drift from its spot on the real deck (m), its largest jump from one tick to the
+/// next measured on the deck (m), and the ticks it was not grounded.
+fn ride_a_turning_deck(spin: f64) -> (f64, f64, u32) {
+    let server = Server::new();
+    let mut world = VoxelWorld::flat();
+    let mut p = Predictor::new(PlayerControllerConfig::default());
+    let top = dwell_world::FLAT_TOP_M;
+    let centre = DVec3::new(0.5, top + 0.5, 0.5);
+    let mut s = server.snapshot(0);
+    // Standing on the slab, 1.5 m along +x from its centre.
+    s.local.position = [centre.x + 1.5, top + 1.0 + 0.9, centre.z];
+    p.on_snapshot(&mut world, &s);
+    let cells: Vec<dwell_physics::PieceCell> = (-2..=2)
+        .map(|x| dwell_physics::PieceCell {
+            center: DVec3::new(f64::from(x), 0.0, 0.0),
+            half: DVec3::new(0.5, 0.5, 1.0),
+            mass: 300.0,
+            collide: dwell_physics::Collide::All,
+            hull: None,
+            joined: 0,
+        })
+        .collect();
+    // The deck's turn `ticks` after it started.
+    let pose = |ticks: u32| dwell_physics::DQuat::from_rotation_y(spin * f64::from(ticks) * DT);
+    // A point on the deck, in its frame (the deck turned `ticks` after it started).
+    let on_deck = |point: DVec3, ticks: u32| {
+        use dwell_physics::frame::GridMaps;
+        let l = dwell_physics::frame::grid_of_pose(centre, pose(ticks)).to_grid_v(point);
+        DVec3::new(l.x, 0.0, l.z)
+    };
+    let local = |p: &Predictor, ticks: u32| on_deck(p.position(), ticks);
+    let spin_v = Vec3::new(0.0, spin as f32, 0.0);
+    // Settle onto it, still.
+    for seq in 1..=30u32 {
+        p.set_piece_moving(3, &cells, centre, pose(0), Vec3::ZERO, Vec3::ZERO, seq);
+        p.tick(&mut world, &quantize_input(&Input::default(), seq));
+    }
+    // Its spot, against the deck as it stands (unturned) before the turn starts.
+    let start = local(&p, 0);
+    let (mut drift, mut jump, mut air) = (0.0f64, 0.0f64, 0);
+    let mut fastest = 0.0f32;
+    let mut last = start;
+    for seq in 31..=210u32 {
+        // Turning from tick 30; the pose of `seq − 6` arrives every 6 ticks.
+        if seq % 6 == 0 {
+            let at = seq - 6;
+            p.set_piece_moving(
+                3,
+                &cells,
+                centre,
+                pose(at.max(30) - 30),
+                Vec3::ZERO,
+                spin_v,
+                at,
+            );
+        }
+        p.tick(&mut world, &quantize_input(&Input::default(), seq));
+        let here = on_deck(p.position(), seq - 30);
+        drift = drift.max((here - start).length());
+        jump = jump.max((here - last).length());
+        last = here;
+        if !p.controller().ground.grounded {
+            air += 1;
+        }
+        fastest = fastest.max(p.controller().platform.base_velocity.length());
+    }
+    let _ = local;
+    // The deck's point under the rider moves at 0.9 m/s; a carry far past it is jitter.
+    assert!(fastest < 2.0, "the carry reached {fastest} m/s");
+    p.remove_piece(3);
+    (drift, jump, air)
+}
+
+#[test]
+fn a_player_standing_on_a_turning_deck_stays_put_on_it() {
+    // face-a-only: the stand-in's turn is a yaw in world coordinates; the controller's carry on
+    // both faces is the mirror suite's.
+    let (drift, jump, air) = ride_a_turning_deck(0.6);
+    assert!(drift < 0.15, "drifted {drift:.3} m on the deck");
+    assert!(jump < 0.03, "jumped {jump:.3} m on the deck in one tick");
+    assert_eq!(air, 0, "off the deck {air} ticks");
+}
+
+#[test]
+fn a_player_standing_on_a_bobbing_deck_stays_on_it() {
+    // Owner, 2026-11-24: "I've noticed a falling animation twitching in often too, like the boat
+    // is rocking up or down gently". A 5 × 1 m slab heaving ±5 cm once a second, its pose (and
+    // velocity) arriving every 6 ticks 6 ticks old; the player standing still on it is never off
+    // it, and never carried much faster than the deck moves (0.31 m/s at most).
+    // face-a-only: the heave is along world +y; the controller's carry on both faces is the
+    // mirror suite's.
+    let server = Server::new();
+    let mut world = VoxelWorld::flat();
+    let mut p = Predictor::new(PlayerControllerConfig::default());
+    let top = dwell_world::FLAT_TOP_M;
+    let centre = DVec3::new(0.5, top + 0.6, 0.5);
+    let mut s = server.snapshot(0);
+    s.local.position = [centre.x + 1.0, top + 1.1 + 0.9, centre.z];
+    p.on_snapshot(&mut world, &s);
+    let cells: Vec<dwell_physics::PieceCell> = (-2..=2)
+        .map(|x| dwell_physics::PieceCell {
+            center: DVec3::new(f64::from(x), 0.0, 0.0),
+            half: DVec3::new(0.5, 0.5, 1.0),
+            mass: 300.0,
+            collide: dwell_physics::Collide::All,
+            hull: None,
+            joined: 0,
+        })
+        .collect();
+    let w = std::f64::consts::TAU;
+    let heave = |seq: u32| {
+        let t = f64::from(seq) * DT;
+        (
+            centre + DVec3::Y * 0.05 * (w * t).sin(),
+            0.05 * w * (w * t).cos(),
+        )
+    };
+    let q = dwell_physics::DQuat::IDENTITY;
+    for seq in 1..=30u32 {
+        p.set_piece(3, &cells, centre, q, Vec3::ZERO, seq);
+        p.tick(&mut world, &quantize_input(&Input::default(), seq));
+    }
+    let (mut air, mut fastest) = (0, 0.0f32);
+    for seq in 31..=270u32 {
+        if seq % 6 == 0 {
+            let at = seq - 6;
+            let (pos, vy) = heave(at.max(30) - 30);
+            p.set_piece(3, &cells, pos, q, Vec3::new(0.0, vy as f32, 0.0), at);
+        }
+        p.tick(&mut world, &quantize_input(&Input::default(), seq));
+        if !p.controller().ground.grounded {
+            air += 1;
+        }
+        let b = p.controller().platform.base_velocity.length();
+        fastest = fastest.max(b);
+    }
+    p.remove_piece(3);
+    assert_eq!(air, 0, "off the deck {air} of 240 ticks");
+    assert!(fastest < 0.8, "carried at up to {fastest} m/s");
+}

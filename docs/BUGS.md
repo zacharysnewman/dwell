@@ -1383,6 +1383,11 @@ the first ladder went there (it now waits for the cell).
 
 ### 220. Boats stop dead in still water instead of gliding on
 
+**Reverted 2026-11-24** (owner: "the drift is too strong where water objects keep moving after forces stop, I think
+maybe revert that change?"; `claude/boat-riding`): `water.glideSpeed` 0 and `water.drag` 0.15/s again, and a body in
+water keeps the air's damping, as before 0.76.4; the glide's mechanism stays in the data (0 is off). Its tests are back
+to the pre-0.76.4 ones. Open again only if the owner asks for a gentler glide.
+
 Owner, 2026-11-23: "Floating objects need more inertia, boats essentially never stop moving."; clarified: "in real water
 boats don't often come to a stop, they keep moving in the same direction for a while even without wind or a motor
 before the tide/currents exert enough force to move in that direction." The linear water drag (`water.drag` 0.15/s)

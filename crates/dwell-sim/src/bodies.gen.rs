@@ -3,7 +3,7 @@
 use crate::felling::{BodyKind, HoldRules, WaterRules};
 
 /// How bodies float (shared/physics/bodies.json `water`).
-pub const WATER: WaterRules = WaterRules { drag_coefficient: 1.0, glide_speed: 1.5, drag: 0.02, heave_drag: 2.0, angular_drag: 1.5, flood_m3s_per_m2: 1.9 };
+pub const WATER: WaterRules = WaterRules { drag_coefficient: 1.0, glide_speed: 0.0, drag: 0.15, heave_drag: 2.0, angular_drag: 1.5, flood_m3s_per_m2: 1.9 };
 
 /// Hold E on a body (shared/physics/bodies.json `hold`).
 pub const HOLD: HoldRules = HoldRules { hold_seconds: 0.35, bail_seconds: 1.5, right_rad_per_s: 1.6, right_lift_ms: 0.6, upright_deg: 8.0, reach_m: 6.0 };

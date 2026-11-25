@@ -107,7 +107,8 @@ fn air_box(blocks: &[([i32; 3], StateId)], up_step: i32) -> Option<([f64; 3], [f
 
 /// A piece's latest pose for the prediction: its id, boxes, position, rotation, velocity and the
 /// input seq its snapshot acknowledged.
-pub type Latest<'a> = (u32, &'a [PieceCell], DVec3, DQuat, DVec3, u32);
+/// A piece's id, boxes, latest position, rotation, velocity, spin and the input seq it acked.
+pub type Latest<'a> = (u32, &'a [PieceCell], DVec3, DQuat, DVec3, DVec3, u32);
 
 /// How far past its farthest cell a piece's blocks may settle from where it was last sent (m):
 /// the server lifts a piece up to two cells to free it, and a snapshot may lag its last moves.
@@ -282,6 +283,36 @@ impl Pieces {
         let p = self.map.get(&hit.body)?;
         let (velocity, angular) = motion_at(&p.poses, self.draw_ms(now_ms));
         Some(velocity + angular.cross(feet - hit.position))
+    }
+
+    /// Where a remote player standing on a body is drawn (owner, 2026-11-24: riders slid about on a
+    /// sailing boat): its `feet`, interpolated `INTERP_DELAY_MS` back as the bodies' past poses
+    /// are, kept at their spot on the body under them at that past pose, carried to the body as it
+    /// is drawn now (near the local player, its present: without this a rider standing still is
+    /// drawn sliding back across the deck by ~100 ms of its motion). None when no body's cell is
+    /// within `GROUND_PROBE_M` under the feet at the past poses.
+    pub fn ride_drawn(&self, feet: DVec3, f: FaceFrame, now_ms: f64) -> Option<DVec3> {
+        let at = self.draw_ms(now_ms);
+        let down = -DVec3::from(f.up());
+        let from = feet - down * GROUND_PROBE_M;
+        let mut best: Option<(f64, &Piece, (DVec3, DQuat))> = None;
+        for p in self.map.values() {
+            let past = pose_at(&p.poses, at);
+            let grid = grid_of_pose(past.0, past.1);
+            let limit = best.map_or(2.0 * GROUND_PROBE_M, |b| b.0);
+            if let Some((_, _, distance)) = ray_cells(
+                grid.to_grid_v(from),
+                grid.vector_to_grid_v(down),
+                &p.blocks,
+                limit,
+            ) {
+                best = Some((distance, p, past));
+            }
+        }
+        let (_, p, (was_at, was_turn)) = best?;
+        let local = grid_of_pose(was_at, was_turn).to_grid_v(feet);
+        let (now_at, now_turn) = p.drawn(at);
+        Some(grid_of_pose(now_at, now_turn).to_world_v(local))
     }
 
     /// The body `id`'s kind (an index into the body kinds; 0 natural).
@@ -533,6 +564,7 @@ impl Pieces {
                     l.position,
                     l.rotation,
                     l.velocity,
+                    l.angular,
                     l.seq,
                 ))
             })
@@ -1143,6 +1175,64 @@ mod tests {
             assert!(pieces.ground_velocity(beside, f, now).is_none());
             let above = DVec3::from(f.point([0.5, 41.5, 0.5]));
             assert!(pieces.ground_velocity(above, f, now).is_none());
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// Owner, 2026-11-24: players standing on a sailing boat were drawn sliding on it. A raft
+        /// drawn at its present near the local player (0.3 m ahead of its past pose, turned 0.1
+        /// rad): a remote player standing on it at the past pose is drawn at the same spot on the
+        /// raft as drawn; one beside it is left where it is.
+        fn a_remote_rider_is_drawn_at_its_spot_on_the_body_as_drawn(f: FaceFrame) {
+            let log = dwell_blocks::parse_state("dwell:log[axis=y]").expect("log");
+            let mut pieces = Pieces::default();
+            let mut sounds = Vec::new();
+            let origin = f.point([0.5, 40.25, 0.5]);
+            let r = [0.0, 0.0, 0.0, 1.0];
+            pieces.spawn(
+                &EntitySpawn {
+                    id: 4,
+                    kind: 1,
+                    origin,
+                    rotation: r,
+                    carriers: 0,
+                    cells: (-1..=1)
+                        .flat_map(|x| (-1..=1).map(move |z| (x, z)))
+                        .map(|(x, z)| dwell_protocol::PieceCellNet {
+                            offset: [x, 0, z],
+                            state: log,
+                        })
+                        .collect(),
+                },
+                0.0,
+                &mut sounds,
+            );
+            let state = PieceState {
+                id: 4,
+                position: origin,
+                rotation: r,
+                velocity: [0.0; 3],
+                angular: [0.0; 3],
+            };
+            for k in 0..6 {
+                pieces.on_snapshot(&[state], 0, 3 * k, 50.0 * f64::from(k), &mut sounds);
+            }
+            let now = 250.0;
+            let past = DVec3::from(origin);
+            let ahead = past + DVec3::X * 0.3;
+            let turn = DQuat::from_rotation_y(0.1);
+            pieces.tick_present(|_| Some((ahead, turn)));
+            pieces.tick_present(|_| Some((ahead, turn)));
+            // Near the local player, fully blended to its present.
+            for _ in 0..10 {
+                pieces.set_present(1.0, Some(ahead), 1.0);
+            }
+            let feet = DVec3::from(f.point([0.5, 40.5, 1.5]));
+            let drawn = pieces.ride_drawn(feet, f, now).expect("on the raft");
+            let want = ahead + turn * (feet - past);
+            assert!((drawn - want).length() < 1e-6, "{drawn:?} against {want:?}");
+            let beside = DVec3::from(f.point([3.5, 40.5, 0.5]));
+            assert!(pieces.ride_drawn(beside, f, now).is_none());
         }
     );
 

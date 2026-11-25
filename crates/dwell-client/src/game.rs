@@ -2275,13 +2275,16 @@ impl<S: Scene> Game<S> {
                     now_ms,
                     &mut self.sounds,
                 );
-                for (id, cells, position, rotation, velocity, seq) in self.pieces.latest() {
-                    self.predictor.set_piece(
+                // Spin too: a turning, rocking boat's stand-in turns on between snapshots.
+                for (id, cells, position, rotation, velocity, angular, seq) in self.pieces.latest()
+                {
+                    self.predictor.set_piece_moving(
                         id,
                         cells,
                         position,
                         rotation,
                         velocity.as_vec3(),
+                        angular.as_vec3(),
                         seq,
                     );
                 }
@@ -5841,8 +5844,19 @@ impl<S: Scene> Game<S> {
             self.streamer.mesh_dirty(around, budget, &mut *now);
         });
 
-        // Remote players, interpolated.
-        let views = self.remotes.sample(now_ms);
+        // Remote players, interpolated; one standing on a moving body at its spot on the body as
+        // drawn (the body near the local player is drawn at its present, the players 100 ms back).
+        let mut views = self.remotes.sample(now_ms);
+        for v in &mut views {
+            if v.flags & player_flags::GROUNDED != 0
+                && !v.is_dead()
+                && let Some(feet) = self
+                    .pieces
+                    .ride_drawn(DVec3::from(v.feet), v.face(), now_ms)
+            {
+                v.feet = feet.to_array();
+            }
+        }
         // Each one's footsteps this frame, for the rustle layered on them (BUGS.md #103).
         let mut strides = dwell_world::hash::HashMap::default();
         // Their swings play their tool's clips (WORK_QUEUE item 35: the sword's slashes).
