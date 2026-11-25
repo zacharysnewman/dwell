@@ -225,6 +225,36 @@ context) at a time with a choice to table it as well as the other options?" Answ
      launch rule (crest: last surface's angle; wall: straight up), the air's drag (0.75 × real, `air` config), ceilings
      by contact like walls, and the wall catch fixed in collision (a 5 mm walls-only contact skin, BUGS.md #241). A long
      fall now lands a little softer than its drop (15 m lands as 14.2 m): fall damage thresholds unchanged, asked.
+     Owner (2026-11-25): "Yes, scale the fall damage thresholds. Yes, air density should be set per world so the moon has
+     none." Owner should see: a 5 m drop still the first that hurts and a 15 m drop still lethal with the air's drag;
+     on the moon, no drag (jumps and falls as before the drag). Built 2026-11-25 (`claude/air-per-grid`): fall damage
+     reads landing speeds as drops through the air (5 m / 15 m hold); `grids.json` `airDensity` per grid (home 1.2, the
+     moon and the sun none), carried with the player like gravity. Owner: "Yes, update the proposal too." (the
+     slide-launch page, to what shipped).
+  3a. **Cannons: balls shove players, cannons placed pointing up, blocks fall when cut off (owner, 2026-11-25):**
+     "currently you can stand on cannonballs as they're fired from a cannon if the cannon is laying on its side pointed
+     upward and you can ride them into the air. Very cool. I'd like you to also be shoved by them when hit with them. So
+     if you stand in front of a cannon when it's fired, it should launch you forward as expected from physics forces.
+     Currently it seems to just pass through you. And I'd like to be able to place cannons pointing upward and also, they
+     currently act unexpectedly by breaking apart when the block beneath them breaks, they shouldn't do that. All blocks
+     should behave like that, falling when disconnected from their supporting (connecting to solid ground) blocks.
+     Looking more down than out, it should place a cannon pointing up. Reiterate before implementing those 3 items."
+     Owner should see: (1) standing in front of a firing cannon throws you forward by the ball's momentum; (2) placing a
+     cannon while looking more down than out places it pointing up; (3) breaking the block under a cannon drops the
+     cannon whole, and any block cut off from the ground falls. Bugs: BUGS.md #242 (balls pass through players), #243
+     (a cannon breaks apart when its support breaks). Restated to the owner first; not started. Owner's answers (2026-11-25): a
+     ball hitting a player: "Shove only" (no damage); looking more up than out: "Yes, down too" (a cannon placed pointing
+     down); a cut-off build: "Always one body" (no size cap); what anchors: "I'm not sure, these all sound expensive in
+     various scenarios, what are we doing now for something like sand, or trees?" (answered, asked again). Then: the tree rule with natural
+     terrain as the anchor ("Yes, natural terrain anchors"): placed or changed blocks fall as one body when no chain of
+     placed blocks reaches as-generated ground; natural terrain never falls (sand as today). Queued after the air-per-grid
+     merge and the page update. Owner (2026-11-25), on a shortcut: "like if a chain of blocks were
+     already marked … all are already marked as connecting so the search would stop at the first marked unnatural
+     block?"; a plain mark goes stale when a block on its path breaks, so a stored distance to natural ground instead:
+     "I like the distance marks do that." Each placed block keeps its steps to as-generated ground (placing: the least
+     neighbour's + 1; breaking: only the blocks whose distance ran through it are re-checked, and those left with no
+     smaller neighbour fall as one body). Natural terrain falling when cut off from bedrock: tabled (owner, "Let's put
+     it as a theoretical follow or tabled"), FUTURE.md.
   4. Section 8: far trees drawn exactly once at every distance, stage and variant (#197: the invariant test, then the
      fixes).
   5. Section 4, blocks: the door and ladder recipes; the hit-rule table for the owner; tall grass at most three cells,

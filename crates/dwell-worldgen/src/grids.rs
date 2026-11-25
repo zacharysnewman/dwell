@@ -71,6 +71,10 @@ pub struct GridDef {
     /// space that thins with height (docs/DAY_NIGHT.md §15); without, a viewer on it sees space,
     /// the night sky's, at every hour (the moon, the sun).
     pub atmosphere: bool,
+    /// Its air's density (kg/m³, `airDensity`, 0 when not given; only a grid with an `atmosphere`
+    /// has any): the player's drag there (PLAYER_CONTROLLER.md §6.15; owner, 2026-11-25: "air density
+    /// should be set per world so the moon has none").
+    pub air_density: f64,
     /// The coarse mesh of its surface drawn nearer than `far_m` and under its chunks while on it
     /// (`nearMesh`, MOON_WORLD.md §5 M-5); `None` draws none.
     pub near_mesh: Option<NearMesh>,
@@ -546,6 +550,19 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
                 .as_bool()
                 .ok_or_else(|| format!("{at}: `atmosphere` must be true or false"))?,
         };
+        let air_density = match g.get("airDensity") {
+            None => 0.0,
+            Some(_) => {
+                let d = num(g, "airDensity", &at)?;
+                if !(0.0..=100.0).contains(&d) {
+                    return Err(format!("{at}: `airDensity` must be in 0..=100 kg/m³"));
+                }
+                if d > 0.0 && !atmosphere {
+                    return Err(format!("{at}: `airDensity` needs `atmosphere`: true"));
+                }
+                d
+            }
+        };
         let near_mesh = match g.get("nearMesh") {
             None => None,
             Some(_) => {
@@ -646,6 +663,7 @@ pub fn parse_grids(text: &str) -> Result<Vec<GridDef>, String> {
             far_m,
             surface_m,
             atmosphere,
+            air_density,
             near_mesh,
             sky_disc,
             lod,

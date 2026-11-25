@@ -476,6 +476,7 @@ impl Server {
             h,
             (&mut space.players, &mut space.physics),
             scale,
+            Some(space.def.air_density as f32),
             lp,
             lv,
         );
@@ -510,6 +511,7 @@ impl Server {
             a.handle,
             (&mut self.players, &mut self.physics),
             1.0,
+            None,
             wp,
             wv,
         );

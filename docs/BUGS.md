@@ -6,6 +6,19 @@ pins it.
 
 ## Open
 
+### 243. A cannon breaks apart when the block under it breaks (owner, 2026-11-25)
+
+"they currently act unexpectedly by breaking apart when the block beneath them breaks, they shouldn't do that. All
+blocks should behave like that, falling when disconnected from their supporting (connecting to solid ground) blocks."
+Suspect: the cannon's four cells are `needsSupport: below`, so losing the block under them removes or detaches its
+cells one by one, not as one body. WORK_QUEUE first pass 3a.
+
+### 242. Cannonballs pass through players (owner, 2026-11-25)
+
+"I'd like you to also be shoved by them when hit with them. So if you stand in front of a cannon when it's fired, it
+should launch you forward as expected from physics forces. Currently it seems to just pass through you." (Standing on a
+ball fired upward does carry the player.) WORK_QUEUE first pass 3a.
+
 ### 240. The dam-break scene is built 544 m underground since 0.76
 
 Found 2026-11-24 (building `dam_blast`): `shared/theater/scenes/dam_break.json` puts its land at 32 m, the flat world's

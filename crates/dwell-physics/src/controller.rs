@@ -492,6 +492,9 @@ struct Player {
     /// This tick a slide rising up the ground met a wall ahead (§6.11): the speed (m/s) it goes on
     /// at straight up, set by the horizontal layer and taken by the vertical one. 0 for none.
     wall_launch: f32,
+    /// The air's density where the player is (kg/m³, PLAYER_CONTROLLER.md §6.15): the config's (the
+    /// home world's) until a grid gives its own ([`Players::set_air_density`]; the moon none).
+    air_density: f32,
     /// The grid's surface gravity × the config's (MOON_WORLD.md §7: the moon's ⅙):
     /// [`Players::set_gravity_scale`]. The take-off speeds are kept, so a jump goes 1/scale as high.
     gravity_scale: f32,
@@ -505,6 +508,7 @@ impl Player {
     /// take-off speed is the config's (the same bits at scale 1).
     fn scaled_cfg(&self) -> PlayerControllerConfig {
         let mut c = self.cfg;
+        c.air.density = self.air_density;
         if self.gravity_scale != 1.0 {
             c.body.gravity *= self.gravity_scale;
             c.jump.height /= self.gravity_scale;
@@ -754,6 +758,7 @@ impl Players {
             pre_step: Vec3::ZERO,
             touched: Vec::new(),
             wall_launch: 0.0,
+            air_density: cfg.air.density,
             gravity_scale: 1.0,
             far_fly_speed: 0.0,
         };
@@ -873,6 +878,15 @@ impl Players {
         assert!(scale > 0.0 && scale.is_finite(), "gravity scale {scale}");
         self.get_mut(h).gravity_scale = scale;
     }
+    /// Sets the air's density (kg/m³) where the player is (the grid's `airDensity`, §6.15).
+    pub fn set_air_density(&mut self, h: PlayerHandle, density: f32) {
+        self.get_mut(h).air_density = density;
+    }
+    /// The air's density (kg/m³) where the player is.
+    pub fn air_density(&self, h: PlayerHandle) -> f32 {
+        self.get(h).air_density
+    }
+
     pub fn gravity_scale(&self, h: PlayerHandle) -> f32 {
         self.get(h).gravity_scale
     }
@@ -3263,6 +3277,7 @@ pub fn carry(
     h: PlayerHandle,
     dst: (&mut Players, &mut Physics),
     gravity_scale: f32,
+    air_density: Option<f32>,
     p: [f64; 3],
     v: [f64; 3],
 ) -> PlayerHandle {
@@ -3279,5 +3294,8 @@ pub fn carry(
     dst_players.restore(dst_physics, nh, &state, pd, vd);
     dst_players.settle_face(dst_physics, nh);
     dst_players.set_gravity_scale(nh, gravity_scale);
+    if let Some(d) = air_density {
+        dst_players.set_air_density(nh, d);
+    }
     nh
 }

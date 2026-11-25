@@ -47,7 +47,7 @@ fn the_build_s_grids_are_home_at_rest_and_a_cratered_moon() {
 /// A bad entry fails with a message naming it.
 #[test]
 fn bad_grids_fail_with_a_message() {
-    let cases: [(&str, &str, &str); 14] = [
+    let cases: [(&str, &str, &str); 16] = [
         (
             "\"ramps\": \"notched\"",
             "\"ramps\": \"wavy\"",
@@ -71,6 +71,16 @@ fn bad_grids_fail_with_a_message() {
         ("\"seedSalt\": 1297040974,", "", "seedSalt"),
         ("\"captureM\": 40000,", "", "needs a `captureM`"),
         ("\"atmosphere\": false", "\"atmosphere\": 0", "atmosphere"),
+        (
+            "\"atmosphere\": false,",
+            "\"atmosphere\": false, \"airDensity\": -1,",
+            "`airDensity` must be in",
+        ),
+        (
+            "\"atmosphere\": false,",
+            "\"atmosphere\": false, \"airDensity\": 1,",
+            "`airDensity` needs `atmosphere`",
+        ),
         ("\"cells\": 96", "\"cells\": 2", "nearMesh.cells"),
         ("\"sinkM\": 8", "\"sinkM\": -1", "nearMesh.sinkM"),
         ("\"lod\": true", "\"lod\": 1", "`lod` must be true or false"),
@@ -546,6 +556,9 @@ fn the_moon_is_airless_and_has_a_near_mesh() {
     let moon = list.iter().find(|g| g.name == "dwell:moon").unwrap();
     assert!(home.atmosphere && !home.sky_disc && home.near_mesh.is_some() && !home.lod);
     assert!(!moon.atmosphere && moon.sky_disc);
+    // The air's density, the player's drag there (owner, 2026-11-25: "air density should be set per
+    // world so the moon has none").
+    assert_eq!((home.air_density, moon.air_density), (1.2, 0.0));
     let sun = list.iter().find(|g| g.name == "dwell:sun").unwrap();
     for g in [moon, sun] {
         assert!(g.lod, "{}: its own LOD on the grid", g.name);

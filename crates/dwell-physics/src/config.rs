@@ -206,7 +206,8 @@ pub struct SprintSlide {
 /// ground's carry), walking, sliding, jumping and falling; not climbing, swimming or flying.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Air {
-    /// kg/m³: the air's density (sea level, 1.2).
+    /// kg/m³: the air's density (sea level, 1.2): the home world's, which players spawn with; each
+    /// grid gives its own (`grids.json` `airDensity`, the moon none; `Players::set_air_density`).
     pub density: f32,
     /// m²: drag coefficient × frontal area, standing (a person upright, ~0.7).
     pub drag_area: f32,
@@ -456,7 +457,29 @@ impl Damage {
     /// `impact_safe_height`, all of `MAX_HEALTH` from `impact_lethal_height`, on the curve between.
     /// A tick's hit can take more than full health (a long fall), as before.
     pub fn impact_damage(&self, speed: f32, gravity: f32) -> i32 {
-        let height = speed * speed / (2.0 * gravity);
+        self.damage_for_drop(speed * speed / (2.0 * gravity))
+    }
+
+    /// [`Damage::impact_damage`] through air whose drag per speed² is `drag` (1/m, §6.15): the speed
+    /// is read as the drop that lands at it through that air, `−ln(1 − k v² ÷ g) ÷ 2k`, so the
+    /// thresholds stay real drops (owner, 2026-11-25: "scale the fall damage thresholds"); at or past
+    /// the air's top speed, a drop of any height.
+    pub fn impact_damage_in_air(&self, speed: f32, gravity: f32, drag: f32) -> i32 {
+        if drag <= 0.0 {
+            return self.impact_damage(speed, gravity);
+        }
+        let share = drag * speed * speed / gravity;
+        let height = if share >= 1.0 {
+            f32::MAX
+        } else {
+            -libm::logf(1.0 - share) / (2.0 * drag)
+        };
+        self.damage_for_drop(height)
+    }
+
+    /// Health points a drop of `height` m deals: 0 up to `impact_safe_height`, all of `MAX_HEALTH`
+    /// from `impact_lethal_height`, on the curve between.
+    fn damage_for_drop(&self, height: f32) -> i32 {
         if height <= self.impact_safe_height {
             return 0;
         }
@@ -470,9 +493,16 @@ impl Damage {
 }
 
 impl PlayerControllerConfig {
-    /// [`Damage::impact_damage`] under this config's gravity: what the server deals for a hit.
+    /// [`Damage::impact_damage_in_air`] under this config's gravity and air (standing, a fall's
+    /// pose): what the server deals for a hit.
     pub fn impact_damage(&self, speed: f32) -> i32 {
-        self.damage.impact_damage(speed, self.body.gravity)
+        self.damage
+            .impact_damage_in_air(speed, self.body.gravity, self.standing_drag())
+    }
+
+    /// The air's drag per speed² standing (1/m, §6.15): `scale × ½ ρ Cd·A ÷ mass`.
+    pub fn standing_drag(&self) -> f32 {
+        self.air.scale * 0.5 * self.air.density * self.air.drag_area / self.body.mass
     }
 
     /// Touch preset: auto-jump on (PLAYER_CONTROLLER.md §6.2).

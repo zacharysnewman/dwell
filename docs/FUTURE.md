@@ -167,3 +167,23 @@ pinned to a build's block registry (names, as the format already is) or carried 
 "By slowly gain, we can make that a system eventually, but as part of terrain generation." Today a dormant volcano's
 soil, grass and trees are set once at terrain generation from its weathering age (docs/proposals/VOLCANOES.md §6.7).
 Later: a live system where cover spreads over the cones as the world's time passes.
+
+## Natural terrain falling when cut off from bedrock (owner, 2026-11-25; tabled)
+
+Owner, while settling the distance marks for placed blocks (WORK_QUEUE first pass 3a): "could we use the distance (to
+indicate distance to bedrock) baked into blocks to make natural terrain also fall when not connected to bedrock?
+Thoughts? Efficiency concerns? At setup time or runtime?", then "Let's put it as a theoretical follow or tabled".
+What 3a builds: placed or changed blocks keep a distance to as-generated ground; natural terrain anchors and never falls
+(sand as today). The extension, as discussed:
+- **Not at generation.** A natural cell's distance depends on chunks below and beside it that may not exist yet
+  (chunks generate lazily), and storing one per solid cell of the world costs every saved and streamed chunk for
+  ground nobody digs.
+- **Lazily at runtime.** Natural cells read as "deep, anchored" until an edit nears them; then a local distance field
+  is built round the edit, a removal propagated as the flood light's is (unlight, then refill from what still has
+  support), toward the midplane on both faces, with anything past a depth or radius counted anchored so one dig never
+  walks a mountain.
+- **Risks.** Undercut cliffs could cut off millions of cells: natural masses need a cap or to break into rubble
+  (unlike player builds, which fall whole). The generator's arches, overhangs and noise leave thinly or un-connected
+  ground that would fall at the first dig nearby (anchored until an edit actually cuts it, or generation guarantees
+  connection). A big collapse also means a big water, light and far-terrain update.
+Revisit once the placed blocks' distance marks have been measured in play.

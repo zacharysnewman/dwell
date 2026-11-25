@@ -108,6 +108,8 @@ pub struct GridCarry {
     pub position: [f64; 3],
     pub velocity: [f64; 3],
     pub gravity_scale: f32,
+    /// Its air's density (kg/m³, §6.15); `None`: the config's, the home world's.
+    pub air_density: Option<f32>,
 }
 
 /// The grids' travel rules as the predictor runs them before each tick, as the server does
@@ -127,6 +129,11 @@ pub trait GridTravel {
     fn far_speed(&self, grid: u8, position: [f64; 3], world_s: f64) -> f32;
     /// A grid's gravity scale (home 1).
     fn gravity_scale(&self, grid: u8) -> f32;
+    /// A grid's air density (kg/m³, PLAYER_CONTROLLER.md §6.15); `None`: the config's (home's).
+    fn air_density(&self, grid: u8) -> Option<f32> {
+        let _ = grid;
+        None
+    }
     /// A grid-local point of `grid` in world coordinates at `world_s` (home's are the world's):
     /// a correction across grids is measured there, not across two frames' coordinates.
     fn to_world(&self, grid: u8, position: [f64; 3], world_s: f64) -> [f64; 3] {
@@ -377,6 +384,7 @@ impl Predictor {
             h,
             (&mut players, &mut physics),
             c.gravity_scale,
+            c.air_density,
             c.position,
             c.velocity,
         );
@@ -422,11 +430,13 @@ impl Predictor {
             return;
         }
         let gravity_scale = self.travel.as_ref().map_or(1.0, |t| t.gravity_scale(grid));
+        let air_density = self.travel.as_ref().and_then(|t| t.air_density(grid));
         self.carry_to(GridCarry {
             to: grid,
             position: center.to_array(),
             velocity: velocity.as_dvec3().to_array(),
             gravity_scale,
+            air_density,
         });
     }
 
