@@ -1506,3 +1506,122 @@ both_faces!(
         assert_eq!(fx.server.last_body_paste(), None, "out of reach");
     }
 );
+
+/// Owner, 2026-11-24: players on a moving boat "twitching and twitch falling, sliding around":
+/// player 1 sails and turns a 3 × 4 plank boat at its helm (the owner's: two planks stacked
+/// mid-back), player 2 stands on its deck doing nothing; it stays within 20 cm of its spot on the
+/// deck and on it the whole 8 s. Prints, per second, its drift and the ticks it wasn't grounded.
+/// A carry turned about the body's origin rather than its centre of mass threw it off in the turn.
+// face-a-only: the server's carry is the controller's, whose faces the mirror suite checks.
+#[test]
+fn a_player_standing_on_a_sailing_turning_boat_stays_put_on_it() {
+    let f = FaceFrame::A;
+    let mut fx = Fixture::new(config(f));
+    fx.join(1, &Client::new(1));
+    fx.join(2, &Client::new(2));
+    let (raft, _) = harbour(&mut fx, f);
+    fx.server.remove_body(raft);
+    let planks = f.state(dwell_blocks::require("dwell:planks"));
+    let mut cells: Vec<([i32; 3], u16)> = Vec::new();
+    for x in 0..3 {
+        for z in 0..4 {
+            cells.push(([x, 0, z], planks));
+        }
+    }
+    cells.push(([1, 1, 3], planks));
+    cells.push(([1, 2, 3], planks));
+    let helm = [1, 1, 0];
+    cells.push((
+        helm,
+        f.state(dwell_blocks::require("dwell:helm[facing=north]")),
+    ));
+    let c = f.cell([0, BASE, 0]);
+    let boat = fx
+        .server
+        .add_body(1, cells, [0.5, f64::from(c[1]) * dwell_world::CELL_H, 0.5]);
+    let step = |fx: &mut Fixture, seq: &mut u32, a: Input| {
+        *seq += 1;
+        for (id, inp) in [(1, a), (2, Input::default())] {
+            let m = Message::PlayerInput(PlayerInput {
+                last_snapshot_tick: 0,
+                inputs: vec![dwell_physics::net::quantize_input(&inp, *seq)],
+            });
+            fx.server.on_datagram(id, &m.encode());
+        }
+        fx.server.step();
+    };
+    let mut seq = 0;
+    for _ in 0..120 {
+        step(&mut fx, &mut seq, Input::default());
+    }
+    let up = dwell_physics::DVec3::Y;
+    let (p0, q) = fx.server.body_pose(boat).unwrap();
+    let place = |fx: &mut Fixture, id: u16, off: dwell_physics::DVec3| {
+        let h = fx.server.player_handle_of(id).unwrap();
+        let (_, physics, players) = fx.server.sim();
+        let half = f64::from(players.half_height(h));
+        players.teleport(
+            physics,
+            h,
+            p0 + q * off + up * (0.25 + 0.05 + half),
+            dwell_physics::Vec3::ZERO,
+        );
+    };
+    place(&mut fx, 1, dwell_physics::DVec3::new(1.0, 0.0, 1.0));
+    place(&mut fx, 2, dwell_physics::DVec3::new(0.0, 0.0, 2.0));
+    for _ in 0..30 {
+        step(&mut fx, &mut seq, Input::default());
+    }
+    assert!(fx.server.use_body_cell(1, boat, helm), "the helm");
+    let local = |fx: &mut Fixture| {
+        let h = fx.server.player_handle_of(2).unwrap();
+        let (at, rot) = fx.server.body_pose(boat).unwrap();
+        let (_, physics, players) = fx.server.sim();
+        let p = players.position(physics, h);
+        let g = players.controller(h).ground.grounded;
+        (rot.inverse() * (p - at), g)
+    };
+    let (start, _) = local(&mut fx);
+    for second in 0..8 {
+        let mut air = 0;
+        for t in 0..60 {
+            let turn = if second >= 3 { 1.0 } else { 0.0 };
+            step(
+                &mut fx,
+                &mut seq,
+                Input {
+                    move_y: 1.0,
+                    move_x: turn,
+                    ..Input::default()
+                },
+            );
+            let (_, g) = local(&mut fx);
+            if !g {
+                air += 1;
+            }
+            let _ = t;
+        }
+        let (l, _) = local(&mut fx);
+        let (at, _) = fx.server.body_pose(boat).unwrap();
+        let v = fx.server.body_velocity(boat).map_or(0.0, |v| v.length());
+        assert!(
+            (l - start).length() < 0.2,
+            "drifted {:.3} m on the deck by {}s",
+            (l - start).length(),
+            second + 1
+        );
+        assert_eq!(air, 0, "off the deck {air} ticks in second {}", second + 1);
+        println!(
+            "t {}s: drift {:.3} m ({:+.2}, {:+.2}, {:+.2}), off the ground {air}/60 ticks, boat at ({:.1}, {:.2}, {:.1}) v {:.2}",
+            second + 1,
+            (l - start).length(),
+            (l - start).x,
+            (l - start).y,
+            (l - start).z,
+            at.x,
+            at.y,
+            at.z,
+            v,
+        );
+    }
+}

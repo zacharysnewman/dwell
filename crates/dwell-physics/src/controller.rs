@@ -1359,12 +1359,25 @@ impl Players {
         let mut yaw_delta = 0.0f32;
         let carries = matches!(ground, GroundRef::Tier1Body(_))
             || (matches!(ground, GroundRef::Player(_)) && p.cfg.movement.carried_by_characters);
+        let grounded = p.c.ground.grounded;
         if carries && let Some(body) = ground.body() {
             let position = physics.position(p.body);
-            velocity = Self::frame(p).v(physics.point_velocity(body, position).as_vec3());
+            // The point under the player carried as the deck moves over the tick: its centre's
+            // velocity, and its spin turning the point about the centre through the tick's angle
+            // (not along the tangent, `ω × r`, which on a turning deck spirals the rider outward).
+            // About its centre of mass, which is what it turns about.
+            let spin = physics.angular_velocity(body);
+            let mut v = physics.point_velocity(body, position);
+            // A spin under a thousandth of a radian a second (a player's body, a resting log) is
+            // read as it was: the tangent is the arc.
+            if spin.length_squared() > 1e-6 {
+                let r = position - physics.center_of_mass(body);
+                let turned = crate::DQuat::from_scaled_axis(spin * f64::from(DT)) * r;
+                v += (turned - r) / f64::from(DT) - spin.cross(r);
+            }
+            velocity = Self::frame(p).v(v.as_vec3());
             yaw_delta = physics.angular_velocity(body).y as f32 * DT * RAD_TO_DEG;
         }
-        let grounded = p.c.ground.grounded;
         let max_yaw = p.cfg.advanced.max_platform_yaw_speed * DT;
         let platform = &mut p.c.platform;
         platform.ground_velocity = velocity;

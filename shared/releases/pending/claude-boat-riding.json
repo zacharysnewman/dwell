@@ -1,0 +1,7 @@
+{
+  "changes": [
+    "Standing on a sailing, turning or rocking boat no longer twitches, slides or flickers into falling",
+    "Other players standing on a boat stay put on its deck instead of sliding across it",
+    "Boats and logs in water slow down as before 0.76.4 (the long glide is reverted)"
+  ]
+}

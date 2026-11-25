@@ -258,6 +258,30 @@ context) at a time with a choice to table it as well as the other options?" Answ
   Owner, 2026-11-24: "If we can, make it so you can only flip a dynamic object when it has a helm." Owner should see:
   holding E rights a tipped boat with a helm; a raft or felled log without one stays as it lies. **Built 2026-11-24**
   (`claude/flip-needs-helm`).
+- **A dam blown open lags (next, after the boat riding):** owner, 2026-11-24: "I'd like to massively optimize water
+  flooding next. I've been building dams, and then blowing them up with yellow dynamite, and the water rushes out. Very
+  cool but so incredibly laggy and I think it's mostly on the server side. A bit hard to tell in the moment though. The
+  water loads choppily and the dynamite too. Imagine a 20m high dam. And 12 dynamite." Owner should see: a 20 m dam
+  blown with 12 yellow dynamite (`dwell:dynamite_yellow`, 7 m) floods out at a steady frame rate, the water and the
+  blast's pieces arriving smoothly, not in chunks. Plan: reproduce it natively first (a scene: a 20 m dam holding a
+  lake, 12 yellow dynamite along it), time the server's tick by phase (the blast, the pieces, the water grid, the
+  sends), then the client's side in the bench; fix the biggest first.
+- **Standing on a moving boat:** owner, 2026-11-24: "I notice the players don't seem to be moving relative to the boat
+  while standing on it (should be until no longer grounded on it). But now the players are twitching and twitch
+  falling, sliding around a bit on the boat too when it moves. I want to be careful not to prevent emergent physics
+  gameplay or locking the player to boat in a super restrictive way. Please let me know the options and your
+  proposal." (A 3 × 4 plank boat, two planks stacked mid-back, the helm on the front.) Owner should see: standing on a
+  sailing, turning boat, a player stays put on the deck (no twitch, no slide, no falling flicker), walks on it as on
+  land, and leaves it freely by jumping or walking off. Options asked for first. Owner, 2026-11-24, on the options
+  (predict the deck's turn and ease its corrections; carry riders by the deck's real motion; draw other riders on the
+  deck): "Yeah 1,2, and 3 all sounds solid, do it. Does bouyancy play a factor as well? Since I've noticed a falling
+  animation twitching in often too, like the boat is rocking up or down gently?" (Yes: the client doesn't simulate
+  buoyancy; it dead-reckons the deck, and each snapshot's correction moved it in one tick. Eased over 100 ms now.)
+  In the same message: "the drift is too strong where water objects keep moving after forces stop, I think maybe revert
+  that change?": the glide (BUGS #220) reverted. **Built 2026-11-24** (`claude/boat-riding`): 1 the stand-ins turn by
+  their spin and ease corrections over 0.1 s; 2 the carry turns the point about the centre of mass (a third change,
+  measuring the rider's motion against last tick's carry, made a rider who pushes the deck run away and was dropped);
+  3 other riders drawn at their spot on the deck. Not yet seen in the browser.
 - **Draining a flooded hull (creative):** "Hold E inside the hull": bails it dry over a second or two. **Built
   2026-11-24** (same branch): a full hull in 1.5 s, faster than a hole lets water in; creative only (the `bail`
   ability).

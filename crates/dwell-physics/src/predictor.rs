@@ -30,6 +30,10 @@ const CARRY_SLIP_TICKS: f32 = 8.0;
 const CARRY_WINDOW: u32 = 120;
 const HISTORY: u32 = 256; // ticks (> 4 s)
 const MAX_DEAD_RECKONING: f32 = 0.5; // s
+/// How long a stand-in's correction takes to ease out (s, [`PieceProxy::ease_position`]); past
+/// `EASE_MAX_M` it is taken at once (a teleport, a blast).
+const EASE_SECONDS: f32 = 0.1;
+const EASE_MAX_M: f64 = 0.5;
 
 /// A piece is stood in for in the prediction only while it could touch the local player soon
 /// (docs/FELLING.md §3): within its cells' reach plus `STAND_IN_M`, plus how far it closes on the
@@ -143,6 +147,13 @@ struct PieceProxy {
     position: DVec3,
     rotation: crate::DQuat,
     velocity: Vec3,
+    /// Its spin (rad/s, world): it turns on by it as it carries on by `velocity`.
+    angular: Vec3,
+    /// How far a snapshot moved its predicted present (where it was predicted less where it is
+    /// now), eased out over `EASE_SECONDS` of ticks predicted: a rider on a deck isn't flung by a
+    /// correction (owner, 2026-11-24: on a rocking boat players "twitch falling").
+    ease_position: DVec3,
+    ease_rotation: crate::DQuat,
     seq: u32,
     /// The local player's pushes after `seq`: the tick's input seq and the velocity given (world).
     pushes: Vec<(u32, DVec3)>,
@@ -213,6 +224,23 @@ impl WaterDrag {
 impl PieceProxy {
     /// Where it is after the tick of input `seq`: the server's pose carried on tick by tick, plus
     /// the pushes, slowed as the server slows it (the water, and the ground while unpushed).
+    /// Its rotation at input `seq`: the snapshot's turned on by its spin (dead reckoning, as the
+    /// position), at most `MAX_DEAD_RECKONING` ahead.
+    fn rotation_at(&self, seq: u32) -> crate::DQuat {
+        let cap = (MAX_DEAD_RECKONING / DT) as u32;
+        let ticks = seq.saturating_sub(self.seq).min(cap);
+        let turn = self.angular.as_dvec3() * (f64::from(ticks) * f64::from(DT));
+        (crate::DQuat::from_scaled_axis(turn) * self.rotation).normalize()
+    }
+
+    /// Its pose at input `seq` with what is left of its correction.
+    fn eased(&self, seq: u32) -> (DVec3, crate::DQuat) {
+        (
+            self.at(seq) + self.ease_position,
+            (self.ease_rotation * self.rotation_at(seq)).normalize(),
+        )
+    }
+
     fn at(&self, seq: u32) -> DVec3 {
         let cap = (MAX_DEAD_RECKONING / DT) as u32;
         let dt = f64::from(DT);
@@ -495,8 +523,16 @@ impl Predictor {
             );
             p.friction = crate::controller::ground_friction(world, &self.physics, frame, p.body)
                 * self.physics.gravity();
-            self.physics
-                .set_kinematic_pose(p.body, p.at(seq), p.rotation);
+            // The ease is the present's: a replay meets the stand-in where the server had it.
+            let (at, turn) = if forward {
+                let keep = libm::expf(-DT / EASE_SECONDS);
+                p.ease_position *= f64::from(keep);
+                p.ease_rotation = crate::DQuat::IDENTITY.slerp(p.ease_rotation, f64::from(keep));
+                p.eased(seq)
+            } else {
+                (p.at(seq), p.rotation_at(seq))
+            };
+            self.physics.set_kinematic_pose(p.body, at, turn);
         }
         if let Some(&dv) = self.knockbacks.get(&input.seq) {
             self.players.add_velocity(&mut self.physics, h, dv);
@@ -913,6 +949,23 @@ impl Predictor {
         velocity: Vec3,
         seq: u32,
     ) {
+        self.set_piece_moving(id, cells, position, rotation, velocity, Vec3::ZERO, seq);
+    }
+
+    /// [`Self::set_piece`] with its spin (`angular`, rad/s, world): the stand-in turns on by it to
+    /// each tick predicted, as it carries on by its velocity (owner, 2026-11-24: players on a
+    /// turning, rocking boat twitched; its stand-in had kept the last pose's rotation).
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_piece_moving(
+        &mut self,
+        id: u32,
+        cells: &[crate::PieceCell],
+        position: DVec3,
+        rotation: crate::DQuat,
+        velocity: Vec3,
+        angular: Vec3,
+        seq: u32,
+    ) {
         let kept = self.pieces.contains_key(&id);
         let near = self.handle.is_some_and(|h| {
             let extent = cells
@@ -939,6 +992,9 @@ impl Predictor {
             position,
             rotation,
             velocity,
+            angular,
+            ease_position: DVec3::ZERO,
+            ease_rotation: crate::DQuat::IDENTITY,
             seq,
             pushes: Vec::new(),
             water: WaterDrag::default(),
@@ -947,10 +1003,22 @@ impl Predictor {
         if seq < p.seq {
             return; // an older pose
         }
+        // Where it was predicted for the present, before and after: the step eased out.
+        let now = self.latest_seq;
+        let (was_at, was_turn) = p.eased(now);
         p.position = position;
         p.rotation = rotation;
         p.velocity = velocity;
+        p.angular = angular;
         p.seq = seq;
+        let (to_at, to_turn) = (p.at(now), p.rotation_at(now));
+        if (was_at - to_at).length() < EASE_MAX_M {
+            p.ease_position = was_at - to_at;
+            p.ease_rotation = (was_turn * to_turn.inverse()).normalize();
+        } else {
+            p.ease_position = DVec3::ZERO;
+            p.ease_rotation = crate::DQuat::IDENTITY;
+        }
         p.pushes.retain(|&(s, _)| s > seq);
     }
 

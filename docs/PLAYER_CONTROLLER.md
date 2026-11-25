@@ -532,9 +532,16 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
   (`PIECE_FRICTION`, 0.8): the player is held or carried at the body's speed there. The ground, walls,
   side hits and other players stay frictionless. The same in the prediction (its `Physics`).
 - **Riding:** `step_platform` uses the Tier 1 body's linear + angular velocity at the player's
-  position; the horizontal layer accelerates in that frame, and the vertical layer follows its
+  position, its spin turning that point about the body's centre of mass through the tick's angle
+  (0.76; a spin over 1 mrad/s: the arc, not the tangent `ω × r`, which spiralled a rider outward on
+  a turning boat); the horizontal layer accelerates in that frame, and the vertical layer follows its
   vertical velocity, so standing on a falling slab or tipping tower needs no input. `yaw_delta`
-  turns the camera with rotating bodies (clamped to `max_platform_yaw_speed`).
+  turns the camera with rotating bodies (clamped to `max_platform_yaw_speed`). In the prediction a
+  piece's stand-in carries on by its velocity and turns on by its spin between snapshots, and a
+  snapshot's correction of its present eases out over 0.1 s (`predictor.rs` `EASE_SECONDS`; replays
+  meet it where the server had it), so a rider on a turning, bobbing boat isn't jolted (owner,
+  2026-11-24). Other players standing on a body are drawn at their spot on it as it is drawn
+  (`Pieces::ride_drawn`).
 - **Push strength [built for pieces, 0.41.5; a person's push, 0.41.6].** The aggregate pass sets
   velocity directly, which by itself would let an 80 kg player shove a 20-tonne cluster. A piece
   slow enough (the server's `holdSpeed`) is held from players' contacts by a dominance group, and

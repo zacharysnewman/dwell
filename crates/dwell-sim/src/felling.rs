@@ -4,9 +4,9 @@
 //! physics step, and sends the voxel changes and the entity messages.
 
 use dwell_blocks::{Axis, StateId, info, state_property, with_property};
+use dwell_physics::Collide;
 use dwell_physics::frame::{GridMaps, grid_of_pose};
 use dwell_physics::predictor::WaterDrag;
-use dwell_physics::{AIR_DAMPING, Collide};
 use dwell_physics::{BodyHandle, DQuat, DVec3, Physics, PieceCell};
 use dwell_world::support::{SupportRules, detached_pieces};
 use dwell_world::{CELL_H, FaceFrame, M, VoxelWorld, m_of_row, row_of_m};
@@ -439,8 +439,6 @@ pub struct Falling {
     /// (docs/BUILT_BODIES.md §6): a kind that doesn't settle afloat (`settles_afloat`) keeps
     /// drifting with the current instead of settling (owner, 2026-11-12).
     afloat: bool,
-    /// In water, its air damping lifted (the water's drag slows it instead; BUGS.md #220).
-    wet: bool,
     /// Ticks since it was last afloat (`beach_ticks` before it may settle on dry ground).
     dry: u32,
 }
@@ -870,7 +868,6 @@ impl Felling {
                 pushed: 0,
                 anchored: false,
                 afloat: false,
-                wet: false,
                 dry: u32::MAX,
                 reach,
             });
@@ -971,7 +968,6 @@ impl Felling {
                 pushed: 0,
                 anchored: false,
                 afloat: false,
-                wet: false,
                 dry: u32::MAX,
                 reach,
             };
@@ -1315,7 +1311,6 @@ impl Felling {
             reach,
             anchored: false,
             afloat: false,
-            wet: false,
             dry: u32::MAX,
         });
         self.pieces.len() - 1
@@ -1486,13 +1481,6 @@ impl Felling {
                 p.dry = 0;
             } else {
                 p.dry = p.dry.saturating_add(1);
-            }
-            // In water the water's drag slows it, not the air's damping on every body (0.05/s,
-            // which took a let-go boat's glide in a minute: BUGS.md #220); back out, the air's
-            // again. Only on the change: a cannonball sets its own damping each tick.
-            if (under > 0.0) != p.wet {
-                p.wet = under > 0.0;
-                physics.set_linear_damping(p.body, if p.wet { 0.0 } else { AIR_DAMPING });
             }
             if under > 0.0 {
                 let share = under / p.cells.len() as f64;
@@ -2295,7 +2283,6 @@ mod tests {
             pushed: 0,
             anchored: false,
             afloat: false,
-            wet: false,
             dry: u32::MAX,
             reach: 1.0,
         }
@@ -2875,7 +2862,6 @@ mod tests {
             pushed: 0,
             anchored: false,
             afloat: false,
-            wet: false,
             dry: u32::MAX,
             reach: 1.0,
         });

@@ -627,6 +627,13 @@ impl Physics {
     pub fn angular_velocity(&self, h: BodyHandle) -> DVec3 {
         self.w.bodies.get(h.0).map_or(DVec3::ZERO, |b| b.angvel())
     }
+    /// The body's centre of mass (world): what it turns about.
+    pub fn center_of_mass(&self, h: BodyHandle) -> DVec3 {
+        self.w
+            .bodies
+            .get(h.0)
+            .map_or(DVec3::ZERO, |b| b.center_of_mass())
+    }
     /// The velocity of the body's material at a world point (v + ω × r).
     pub fn point_velocity(&self, h: BodyHandle, point: DVec3) -> DVec3 {
         self.w
