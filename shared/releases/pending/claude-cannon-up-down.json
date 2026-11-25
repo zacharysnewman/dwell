@@ -1,0 +1,8 @@
+{
+  "changes": [
+    "Cannons can stand pointing up (place one looking down) or hang pointing down (place one looking up), and fire straight along the barrel.",
+    "Placed blocks now fall when nothing connects them to the ground: cut a pillar and what's above falls as one piece.",
+    "A cannon no longer breaks apart when the block under it goes: it stays up while anything holds it and falls whole when nothing does.",
+    "Air drag halved: falls and long slides reach higher top speeds."
+  ]
+}

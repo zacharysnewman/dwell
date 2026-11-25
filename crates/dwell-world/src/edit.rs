@@ -223,7 +223,7 @@ pub fn behind(cell: [i32; 3], m: StateId) -> Option<[i32; 3]> {
         Facing::South => [0, 0, -1],
         Facing::East => [-1, 0, 0],
         Facing::West => [1, 0, 0],
-        Facing::None => return None,
+        Facing::None | Facing::Up | Facing::Down => return None,
     };
     Some([cell[0] + d[0], cell[1], cell[2] + d[2]])
 }

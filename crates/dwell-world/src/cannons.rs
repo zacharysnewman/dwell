@@ -132,6 +132,14 @@ pub fn anchor_in(cell: [i32; 3], m: dwell_blocks::StateId, f: crate::FaceFrame) 
     let (a, r) = c.place_of(c.index);
     let up = f.cell([0, 1, 0])[1] - f.cell([0, 0, 0])[1];
     let ahead = crate::parts::forward(s.facing);
+    if ahead[1] != 0 {
+        // Up or down: the rear bottom cell is the column's first row along the facing.
+        return [
+            cell[0],
+            cell[1] - up * ahead[1] * crate::parts::column_row(c, c.index),
+            cell[2],
+        ];
+    }
     [
         cell[0] - ahead[0] * a,
         cell[1] - up * r,

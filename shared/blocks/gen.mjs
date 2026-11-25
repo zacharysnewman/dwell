@@ -48,6 +48,9 @@ const namespaces = files
 const NAME = /^[a-z0-9_]+$/;
 const SHAPES = { empty: 'kEmpty', full: 'kFull', shaped: 'kShaped' };
 const FACINGS = ['north', 'east', 'south', 'west'];
+// A `facingProperty` may also hold the vertical facings (owner, 2026-11-25: a cannon placed pointing
+// up or down): a column then stacks its cells along the facing (crates/dwell-world parts.rs).
+const VERTICAL_FACINGS = ['up', 'down'];
 // The face (mesher axis·2 + sign) a ladder's plate sits against, per facing (0 +X, 1 −X, 4 +Z, 5 −Z).
 const LADDER_FACE = { east: 0, west: 1, south: 4, north: 5 };
 // A `selectionBox` on a block with a `facingProperty` is written for facing north (facing out of
@@ -58,6 +61,8 @@ const TURN = {
   east: (x, z) => [1 - z, x],
   south: (x, z) => [1 - x, 1 - z],
   west: (x, z) => [z, 1 - x],
+  up: (x, z) => [x, z],
+  down: (x, z) => [x, z],
 };
 // The state's selection box: the block's, turned to the state's facing.
 // A cross with per-state heights (`cross.heights`) scales the box's top with the state's height.
@@ -372,7 +377,8 @@ for (const ns of namespaces) {
     validateLight(id, def);
     if (def.facingProperty) {
       const p = props.find((q) => q.name === def.facingProperty);
-      if (!p || p.values.some((v) => !FACINGS.includes(v))) fail(`${id}: facingProperty`);
+      if (!p || p.values.some((v) => !FACINGS.includes(v) && !VERTICAL_FACINGS.includes(v))) fail(`${id}: facingProperty`);
+      if (p.values.some((v) => VERTICAL_FACINGS.includes(v)) && def.selectionBox) fail(`${id}: a vertical facing needs no selectionBox (it is not turned)`);
     }
     if (def.axisProperty) {
       const p = props.find((q) => q.name === def.axisProperty);

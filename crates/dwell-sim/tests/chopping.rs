@@ -23,6 +23,8 @@ const AXE: &str = "dwell:stone_axe";
 fn config(f: FaceFrame, mode: &str) -> ServerConfig {
     ServerConfig {
         generator_override: Some(empty_generator()),
+        // Ground written by hand into an empty world: all of it "placed".
+        placed_blocks_fall: false,
         spawn: Some(f.point([0.5, m_of_row(BASE), 0.5])),
         mode: mode.into(),
         // The axe hits a log through block damage: its real hits to break.

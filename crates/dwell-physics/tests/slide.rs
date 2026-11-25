@@ -412,7 +412,10 @@ fn running_off_a_crest_above_a_45_degree_ramp_flies_over_it() {
 }
 
 #[test]
-fn the_slide_reaches_its_terminal_speed_and_a_crouched_slide_is_faster_and_lower() {
+fn the_slide_has_no_terminal_speed_and_a_crouched_slide_is_faster_and_lower() {
+    // Owner (2026-11-25): "I definitely want to remove the two speed caps." A steep slide was held
+    // at `terminal_speed` (14 m/s; 16.1 crouched); now it speeds up down the whole face, only the
+    // air holding it back, and a crouched one (less friction and drag) is faster still.
     let mut w = PlayerTestWorld::new();
     long_ramp(&mut w);
     let z0 = 19.0;
@@ -434,12 +437,10 @@ fn the_slide_reaches_its_terminal_speed_and_a_crouched_slide_is_faster_and_lower
     }
     let terminal = w.config.slide.terminal_speed;
     assert!(
-        top_standing > terminal - 0.3 && top_standing < terminal + 0.3,
-        "{top_standing}"
+        top_standing > terminal + 0.3,
+        "past the old cap: {top_standing}"
     );
     assert!(top_crouched > top_standing + 0.5, "{top_crouched}");
-    let crouched_terminal = terminal * w.config.slide.crouch_terminal_factor;
-    assert!(top_crouched < crouched_terminal + 0.3, "{top_crouched}");
     assert!(crouched_sliding > 30, "{crouched_sliding}");
     assert!(approx(w.players.half_height(crouched), 0.45, 1e-5));
 }

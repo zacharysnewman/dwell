@@ -16,6 +16,8 @@ const DEPTH: i32 = 40;
 fn scene(f: FaceFrame, spawn_row: i32) -> Fixture {
     let mut fx = Fixture::new(ServerConfig {
         generator_override: Some(empty_generator()),
+        // Ground written by hand into an empty world: all of it "placed".
+        placed_blocks_fall: false,
         spawn: Some(f.point([0.5, m_of_row(spawn_row), 0.5])),
         ..flat()
     });

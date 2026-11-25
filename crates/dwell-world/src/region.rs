@@ -278,7 +278,8 @@ fn turn(f: Facing) -> Facing {
         Facing::East => Facing::South,
         Facing::South => Facing::West,
         Facing::West => Facing::North,
-        Facing::None => Facing::None,
+        // Up and down stay as they are about the vertical.
+        other => other,
     }
 }
 

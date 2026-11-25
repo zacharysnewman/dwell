@@ -311,7 +311,9 @@ impl<'a> VoxelQuery<'a> {
             dwell_blocks::Facing::South => z <= LADDER_PLATE_DEPTH,
             dwell_blocks::Facing::East => x <= LADDER_PLATE_DEPTH,
             dwell_blocks::Facing::West => x >= 1.0 - LADDER_PLATE_DEPTH,
-            dwell_blocks::Facing::None => false,
+            dwell_blocks::Facing::None | dwell_blocks::Facing::Up | dwell_blocks::Facing::Down => {
+                false
+            }
         };
         on_plate.then_some(t)
     }

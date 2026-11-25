@@ -80,6 +80,14 @@ pub fn partners_in(cell: [i32; 3], m: StateId, f: crate::FaceFrame) -> Vec<([i32
             }
             if let Some(want) = dwell_blocks::with_property_index(m, c.property, usize::from(j)) {
                 let (a, r) = c.place_of(j);
+                if fwd[1] != 0 {
+                    // Facing up or down: its cells stack along the facing, a row each in turn.
+                    out.push((
+                        up_by(cell, fwd[1] * (column_row(c, j) - column_row(c, c.index))),
+                        want,
+                    ));
+                    continue;
+                }
                 let up = up_by(cell, r - r0);
                 let k = a - a0;
                 out.push(([up[0] + fwd[0] * k, up[1], up[2] + fwd[2] * k], want));
@@ -89,7 +97,15 @@ pub fn partners_in(cell: [i32; 3], m: StateId, f: crate::FaceFrame) -> Vec<([i32
     out
 }
 
-/// One cell along `facing` (face-local, level): north −z, south +z, east +x, west −x (the
+/// A column's cell `j` as rows along a vertical facing (up or down, owner 2026-11-25: a cannon
+/// placed pointing up): its cells along the facing first, each one's rows in turn, so a cannon's
+/// 2 m barrel stands 4 rows tall in one 1 m column.
+pub fn column_row(c: dwell_blocks::Column, j: u8) -> i32 {
+    let (a, r) = c.place_of(j);
+    a * i32::from(c.rows()) + r
+}
+
+/// One cell along `facing` (face-local, level; up and down along its face's rows): north −z, south +z, east +x, west −x (the
 /// opposite of `edit::behind`); none for no facing.
 pub fn forward(facing: dwell_blocks::Facing) -> [i32; 3] {
     match facing {
@@ -97,6 +113,8 @@ pub fn forward(facing: dwell_blocks::Facing) -> [i32; 3] {
         dwell_blocks::Facing::South => [0, 0, 1],
         dwell_blocks::Facing::East => [1, 0, 0],
         dwell_blocks::Facing::West => [-1, 0, 0],
+        dwell_blocks::Facing::Up => [0, 1, 0],
+        dwell_blocks::Facing::Down => [0, -1, 0],
         dwell_blocks::Facing::None => [0, 0, 0],
     }
 }

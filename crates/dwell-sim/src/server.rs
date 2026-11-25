@@ -398,6 +398,10 @@ pub struct ServerConfig {
     /// Every block breaks in one hit, as before block damage (docs/BLOCK_DAMAGE.md): a test
     /// world's switch, for tests and e2e specs that break blocks with one click. Off: the data's.
     pub one_hit_breaks: bool,
+    /// Placed blocks cut off from the ground fall (dwell_world::anchoring; owner, 2026-11-25): on
+    /// by default. Off only for test worlds whose ground is written by hand into an empty generator
+    /// (all of it "placed", with no natural ground to stand on).
+    pub placed_blocks_fall: bool,
     /// A new world's far ecology (docs/ECOLOGY.md §6): on by default; off, the world has none
     /// (saved so: a world keeps its own). `ecology_speed` × the world's days (tests, dev; a
     /// per-world tuning hook, saved with it).
@@ -508,6 +512,7 @@ impl Default for ServerConfig {
             sky: None,
             world_size: dwell_protocol::world_size::WorldSize::DEFAULT,
             one_hit_breaks: false,
+            placed_blocks_fall: true,
             ecology: true,
             ecology_speed: 1.0,
             ecology_islands: None,
@@ -1135,6 +1140,8 @@ pub struct Server {
     knockbacks: Vec<(u16, Vec3)>, // applied in the next step
     /// The falling pieces (docs/FELLING.md).
     felling: crate::felling::Felling,
+    /// Placed blocks' distances to the ground: what a change cuts off falls (owner, 2026-11-25).
+    anchoring: dwell_world::anchoring::Anchoring,
     /// The explosives' fuses burning and their table (docs/EXPLOSIVES.md §3).
     fuses: crate::blasts::Fuses,
     /// Lit explosives the saved chunks loaded held (their fuses start again, in full).
@@ -1431,6 +1438,7 @@ impl Server {
             outbox: Vec::new(),
             knockbacks: Vec::new(),
             felling: crate::felling::Felling::default(),
+            anchoring: dwell_world::anchoring::Anchoring::new(),
             fuses: crate::blasts::Fuses::default(),
             relit: Arc::default(),
             phase_ms: [0.0; TICK_PHASES.len()],
@@ -3927,14 +3935,37 @@ impl Server {
         // `needsSupport`: tall grass, a torch, a sapling, a ladder): removed, not left floating
         // (owner, 2026-11-13, BUGS.md #165).
         let mut removed = Vec::new();
-        let new = self.felling.detach(
+        let mut gone: Vec<[i32; 3]> = Vec::new();
+        let mut new = self.felling.detach(
             &mut self.world,
             &mut self.physics,
             changed,
             settles,
             away_from,
-            &mut |world, cell, m| removed.extend(collapse.set_and_unsupport(world, cell, m)),
+            &mut |world, cell, m| {
+                gone.push(cell);
+                removed.extend(collapse.set_and_unsupport(world, cell, m));
+            },
         );
+        // Placed blocks cut off from the ground fall, each group as one body (dwell_world::anchoring;
+        // owner, 2026-11-25), whatever cut them: these cells, or the trees and sand just detached.
+        let mut touched: Vec<[i32; 3]> = changed.to_vec();
+        touched.extend(gone);
+        touched.extend(removed.iter().map(|&(c, _)| c));
+        let groups = if self.config.placed_blocks_fall {
+            self.anchoring.update(&mut self.world, &touched)
+        } else {
+            Vec::new()
+        };
+        new.extend(self.felling.detach_groups(
+            &mut self.world,
+            &mut self.physics,
+            groups,
+            settles,
+            &mut |world, cell, m| {
+                collapse.set_and_unsupport(world, cell, m);
+            },
+        ));
         self.broadcast_changes(collapse, VoxelModificationReason::Collapse);
         for i in new {
             let m = self.spawn_message(i);
@@ -4462,8 +4493,9 @@ impl Server {
         }
         let f = dwell_world::FaceFrame::at_row(anchor[1]);
         let fw = dwell_world::parts::forward(dwell_blocks::info(state).facing).map(f64::from);
-        let forward = DVec3::new(fw[0], 0.0, fw[2]);
         let up = DVec3::from(f.vector([0.0, 1.0, 0.0]));
+        // Up or down along its face's up (a cannon standing on end or hanging), else level.
+        let forward = DVec3::new(fw[0], 0.0, fw[2]) + up * fw[1];
         self.launch_ball(
             c,
             crate::felling::cell_centre(anchor),
@@ -4498,7 +4530,8 @@ impl Server {
     /// A cannon's shot (docs/CANNONS.md C2): its ball as a one-cell natural body (a sphere of the
     /// ball's radius and mass, `dwell_physics::ball_of`) at the muzzle — `muzzleForwardM` from the
     /// rear bottom cell's centre (`anchor`, m) along `forward`, `muzzleUpM` above its floor along
-    /// `up` — moving at the muzzle speed along the barrel, plus `carried` (the velocity of the body
+    /// `up` (its face's up); a cannon standing on end or hanging (`forward` along `up`) straight out
+    /// of its barrel's end — moving at the muzzle speed along the barrel, plus `carried` (the velocity of the body
     /// the cannon stands on, there); every client hears its `EntitySpawn`. A cannon on a body
     /// (`recoil`) pushes it back by the ball's momentum, at the cannon (C4). Gravity and water as any
     /// body's; at rest it settles as its block (or joins the body it rests on).
@@ -4518,11 +4551,22 @@ impl Server {
             return;
         };
         let f = dwell_world::FaceFrame::at_height(anchor.y);
-        // Along the barrel, tilted up by its elevation (owner, 2026-11-18: "angled up a bit").
-        let tilt = c.elevation_deg.to_radians();
-        let shot = (forward * tilt.cos() + up * tilt.sin()).normalize_or_zero();
         let floor = anchor - up * (0.5 * dwell_world::CELL_H);
-        let muzzle = floor + forward * c.muzzle_forward_m + up * c.muzzle_up_m;
+        let (shot, muzzle) = if forward.dot(up).abs() > 0.5 {
+            // Standing on end or hanging (owner, 2026-11-25): straight along the barrel, out of
+            // its end as far past it as a level cannon's muzzle is past its front (the anchor's
+            // cell is half a row long along it, not half a metre).
+            let rear = anchor - forward * (0.5 * dwell_world::CELL_H);
+            (forward, rear + forward * (c.muzzle_forward_m + 0.5))
+        } else {
+            // Along the barrel, tilted up by its elevation (owner, 2026-11-18: "angled up a bit").
+            let tilt = c.elevation_deg.to_radians();
+            let shot = (forward * tilt.cos() + up * tilt.sin()).normalize_or_zero();
+            (
+                shot,
+                floor + forward * c.muzzle_forward_m + up * c.muzzle_up_m,
+            )
+        };
         // The body's origin is its cell's centre; the sphere sits on the cell's floor.
         let origin = muzzle - up * (ball.radius_m - 0.5 * dwell_world::CELL_H);
         let i = self.felling.spawn_body(
@@ -4585,8 +4629,8 @@ impl Server {
                     return;
                 }
                 let fw = dwell_world::parts::forward(info(state).facing).map(f64::from);
-                let forward = turn * DVec3::new(fw[0], 0.0, fw[2]);
                 let up = turn * DVec3::from(f.vector([0.0, 1.0, 0.0]));
+                let forward = turn * DVec3::new(fw[0], 0.0, fw[2]) + up * fw[1];
                 let centre = at + turn * crate::felling::cell_offset_m(anchor);
                 let w = self.physics.angular_velocity(handle);
                 let carried = self.physics.velocity(handle) + w.cross(centre - at);

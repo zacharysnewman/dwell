@@ -231,6 +231,8 @@ fn facing_code(f: Facing) -> u8 {
         Facing::East => 2,
         Facing::South => 3,
         Facing::West => 4,
+        Facing::Up => 5,
+        Facing::Down => 6,
     }
 }
 
@@ -241,6 +243,8 @@ fn facing_of(c: u8) -> Option<Facing> {
         2 => Facing::East,
         3 => Facing::South,
         4 => Facing::West,
+        5 => Facing::Up,
+        6 => Facing::Down,
         _ => return None,
     })
 }

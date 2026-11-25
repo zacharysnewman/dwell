@@ -248,7 +248,9 @@ context) at a time with a choice to table it as well as the other options?" Answ
      various scenarios, what are we doing now for something like sand, or trees?" (answered, asked again). Then: the tree rule with natural
      terrain as the anchor ("Yes, natural terrain anchors"): placed or changed blocks fall as one body when no chain of
      placed blocks reaches as-generated ground; natural terrain never falls (sand as today). Queued after the air-per-grid
-     merge and the page update. (1) built 2026-11-25 (`claude/ball-shove`, BUGS.md #242). Owner (2026-11-25), on a shortcut: "like if a chain of blocks were
+     merge and the page update. (1) built 2026-11-25 (`claude/ball-shove`, BUGS.md #242). (2) and (3) built 2026-11-25 (`claude/cannon-up-down`): up/down facings placed by the look's pitch, fired straight along the barrel; placed blocks held by their distance to natural ground, cut-off groups falling as one body (BUGS.md #243; FELLING.md §9, CANNONS.md §17).
+     Owner (2026-11-25): "Cut air drag in half." `air.scale` 0.75 → 0.375 (PLAYER_CONTROLLER.md §6.15): a fall's top
+     speed ~101 m/s, a crouched slide's ~63 m/s down ½ m ramps and ~97 m/s down 45°. Owner (2026-11-25), on a shortcut: "like if a chain of blocks were
      already marked … all are already marked as connecting so the search would stop at the first marked unnatural
      block?"; a plain mark goes stale when a block on its path breaks, so a stored distance to natural ground instead:
      "I like the distance marks do that." Each placed block keeps its steps to as-generated ground (placing: the least

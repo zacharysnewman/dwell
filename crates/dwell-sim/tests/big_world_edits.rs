@@ -67,6 +67,9 @@ fn place_and_break(
 fn world(size: &str) -> Fixture {
     Fixture::new(ServerConfig {
         world_size: WorldSize::named(size).expect("a named size"),
+        // The stone is placed against a floating one in the sky (put by the test): held, not
+        // falling (FELLING.md §9), for the edit's reach far out under test.
+        placed_blocks_fall: false,
         ..flat()
     })
 }

@@ -216,6 +216,8 @@ impl Orientation {
 }
 
 const FACINGS: [&str; 4] = ["north", "east", "south", "west"];
+/// The vertical facings a facing property may also hold (a cannon's up and down): never turned.
+const VERTICAL_FACINGS: [&str; 2] = ["up", "down"];
 
 /// The registry property holding a facing state's compass facing (its block's `facingProperty`:
 /// the one whose values are all facings and which holds the state's facing).
@@ -237,13 +239,17 @@ fn facing_property(state: StateId) -> Option<&'static str> {
         Facing::East => "east",
         Facing::South => "south",
         Facing::West => "west",
+        // Up and down turn with no placement.
+        Facing::Up | Facing::Down => return None,
     };
     let block = block_of(state);
     block
         .properties
         .iter()
         .find(|p| {
-            p.values.iter().all(|v| FACINGS.contains(v))
+            p.values
+                .iter()
+                .all(|v| FACINGS.contains(v) || VERTICAL_FACINGS.contains(v))
                 && state_property(state, p.name) == Some(now)
         })
         .map(|p| p.name)

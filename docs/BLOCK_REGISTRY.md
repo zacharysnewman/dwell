@@ -164,7 +164,11 @@ data must stack a column whole and in order (`shared/structures` `format.mjs`); 
 above the first come with it (`blueprint::comes_with`: no cost, no builder places them).
 `"columnAlong": n` (1–4, default 1; **built** 2026-11-17, docs/CANNONS.md C1) makes the column `n` cells long along
 the block's facing too (`dwell_world::parts::forward`: north −z): its values fill each upright row of `count / n`
-cells bottom to top, row after row forward from the first (the cannon: 2 along × 2 up). `Column::along`, synced as
+cells bottom to top, row after row forward from the first (the cannon: 2 along × 2 up). A `facingProperty` may also
+hold `up` and `down` (owner, 2026-11-25; `Facing::Up`/`Down`, synced as facing codes 5 and 6, which an older build
+reads as none): such a column stacks along its facing instead, its cells one row each in turn, `along × rows` rows in
+one cell (`parts::column_row`; the cannon standing on end or hanging: 4 rows, 2 m, in one 1 m column), and is never
+turned by a blueprint's or a paste's rotation. `Column::along`, synced as
 rule tag `17` (`COLUMN_ALONG`, sent only when above 1; an older build reads a column straight up). Not yet in
 structures or blueprints (their column checks stack straight up). **Use actions** (built 2026-11-17): `"use":
 "fire"` (one word for now) makes a Use (a Place aimed at it) do the server's action, nothing written

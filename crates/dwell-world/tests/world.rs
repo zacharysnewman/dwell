@@ -140,6 +140,8 @@ fn the_palette_is_the_registrys_placeable_states() {
             "dwell:cannon[facing=east,part=rear_bottom]",
             "dwell:cannon[facing=south,part=rear_bottom]",
             "dwell:cannon[facing=west,part=rear_bottom]",
+            "dwell:cannon[facing=up,part=rear_bottom]",
+            "dwell:cannon[facing=down,part=rear_bottom]",
             "dwell:helm[facing=north]",
             "dwell:helm[facing=east]",
             "dwell:helm[facing=south]",

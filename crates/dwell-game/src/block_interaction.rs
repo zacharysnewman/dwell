@@ -242,6 +242,20 @@ pub fn water_surface(
     None
 }
 
+/// `m` facing up or down for a look `pitch_deg` (toward the player's up > 0) steeper than 45°, when
+/// its facing property has that value (owner, 2026-11-25: "Looking more down than out, it should
+/// place a cannon pointing up", and looking more up than out pointing down); None otherwise.
+fn vertical_facing(m: StateId, pitch_deg: f64) -> Option<StateId> {
+    let value = if pitch_deg < -45.0 {
+        "up"
+    } else if pitch_deg > 45.0 {
+        "down"
+    } else {
+        return None;
+    };
+    dwell_blocks::with_property(m, "facing", value)
+}
+
 /// The compass facing (`north` −Z, `east` +X, `south` +Z, `west` −X) nearest the level part of the
 /// world direction `dir`.
 fn compass(dir: [f64; 3]) -> &'static str {
@@ -261,7 +275,7 @@ fn ladder_face(facing: Facing) -> Option<u8> {
         Facing::West => Some(1),
         Facing::South => Some(4),
         Facing::North => Some(5),
-        Facing::None => None,
+        Facing::None | Facing::Up | Facing::Down => None,
     }
 }
 
@@ -313,6 +327,8 @@ pub struct BlockInteraction {
     /// The current target's state.
     target_state: StateId,
     yaw: f64,
+    /// The look's pitch (degrees, toward the player's up > 0) at the last update.
+    pitch: f64,
     /// The face the look was on at the last update.
     face: FaceFrame,
     last_edit_ms: f64,
@@ -338,6 +354,7 @@ impl BlockInteraction {
             into_target: false,
             target_state: 0,
             yaw: 0.0,
+            pitch: 0.0,
             face: FaceFrame::A,
             last_edit_ms: f64::NEG_INFINITY,
             bounds: WorldBounds::DEFAULT,
@@ -393,6 +410,7 @@ impl BlockInteraction {
         face: FaceFrame,
     ) -> Option<BlockTarget> {
         self.yaw = yaw_deg;
+        self.pitch = pitch_deg;
         self.face = face;
         let dir = view_direction(yaw_deg, pitch_deg, face).map(|v| v as f32);
         self.current = eye.and_then(|e| world.target(e, dir, players::REACH_DISTANCE));
@@ -453,9 +471,9 @@ impl BlockInteraction {
         let look = to_grid(view_direction(self.yaw, 0.0, self.face));
         let m = match slot.facing {
             ItemFacing::None => m,
-            ItemFacing::Away => {
+            ItemFacing::Away => vertical_facing(m, self.pitch).unwrap_or_else(|| {
                 dwell_blocks::with_property(m, "facing", compass(look)).unwrap_or(m)
-            }
+            }),
             ItemFacing::Toward => {
                 dwell_blocks::with_property(m, "facing", compass(look.map(|v| -v))).unwrap_or(m)
             }
@@ -476,9 +494,9 @@ impl BlockInteraction {
         let look = view_direction(self.yaw, 0.0, self.face);
         let m = match slot.facing {
             ItemFacing::None => m,
-            ItemFacing::Away => {
+            ItemFacing::Away => vertical_facing(m, self.pitch).unwrap_or_else(|| {
                 dwell_blocks::with_property(m, "facing", compass(look)).unwrap_or(m)
-            }
+            }),
             ItemFacing::Toward => {
                 dwell_blocks::with_property(m, "facing", compass(look.map(|v| -v))).unwrap_or(m)
             }
@@ -600,6 +618,30 @@ impl BlockInteraction {
 mod tests {
     use super::*;
     use dwell_blocks::require;
+
+    #[test]
+    fn a_cannon_placed_looking_down_points_up_and_looking_up_points_down() {
+        // face-a-only: a state's facing value, no geometry.
+        // Owner (2026-11-25): "Looking more down than out, it should place a cannon pointing up",
+        // and looking up, down; a level look keeps the compass facing (None here).
+        let cannon = dwell_blocks::require("dwell:cannon");
+        let facing = |m: StateId| dwell_blocks::info(m).facing;
+        assert_eq!(
+            vertical_facing(cannon, -60.0).map(facing),
+            Some(dwell_blocks::Facing::Up)
+        );
+        assert_eq!(
+            vertical_facing(cannon, 60.0).map(facing),
+            Some(dwell_blocks::Facing::Down)
+        );
+        assert_eq!(vertical_facing(cannon, -30.0), None);
+        assert_eq!(vertical_facing(cannon, 44.0), None);
+        // A block whose facing has no up or down (a ladder) keeps its compass facing.
+        assert_eq!(
+            vertical_facing(dwell_blocks::require("dwell:ladder"), -80.0),
+            None
+        );
+    }
 
     fn name(id: StateId) -> &'static str {
         info(id).name

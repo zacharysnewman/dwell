@@ -1119,14 +1119,14 @@ v24), so a replay and the server agree; the client never sets it itself.
 
 ### 6.15 The air's drag (Dwell addition) **[built, 2026-11-25]**
 Owner (2026-11-25): *"Let's add air drag and also tune this with a multiplier. Ideally like 0.75
-what actual air drag is."* The air slows the player by `scale × ½ ρ Cd·A × v² ÷ m` against the
-velocity, relative to the ground's carry (a platform's air moves with it): `air.density` 1.2
-kg/m³, `air.drag_area` (Cd·A) 0.7 m² standing and `air.crouch_drag_area` 0.4 m² crouched, the
-body's mass 80 kg, `air.scale` 0.75. It acts walking, running, sliding (ground or steep), jumping
+what actual air drag is."*, then *"Cut air drag in half."* The air slows the player by `scale × ½ ρ
+Cd·A × v² ÷ m` against the velocity, relative to the ground's carry (a platform's air moves with
+it): `air.density` 1.2 kg/m³, `air.drag_area` (Cd·A) 0.7 m² standing and `air.crouch_drag_area`
+0.4 m² crouched, the body's mass 80 kg, `air.scale` 0.375 (0.75 until the same day). It acts walking, running, sliding (ground or steep), jumping
 and falling; climbing, swimming and flying keep their own drags. At walking speeds it is nothing
-(0.25 m/s² at 8 m/s, which input makes up); it gives every downhill its top speed now that the
-slides have no caps (crouched down ½ m ramps ~45 m/s, down 45° ~69 m/s) and a fall its terminal
-speed, √(g ÷ k): ~71 m/s standing. Gravity stays 20 m/s² (owner, 2026-11-25).
+(0.12 m/s² at 8 m/s, which input makes up); it gives every downhill its top speed now that the
+slides have no caps (crouched down ½ m ramps ~63 m/s, down 45° ~97 m/s) and a fall its terminal
+speed, √(g ÷ k): ~101 m/s standing (at 0.75: 45, 69 and 71 m/s). Gravity stays 20 m/s² (owner, 2026-11-25).
 - **Per grid** (owner, 2026-11-25: *"air density should be set per world so the moon has none"*):
   each grid's air is `grids.json` `airDensity` (kg/m³; 0 unless declared, and only a grid with an
   `atmosphere` may declare it): home 1.2 (the config's `air.density`, which players spawn with; a
@@ -1134,7 +1134,7 @@ speed, √(g ÷ k): ~71 m/s standing. Gravity stays 20 m/s² (owner, 2026-11-25)
   the predictor's `GridCarry` and `GridTravel::air_density`), the player takes its air, as its
   gravity; back home, the config's.
 - **Fall damage holds its heights** (owner, 2026-11-25: *"scale the fall damage thresholds"*): the
-  drag lands a drop a little slower (10 m at 19.6 m/s, not 20), so §6.10 now reads a landing speed
+  drag lands a drop a little slower (10 m at 19.8 m/s, not 20; 19.6 at 0.75), so §6.10 now reads a landing speed
   as the drop that reaches it through the air, `−ln(1 − k v² ÷ g) ÷ 2k` (standing; `Damage::
   impact_damage_in_air`): 5 m is still the first drop that hurts and 15 m still kills (before the
   fix 10 m dealt 20 points, read as a 9.6 m drop; at or past the air's top speed a hit reads as a
