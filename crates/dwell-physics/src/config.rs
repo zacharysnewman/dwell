@@ -149,13 +149,15 @@ pub struct Slide {
     pub min_angle: f32,
     /// Coefficient of friction: the slope pulls with `gravity × (sin θ − friction × cos θ)`.
     pub friction: f32,
-    /// m/s along the slope.
+    /// m/s along the slope: what holding up the slope brakes toward, `terminal_speed × (1 − brake ×
+    /// hold)` (× `crouch_terminal_factor` crouched). Not a cap: without braking a slide speeds up
+    /// until the air's drag (§6.15) holds it (owner, 2026-11-25: "remove the two speed caps").
     pub terminal_speed: f32,
     /// Fraction of `movement.acceleration` (and `deceleration`) for steering across the slope.
     pub steering: f32,
     /// m/s: the fastest steering across the slope.
     pub steer_speed: f32,
-    /// Holding up the slope lowers the terminal speed by up to this fraction (never to 0).
+    /// Holding up the slope brakes to `terminal_speed` less up to this fraction (never to 0).
     pub brake: f32,
     /// m/s² along the slope: how fast braking (or a lower terminal speed) slows the slide.
     pub brake_deceleration: f32,
@@ -167,14 +169,15 @@ pub struct Slide {
     /// "feel like pure physics"): a slide's momentum carries up a steep face against gravity and
     /// the slide's friction alone, so a fast slide clears a 1 m steep ramp.
     pub crouch_uphill_deceleration: f32,
-    /// Crouched: the terminal speed × this, and `crouch_friction` instead of `friction`.
+    /// Crouched: the braked speed × this, and `crouch_friction` instead of `friction`.
     pub crouch_terminal_factor: f32,
     pub crouch_friction: f32,
 }
 
 /// ◆ The sprint slide (PLAYER_CONTROLLER.md §6.9): pressing crouch while sprinting on the ground
 /// slides on in the direction of travel, crouched, slowing with friction (less downhill, more
-/// uphill). Speeds are horizontal.
+/// uphill). Speeds are along the surface (owner, 2026-11-25), never capped (the air's drag gives
+/// each slope its top speed, §6.15).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SprintSlide {
     /// m/s: the slowest horizontal speed a crouch press starts a slide from (above the walk speed,
@@ -182,17 +185,35 @@ pub struct SprintSlide {
     pub min_start_speed: f32,
     /// m/s added to the speed when the slide starts.
     pub start_boost: f32,
-    /// m/s: the fastest a slide goes; downhill speeds it up to this.
+    /// m/s: the start boost never takes a slide past this (a faster one keeps its speed). Not a cap
+    /// on the slide (owner, 2026-11-25: "remove the two speed caps").
     pub max_speed: f32,
-    /// m/s²: friction's deceleration.
+    /// Coefficient of friction: friction slows the slide along the surface by `friction × g ×
+    /// cos θ` (0.25: 5 m/s² on flat ground; owner, 2026-11-25, friction follows the slope).
     pub friction: f32,
     /// Fraction of gravity along the ground that speeds the slide downhill and slows it uphill:
-    /// `gravity × slope_gravity × (the ground's horizontal tilt along the slide)`.
+    /// `gravity × slope_gravity × sin θ` along the surface.
     pub slope_gravity: f32,
     /// °/s: the fastest move input turns the slide.
     pub steer_rate: f32,
     /// Ticks after a slide ends before another can start.
     pub cooldown_ticks: u16,
+}
+
+/// ◆ The air's drag on the player (PLAYER_CONTROLLER.md §6.15; owner, 2026-11-25: "add air drag
+/// and also tune this with a multiplier. Ideally like 0.75 what actual air drag is"): a
+/// deceleration of `scale × ½ ρ Cd·A × speed² ÷ mass` against the velocity (relative to the
+/// ground's carry), walking, sliding, jumping and falling; not climbing, swimming or flying.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Air {
+    /// kg/m³: the air's density (sea level, 1.2).
+    pub density: f32,
+    /// m²: drag coefficient × frontal area, standing (a person upright, ~0.7).
+    pub drag_area: f32,
+    /// m²: the same, crouched (a tuck, ~0.4).
+    pub crouch_drag_area: f32,
+    /// The multiplier on real drag (0.75).
+    pub scale: f32,
 }
 
 /// ◆ Which contacts an impact can hurt on (§6.10, `damage.impact_surfaces`).
@@ -297,6 +318,7 @@ pub struct PlayerControllerConfig {
     pub fly: Fly,
     pub slide: Slide,
     pub sprint_slide: SprintSlide,
+    pub air: Air,
     pub damage: Damage,
     pub step_view: StepView,
     pub advanced: Advanced,
@@ -390,10 +412,16 @@ impl Default for PlayerControllerConfig {
                 min_start_speed: 6.5,
                 start_boost: 1.5,
                 max_speed: 14.0,
-                friction: 5.0,
+                friction: 0.25,
                 slope_gravity: 1.0,
                 steer_rate: 90.0,
                 cooldown_ticks: 30,
+            },
+            air: Air {
+                density: 1.2,
+                drag_area: 0.7,
+                crouch_drag_area: 0.4,
+                scale: 0.75,
             },
             damage: Damage {
                 impact_safe_height: 5.0,

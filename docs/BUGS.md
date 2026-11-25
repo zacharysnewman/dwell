@@ -1390,6 +1390,19 @@ the first ladder went there (it now waits for the cell).
 
 ## Fixed
 
+### 241. Held into a wall, the player catches on its cells (found 2026-11-24, `claude/slide-launch`)
+
+Found building the slide's wall launch (WORK_QUEUE first pass item 3): with any speed into a wall (forward held in the
+air, a slide along a cliff), the player's capsule sank a millimetre or two into the wall and caught on the faces between
+its cells: it crossed at most one cell a tick along the wall (up it ½ m a tick, a 40 m/s rise held to 30; along it 1 m a
+tick, 80 m/s held to 60) and, slower, stopped at every other one. Not CCD or friction (both ruled out); the contacts
+report one clean wall normal. Owner (2026-11-25): fix it in collision ("fix the bodies the capsule from sinking in, or
+make a flat wall of cells collide as one plane") rather than the first build's controller workaround (which stopped the
+input pushing into the wall). Fixed: the capsule has a 5 mm contact skin (`physics::PLAYER_WALL_SKIN`) that the physics
+hook keeps on the terrain's walls only and takes back from every other contact (PLAYER_CONTROLLER.md §6.11). Red → green:
+`ramps.rs` `holding_into_a_wall_in_the_air_never_catches_on_its_cells` (up and along a wall; 0.48 m off a tick's
+motion without the skin).
+
 ### 220. Boats stop dead in still water instead of gliding on
 
 **Reverted 2026-11-24** (owner: "the drift is too strong where water objects keep moving after forces stop, I think

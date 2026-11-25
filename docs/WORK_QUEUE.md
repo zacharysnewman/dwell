@@ -180,6 +180,51 @@ context) at a time with a choice to table it as well as the other options?" Answ
      terrain, shouldn't." Owner should see: sliding at speed up a ramp launches along the last surface slid on: a
      shallow ramp a shallow arc, shallow then steep a steep arc, up into a wall straight up; at 25 m/s as at 50 m/s,
      never through the terrain.
+     Built 2026-11-24 (`claude/slide-launch`), for the owner's look: a slide's whole speed now turns along each steeper
+     face it slides up (before, it kept its flat speed and added the climb, speeding up uphill), and into a wall it goes
+     straight up at its speed (before, it stopped dead); measured at 25 and 50 m/s: leaves at 26.6°, 45° and 90°, never
+     into the ground or the wall. Found along the way: holding forward into a wall in the air caught on every ½ m cell
+     (BUGS.md #241, fixed). A slide on flat ground into a wall still stops (only a rising slide launches up it).
+     Owner (2026-11-24): "Let's put the water optimization on hold until I test it tomorrow."
+     Owner (2026-11-25), on the first build, before it merges: "This specifically applies to flat and upward motion, that
+     I want launches. Preferably keep gluing behavior for downward slopes. Open to discussion on this it may be multiple
+     systems interacting and I want to weigh my opinion in on how we do it. Make a visual preferably a concrete graph of
+     some kind that shows the curve/arc of the motion over time before and after based on the math for each surface
+     angle. And also based on actual tests, not just the theoretical math. Could be wrong, but it sounds like the upward
+     collision checks are maybe checking inside the walls and the collision for the 1/2m cells is a box instead of a
+     plane. What did you change though? Remember I wanted to express my opinion on it?" Owner should see: a page of
+     before/after arcs per surface angle (the math and the measured runs), and the change explained, to decide on
+     before it merges. On hold for the owner's decision. Owner (2026-11-25), after asking what caps speed and how Quake/Source do
+     drag: "Yeah sure, add it to the page with before and after with different slopes over time": the Quake-style slide
+     friction option (c + k·v, no 14 m/s cap) added to the page, math with sliders and measured runs (a patched copy, c 3,
+     k 0.4); not in the branch. Owner (2026-11-25): "You have the comparison with Quake, what about a
+     version without the steep or shallow speed caps retaining constant 5m/s friction.": added to the page as "uncapped"
+     (math and measured on a patched copy; not in the branch).
+     Owner decisions (2026-11-25): "I definitely want to remove the two speed caps. I'm considering adding the air drag.
+     And I also like what you did with the slope velocity changes for launching. I also want to fix the bodies the capsule
+     from sinking in, or make a flat wall of cells collide as one plane. We won't start work on these until we finish
+     ironing out the whole solution, so wait on that." So far: remove the sprint slide's 14 m/s cap and the steep slide's
+     terminal speed; keep the launch rule (speed turned along each steeper face, a wall straight up); fix the wall catch
+     in collision (no sinking in, or a flat wall of cells as one plane) instead of the controller workaround; air drag
+     under consideration. On hold until the whole solution is settled.
+     Owner (2026-11-25), on the list of differences from reality: "Let's keep gravity as is for now. Let's add air drag and
+     also tune this with a multiplier. Ideally like 0.75 what actual air drag is. Let's correct Dwell to align with #3 and
+     #4 for friction on slopes and slide horizontal speed. Anything I don't explicitly reference leave as is, let me know
+     what you're leaving out. Explain #7 corners between surfaces, what are the implications with our current
+     implementation." So: gravity stays 20 m/s²; air drag added at 0.75 × real (a data multiplier); slide friction
+     μ·g·cos θ along the surface (#3); the sprint slide's speed along the surface, not horizontal (#4). Left as is:
+     stopping on slopes under 44° (#5), landings keeping their run (#6), the stepped ramps' hops (#8), free steering (#9),
+     the rigid capsule (#10). Still on hold until the whole solution is settled.
+     Owner (2026-11-25): "Corner rule, keep speed at corner" and "Ceiling shouldn't hard stop, should work like walls."
+     So: every corner keeps the slide's speed along the surface (uphill, the glue over a downhill edge, a hill's bottom);
+     a ceiling takes only the speed into it (its normal's part), like a wall, instead of the probe zeroing every rise.
+     (#8 dropped: even ½ m ramp runs don't hop; measured 2026-11-25.)
+     Owner (2026-11-25): "Full solution done, go ahead." Built 2026-11-25 (`claude/slide-launch`), for the owner's look:
+     the slide's speed is along the surface (no protocol change: `current` holds it), friction μ g cos θ (μ 0.25), no
+     caps (the sprint slide's 14 m/s, the steep slide's terminal speed; braking stays), every corner keeps the speed, the
+     launch rule (crest: last surface's angle; wall: straight up), the air's drag (0.75 × real, `air` config), ceilings
+     by contact like walls, and the wall catch fixed in collision (a 5 mm walls-only contact skin, BUGS.md #241). A long
+     fall now lands a little softer than its drop (15 m lands as 14.2 m): fall damage thresholds unchanged, asked.
   4. Section 8: far trees drawn exactly once at every distance, stage and variant (#197: the invariant test, then the
      fixes).
   5. Section 4, blocks: the door and ladder recipes; the hit-rule table for the owner; tall grass at most three cells,

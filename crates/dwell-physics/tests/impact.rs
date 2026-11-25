@@ -102,7 +102,7 @@ fn drops_up_to_5_m_never_hurt_and_damage_climbs_steadily_to_lethal_at_15_m() {
         (14.0, 76, 85),
         (15.2, 100, 110),
     ] {
-        let mut w = PlayerTestWorld::new();
+        let mut w = PlayerTestWorld::with_config(without_air());
         w.floor();
         let e = w.spawn(Vec3::new(0.5, height, 0.5));
         let dealt: i32 = hits(&mut w, e, ticks(3.0)).iter().sum();

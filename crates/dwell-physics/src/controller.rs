@@ -53,6 +53,13 @@ const STEP_FOOT_OFFSET: f32 = 0.02;
 /// Two step directions closer than this (cos 10°) are one.
 const STEP_SAME_DIRECTION: f32 = 0.985;
 const LAUNCH_THRESHOLD: f32 = 0.10;
+/// A contact whose normal's horizontal part is longer than this is a wall a rising slide launches
+/// up (§6.11): steeper than ~64°, so a 45° ramp's face is not one.
+const WALL_LAUNCH_MIN_FLAT: f32 = 0.9;
+/// …when it faces the slide's travel at least this much (cos ~45°).
+const WALL_LAUNCH_FACING: f32 = 0.7;
+/// …and the slide rose at least this fast (m/s) last tick: a slide on flat ground into a wall stops.
+const WALL_LAUNCH_MIN_RISE: f32 = 0.5;
 /// Dwell: during step_grace.
 const STEP_LAUNCH_THRESHOLD: f32 = 1.5;
 /// Dwell: on a dynamic body underfoot (a raft afloat), the deviation a launch must exceed (m/s).
@@ -482,8 +489,9 @@ struct Player {
     pre_step: Vec3,
     /// Last tick's contact normals (world): a contact among them is not a new hit (§6.10).
     touched: Vec<DVec3>,
-    /// This tick the ceiling probe stopped the rise: the ceiling is met before its contact.
-    ceiling_stop: bool,
+    /// This tick a slide rising up the ground met a wall ahead (§6.11): the speed (m/s) it goes on
+    /// at straight up, set by the horizontal layer and taken by the vertical one. 0 for none.
+    wall_launch: f32,
     /// The grid's surface gravity × the config's (MOON_WORLD.md §7: the moon's ⅙):
     /// [`Players::set_gravity_scale`]. The take-off speeds are kept, so a jump goes 1/scale as high.
     gravity_scale: f32,
@@ -716,6 +724,7 @@ impl Players {
             .build();
         let body = physics.w.bodies.insert(body);
         let collider = ColliderBuilder::new(capsule_shape(&cfg, false))
+            .contact_skin(crate::physics::PLAYER_WALL_SKIN)
             .mass(f64::from(cfg.body.mass))
             .friction(0.0)
             .friction_combine_rule(CoefficientCombineRule::Min)
@@ -744,7 +753,7 @@ impl Players {
             drive_lift: 0.0,
             pre_step: Vec3::ZERO,
             touched: Vec::new(),
-            ceiling_stop: false,
+            wall_launch: 0.0,
             gravity_scale: 1.0,
             far_fly_speed: 0.0,
         };
@@ -1484,7 +1493,8 @@ impl Players {
         if v.length() < cfg.sprint_slide.min_start_speed {
             return;
         }
-        c.horizontal.current = v + base;
+        // The slide's state is its speed along the surface (§6.9): the run it has, along the ground.
+        c.horizontal.current = Self::along_surface(c, v) + base;
         c.horizontal.external = Vec3::ZERO;
         c.sprint_slide.active = true;
         c.events |= events::SPRINT_SLIDE_STARTED;
@@ -1510,6 +1520,8 @@ impl Players {
         if speed < s.min_start_speed {
             return;
         }
+        let v = Self::along_surface(c, v);
+        let speed = v.length();
         let boosted = (speed + s.start_boost).min(s.max_speed.max(speed));
         c.horizontal.current = v * (boosted / speed) + base;
         c.horizontal.external = Vec3::ZERO;
@@ -2455,6 +2467,7 @@ impl Players {
         let m = cfg.movement;
         let grounded = p.c.ground.grounded;
         p.drive_lift = 0.0;
+        p.wall_launch = 0.0;
         if p.c.exclusive() {
             // Ladders, water and flight take over (their layers own the velocity).
             let c = &mut p.c;
@@ -2479,8 +2492,12 @@ impl Players {
         let driven = h.contribution + Vec3::new(0.0, p.c.vertical.target_y, 0.0);
         let air_push =
             (!grounded).then(|| flat(move_direction(&p.c.input)) * cfg.movement.walk_speed);
+        let mut walls: Vec<Vec3> = Vec::new();
         for &n in &p.contacts {
             let normal = frame.v(n.as_vec3());
+            if flat(normal).length() > WALL_LAUNCH_MIN_FLAT {
+                walls.push(normal);
+            }
             // Driving into a contact that faces partly up deflects part of the drive upwards.
             let into_horizontal = -h.contribution.dot(normal);
             if into_horizontal > 0.0 && normal.y > 0.0 {
@@ -2512,24 +2529,22 @@ impl Players {
         // The sprint slide (§6.9) ends when crouch is let go or the player leaves the ground (a
         // jump), keeping its momentum.
         if c.sprint_slide.active && (!c.input.crouch || !grounded) {
+            // During a slide `current` holds its speed along the surface; what it leaves with is
+            // last tick's horizontal drive, plus anything this tick added (a jump's push).
             let total =
-                c.horizontal.current + c.horizontal.external - flat(c.platform.base_velocity);
+                c.horizontal.contribution - flat(c.platform.base_velocity) + c.horizontal.external;
             Self::end_sprint_slide(c, &cfg, total);
         }
-        if c.sliding(cfg.slide.min_angle) {
-            // Steep ground slides as always; a sprint slide carries on from it on gentler ground.
-            let speed = Self::walk_speed(c, &cfg);
-            Self::slide(c, &cfg, move_direction(&c.input), speed);
-            // Crouched and fast, the slide goes on as a sprint slide where the face ends. Its
-            // split of the velocity is kept for this tick (the steep slide's walk speed `current`,
-            // the rest `external`); the sprint slide reads their sum from the next.
-            let split = c.horizontal;
-            Self::slide_on(c, &cfg);
-            c.horizontal = split;
+        if c.sprint_slide.active {
+            // A slide (◆ Dwell, §6.9, §6.11) on any ground it can stand on, gentle or steep.
+            Self::sprint_slide(world, physics, p, actual, h.contribution, &walls);
             return;
         }
-        if c.sprint_slide.active {
-            Self::sprint_slide(world, physics, p, actual, h.contribution);
+        if c.sliding(cfg.slide.min_angle) {
+            // Steep ground slides; crouched and fast enough, the slide goes on as a sprint slide.
+            let speed = Self::walk_speed(c, &cfg);
+            Self::slide(c, &cfg, move_direction(&c.input), speed);
+            Self::slide_on(c, &cfg);
             return;
         }
         let input = c.input;
@@ -2539,6 +2554,11 @@ impl Players {
         // Momentum is the body's, whatever gave it (owner, 2026-11-06): the walking layer works on
         // the whole velocity, the player's own and any knockback alike.
         let mut v = c.horizontal.current + c.horizontal.external - base;
+        // The air's drag (◆ Dwell, §6.15) on the whole velocity (last tick's rise with this run),
+        // relative to the ground's carry.
+        let rise = c.vertical.target_y - c.vertical.platform_y;
+        let whole = libm::sqrtf(v.length_squared() + rise * rise);
+        v /= 1.0 + Self::drag_per_speed2(c, &cfg) * whole * DT;
         let move_length = move_dir.length();
         let held = move_length > INPUT_DEADZONE;
         // The tick's walking speed on the ground; in the air neither sprint nor crouch changes the
@@ -2620,19 +2640,58 @@ impl Players {
         }
     }
 
-    /// The sprint slide (◆ Dwell, §6.9): the horizontal layer while a slide started from a sprint
-    /// lasts, on ground up to `slide.min_angle`. The slide keeps its speed in its direction of
-    /// travel: move input turns it at up to `steer_rate`; friction slows it, and the ground's tilt
-    /// along the slide speeds it downhill and slows it uphill (`gravity × slope_gravity × tilt`),
-    /// never above `max_speed`. It steps up half steps as walking does. It ends at the crouch speed
-    /// or when a wall stops it (the body moved slower than the crouch speed though it was driven
-    /// faster, and no step lifted it); then the crouched player walks on.
+    /// A run `v` (horizontal, relative to the ground's carry) as the speed along the ground under
+    /// it, in its direction: the same run, with the rise the ground gives it (a landing or a start
+    /// keeps its run, §6.9).
+    fn along_surface(c: &PlayerController, v: Vec3) -> Vec3 {
+        let h = v.length();
+        if h < MIN_DIRECTION {
+            return v;
+        }
+        let climb = Self::climb_along(c, v / h);
+        v * libm::sqrtf(1.0 + climb * climb)
+    }
+
+    /// The ground's climb per metre along `dir` (> 0 uphill), from the normal the vertical layer
+    /// follows (`ground.normal`), so a slide's run and rise agree with its speed along the surface.
+    fn climb_along(c: &PlayerController, dir: Vec3) -> f32 {
+        let n = c.ground.normal;
+        if n.y > 0.1 {
+            -(n.x * dir.x + n.z * dir.z) / n.y
+        } else {
+            0.0
+        }
+    }
+
+    /// The air's drag per speed², 1/m (◆ Dwell, §6.15): `scale × ½ ρ Cd·A ÷ mass`, crouched or
+    /// standing. Times the speed², the deceleration (m/s²).
+    fn drag_per_speed2(c: &PlayerController, cfg: &PlayerControllerConfig) -> f32 {
+        let a = cfg.air;
+        let area = if c.crouching {
+            a.crouch_drag_area
+        } else {
+            a.drag_area
+        };
+        a.scale * 0.5 * a.density * area / cfg.body.mass
+    }
+
+    /// The sprint slide (◆ Dwell, §6.9, §6.11): the horizontal layer while a crouched slide lasts,
+    /// on any ground it stands on. Its state is its speed along the surface (`current`, in its
+    /// direction of travel; owner, 2026-11-25): each tick that speed is pointed along the ground
+    /// under it (the run `contribution`, and the vertical layer's rise from it), so every corner keeps
+    /// it, up onto a steeper face, over an edge onto a downslope, onto the flat at a hill's bottom.
+    /// Along the surface it slows by gravity uphill (speeds up downhill), the slide's friction
+    /// `μ g cos θ` and the air's drag; nothing caps it. Move input turns it at up to `steer_rate`;
+    /// on ground too steep to stand on, gravity across the slope turns it downhill too. A slide
+    /// rising up the ground into a wall goes straight up it at its speed; it ends at the crouch
+    /// speed, or against a wall (not rising) when the body stops; then the crouched player walks on.
     fn sprint_slide(
         world: &mut VoxelWorld,
         physics: &mut Physics,
         p: &mut Player,
         actual: Vec3,
         last_contribution: Vec3,
+        walls: &[Vec3],
     ) {
         let cfg = p.scaled_cfg();
         let s = cfg.sprint_slide;
@@ -2645,6 +2704,18 @@ impl Players {
             return;
         }
         let mut dir = v / speed;
+        // Rising up the ground into a wall: straight up it at the slide's speed (owner, 2026-11-24:
+        // "flat -> shallow -> steep -> wall = vertical launch vector").
+        let rise = c.vertical.target_y - c.vertical.platform_y;
+        let into_wall = walls
+            .iter()
+            .any(|&w| -flat(w).normalize_or_zero().dot(dir) > WALL_LAUNCH_FACING);
+        if into_wall && rise > WALL_LAUNCH_MIN_RISE {
+            p.wall_launch = speed;
+            Self::end_sprint_slide(c, &cfg, Vec3::ZERO);
+            c.horizontal.contribution = base;
+            return;
+        }
         let wish = flat(move_direction(&c.input));
         if wish.length() > INPUT_DEADZONE {
             let cross = dir.x * wish.z - dir.z * wish.x;
@@ -2653,15 +2724,32 @@ impl Players {
             let (sin, cos) = (libm::sinf(turn), libm::cosf(turn));
             dir = Vec3::new(dir.x * cos - dir.z * sin, 0.0, dir.x * sin + dir.z * cos);
         }
-        // The ground's horizontal tilt along the slide: > 0 downhill.
-        let tilt = flat(c.ground.under_normal).dot(dir);
-        let accel = cfg.body.gravity * s.slope_gravity * tilt - s.friction;
-        let mut next = speed + accel * DT;
-        if accel > 0.0 {
-            next = next.min(s.max_speed.max(speed));
+        let g = cfg.body.gravity;
+        if c.sliding(cfg.slide.min_angle) {
+            // Too steep to stand on: gravity across the slope turns the slide downhill, as the
+            // steep slide (§6.8) pulls.
+            let downhill = flat(c.ground.under_normal);
+            let across = downhill - dir * downhill.dot(dir);
+            let turned = dir * speed + across * (g * s.slope_gravity * DT);
+            dir = safe_normalized(turned);
         }
-        let next = next.max(0.0);
-        let nudge = Self::try_step(world, physics, p, dir * next, dir);
+        // Along the surface: gravity's part, the friction `μ g cos θ`, the air's drag.
+        let climb = Self::climb_along(c, dir);
+        let inv = 1.0 / libm::sqrtf(1.0 + climb * climb);
+        let (sin, cos) = (climb * inv, inv);
+        let accel = -g * s.slope_gravity * sin
+            - s.friction * g * cos
+            - Self::drag_per_speed2(c, &cfg) * speed * speed;
+        let next = (speed + accel * DT).max(0.0);
+        // Over a crest the ground rises less than the slide did: the vertical layer launches it
+        // with last tick's rise (a slide's own limit, §6.11), so it leaves along the last surface,
+        // its run that surface's too (not pointed along the ground ahead, which would add speed).
+        let ballistic = rise - g * DT;
+        let launching =
+            ballistic.max(0.0) - (next * sin).max(0.0) > cfg.movement.slide_stick_rise_speed;
+        let last_cos = ((last_contribution - base).length() / speed).min(1.0);
+        let run = dir * (next * if launching { last_cos } else { cos });
+        let nudge = Self::try_step(world, physics, p, run, dir);
         let c = &mut p.c;
         let end = cfg.crouch.speed;
         let blocked = nudge == Vec3::ZERO
@@ -2672,12 +2760,12 @@ impl Players {
             return;
         }
         if next <= end {
-            Self::end_sprint_slide(c, &cfg, dir * next);
+            Self::end_sprint_slide(c, &cfg, run);
             return;
         }
         c.horizontal.current = dir * next + base;
         c.horizontal.external = Vec3::ZERO;
-        c.horizontal.contribution = c.horizontal.current;
+        c.horizontal.contribution = run + base;
         Self::pay_nudge(c, nudge);
     }
 
@@ -2716,17 +2804,23 @@ impl Players {
             (s.friction, s.terminal_speed, s.uphill_deceleration)
         };
         let g = cfg.body.gravity;
+        // No terminal speed (owner, 2026-11-25: "remove the two speed caps"): only holding up the
+        // slope brakes, toward `terminal_speed × (1 − brake × hold)`; the air's drag gives each
+        // slope its top speed.
         let brake = (-move_dir.dot(down)).clamp(0.0, 1.0);
-        let terminal = terminal * (1.0 - s.brake * brake) * cos;
+        let braked = terminal * (1.0 - s.brake * brake) * cos;
         if along < 0.0 {
             // Moving up the face: friction and the slope both pull down it.
             let decel = (uphill + g * (sin + friction * cos)) * cos;
             along = (along + decel * DT).min(0.0);
-        } else if along <= terminal {
-            let pull = (g * (sin - friction * cos)).max(0.0) * cos;
-            along = (along + pull * DT).min(terminal);
+        } else if brake > 0.0 && along > braked {
+            along = (along - s.brake_deceleration * cos * DT).max(braked);
         } else {
-            along = (along - s.brake_deceleration * cos * DT).max(terminal);
+            let pull = (g * (sin - friction * cos)).max(0.0) * cos;
+            along += pull * DT;
+            if brake > 0.0 {
+                along = along.min(braked);
+            }
         }
         let side_wish = (move_dir - down * move_dir.dot(down)) * s.steer_speed;
         let rate = if move_dir.length() > INPUT_DEADZONE {
@@ -2735,7 +2829,9 @@ impl Players {
             m.deceleration
         } * s.steering;
         across = move_towards(across, side_wish, rate * DT);
-        let total = down * along + across;
+        // The air's drag on the speed along the surface (§6.15).
+        let surface = libm::sqrtf((along / cos) * (along / cos) + across.length_squared());
+        let total = (down * along + across) / (1.0 + Self::drag_per_speed2(c, cfg) * surface * DT);
         let own = clamp_length(total, speed);
         c.horizontal.current = own + base;
         c.horizontal.external = total - own;
@@ -2751,7 +2847,7 @@ impl Players {
         let drive_lift = p.drive_lift;
         let on_dynamic =
             matches!(p.c.ground.ground, GroundRef::Tier1Body(b) if physics.is_dynamic(b));
-        p.ceiling_stop = false;
+        let drag = Self::drag_per_speed2(&p.c, &cfg);
         let c = &mut p.c;
         let sliding = c.sprint_slide.active || (c.crouching && c.sliding(cfg.slide.min_angle));
         let v = &mut c.vertical;
@@ -2765,11 +2861,11 @@ impl Players {
         if was_grounded && !c.ground.grounded && !c.jump.jumped_this_tick {
             v.accumulated_y = v.last_platform_y; // walk-off: keep the platform's vertical motion
         }
-        let ceiling_stop = c.ground.ceiling_blocked && v.accumulated_y > 0.0;
-        if ceiling_stop {
-            v.accumulated_y = 0.0;
-        }
-        if c.ground.grounded {
+        if p.wall_launch > 0.0 {
+            // A slide up into a wall goes on straight up at its speed (§6.11).
+            v.accumulated_y = v.platform_y + p.wall_launch;
+            c.ground.grounded = false;
+        } else if c.ground.grounded {
             // A significant upward deviation while grounded is a launch, unless the ground explains
             // it, or driving into a block's top edge does (Rapier: the solver rolls the capsule
             // over the edge of a step just climbed with an upward velocity, which Jolt didn't).
@@ -2841,13 +2937,16 @@ impl Players {
             if external.abs() > ABSORB_THRESHOLD && !c.jump.jumped_this_tick {
                 v.accumulated_y += external;
             }
+            // The air's drag (§6.15) on the vertical part of the whole velocity.
+            let run = flat(c.horizontal.contribution - c.platform.base_velocity).length();
+            let whole = libm::sqrtf(run * run + v.accumulated_y * v.accumulated_y);
+            v.accumulated_y /= 1.0 + drag * whole * DT;
             v.accumulated_y += gravity * DT;
         }
         if !was_grounded && c.ground.grounded {
             c.events |= events::LANDED;
         }
         v.target_y = v.accumulated_y;
-        p.ceiling_stop = ceiling_stop;
     }
 
     /// Dwell (§6.10): this tick's hit for the body's velocity `v` going into the step that met the
@@ -2883,12 +2982,9 @@ impl Players {
             }
         };
         if !exempt {
-            // The probes meet the ground and the ceiling before the capsule does: their hits.
+            // The ground probe meets the landing before the capsule does: its hit.
             if c.events & events::LANDED != 0 {
                 meet(c.ground.normal);
-            }
-            if p.ceiling_stop {
-                meet(-Vec3::Y);
             }
             for &n in &p.contacts {
                 if p.touched.iter().any(|t| t.dot(n) > SAME_CONTACT_DOT) {

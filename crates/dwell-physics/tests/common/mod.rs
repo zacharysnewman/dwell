@@ -179,6 +179,14 @@ pub struct PlayerTestWorld {
     world_frame: bool,
 }
 
+/// The default config without the air's drag (§6.13): for tests of a rule the drag would blur
+/// (momentum kept in the air, the fall damage curve by drop height).
+pub fn without_air() -> PlayerControllerConfig {
+    let mut c = PlayerControllerConfig::default();
+    c.air.scale = 0.0;
+    c
+}
+
 impl PlayerTestWorld {
     pub fn new() -> Self {
         Self::with_config(PlayerControllerConfig::default())

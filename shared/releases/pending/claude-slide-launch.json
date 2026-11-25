@@ -1,0 +1,9 @@
+{
+  "changes": [
+    "Slides keep their speed along the ground: up a ramp they launch along it, and up into a wall they carry you straight up it.",
+    "No more speed caps on slides: long hills keep speeding you up until the air holds you back.",
+    "Air drag: falls and fast slides now have a top speed, and friction eases off on steep slopes.",
+    "Jumping into a sloped ceiling slides you along it instead of stopping dead.",
+    "Moving along a wall while pushing into it no longer catches on every block."
+  ]
+}
