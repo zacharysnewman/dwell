@@ -109,6 +109,32 @@ pub fn tiles_of_chunk(coord: [i32; 3]) -> [(u8, i32, i32); 2] {
     [(0, i, k), (1, i, k)]
 }
 
+/// The fade map's tree (render/tree_fade.rs) for instance `inst` of a tree whose box is `columns`
+/// and `rows` (`FarTree`), its baked layer's `[centre height, radius, baked, _]`: keyed by its
+/// anchor.
+pub fn fade_tree(
+    inst: &Instance,
+    columns: [i32; 4],
+    rows: [i32; 2],
+    layer: [f32; 4],
+) -> tree_fade::Tree {
+    tree_fade::Tree {
+        key: [
+            inst.foot[0].floor() as i32,
+            (inst.foot[1] / dwell_world::CELL_H as f32).round() as i32,
+            inst.foot[2].floor() as i32,
+        ],
+        foot: inst.foot,
+        centre_y: layer[0],
+        columns,
+        rows,
+        baked: layer[2] > 0.5,
+    }
+}
+
+/// A placed instance with its tree's box's columns and rows (`FarTree::columns`, `rows`).
+type Placed = (Instance, [i32; 4], [i32; 2]);
+
 /// The atlas tier a device bakes at (`impostors.json` `viewPx`): the CPU adapter's cheapest, a
 /// phone's smaller atlas (32 px a view: a quarter of the desktop's memory), else the desktop's.
 pub fn tier_for(cpu: bool, phone: bool) -> Tier {
@@ -315,6 +341,15 @@ pub fn cutout_draw(far: Option<Far>, d: f32) -> CutoutDraw {
     } else {
         CutoutDraw::Nothing
     }
+}
+
+/// Whether a listed tree's logs draw (`Part::FacingTrees`), its share of the fade map at its
+/// anchor's column `share` (render/tree_fade.rs; the texel its impostor reads): while it is its
+/// real self or fading, not once it is its impostor alone, which draws the trunk (owner,
+/// 2026-11-15: "fold trunks into billboards"; BUGS.md #197: a chunk drew every listed tree's logs
+/// within the hand-over's reach, under trees already their impostors). With no impostors, always.
+pub fn tree_logs_drawn(far: Option<Far>, share: f32) -> bool {
+    far.is_none_or(|f| !f.impostor) || share > 0.0
 }
 
 /// Metres past a fade's end a chunk's cutout still draws (a swaying vertex's reach).
@@ -663,8 +698,9 @@ pub struct Impostors {
     count: u32,
     /// The tiles' instances (packed), by (face, tile i, tile k).
     tiles: HashMap<(u8, i32, i32), Vec<u8>>,
-    /// The tiles' instances as placed (face-local), for the trees' states.
-    placed: HashMap<(u8, i32, i32), Vec<Instance>>,
+    /// The tiles' instances as placed (face-local) with their trees' columns
+    /// (`FarTree::columns`), for the trees' states.
+    placed: HashMap<(u8, i32, i32), Vec<Placed>>,
     /// Each tile's far trees as generated, re-packed at the stage they have grown to by `day`
     /// (BUGS.md #197).
     raw: HashMap<(u8, i32, i32), Vec<FarTree>>,
@@ -1034,7 +1070,15 @@ impl Impostors {
         }
         let key = (u8::from(face.is_b()), ti, tk);
         self.tiles.insert(key, bytes);
-        self.placed.insert(key, self.config.instances(trees));
+        let placed = self.config.instances(trees);
+        self.placed.insert(
+            key,
+            placed
+                .into_iter()
+                .zip(trees)
+                .map(|(i, t)| (i, t.columns, t.rows))
+                .collect(),
+        );
         self.dirty = true;
         self.fades.touch();
     }
@@ -1097,19 +1141,9 @@ impl Impostors {
                         .iter()
                         .filter(move |(k, _)| k.0 == bit)
                         .flat_map(|(_, v)| v.iter())
-                        .map(move |inst| {
+                        .map(move |(inst, columns, rows)| {
                             let l = layers.get(inst.layer as usize).copied().unwrap_or_default();
-                            tree_fade::Tree {
-                                key: [
-                                    inst.foot[0].floor() as i32,
-                                    (inst.foot[1] / dwell_world::CELL_H as f32).round() as i32,
-                                    inst.foot[2].floor() as i32,
-                                ],
-                                foot: inst.foot,
-                                centre_y: l[0],
-                                radius: l[1],
-                                baked: l[2] > 0.5,
-                            }
+                            fade_tree(inst, *columns, *rows, l)
                         }),
                 )
             },
@@ -1243,6 +1277,8 @@ mod tests {
             stage: 0,
             stem: [3, 40, 7],
             stem_cells: 4,
+            columns: [3, 7, 3, 7],
+            rows: [40, 40],
         };
         assert_eq!(grown_trees(&[t], 0.0)[0].stage, 0);
         assert!(
@@ -1383,6 +1419,8 @@ mod tests {
             stage: 4,
             stem: [0, 0, 0],
             stem_cells: 0,
+            columns: [0; 4],
+            rows: [0; 2],
         };
         assert_eq!(tint_ratio(&tree, c.leaf), [1.0; 3]);
         let real = FarTree { species: 0, ..tree };
@@ -1436,6 +1474,8 @@ mod tests {
                 stage: 7,
                 stem: [x, 130, 5],
                 stem_cells: 8,
+                columns: [x - 3, 2, x + 3, 8],
+                rows: [130, 160],
             };
             let trees = [tree(1), tree(20)];
             let (log, air) = (7, dwell_world::M.air);

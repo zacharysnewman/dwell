@@ -86,6 +86,11 @@ impl W {
         self.u32s(&m.cracks);
         self.u32s(&m.indices);
         self.u32(m.tree_logs);
+        self.u32(m.tree_log_runs.len() as u32);
+        for &(anchor, n) in &m.tree_log_runs {
+            anchor.into_iter().for_each(|v| self.i32(v));
+            self.u32(n);
+        }
     }
     fn flat(&mut self, m: &FlatMesh) {
         self.f32s(&m.positions);
@@ -208,6 +213,14 @@ impl R<'_> {
             cracks: self.u32s()?,
             indices: self.u32s()?,
             tree_logs: self.u32()?,
+            tree_log_runs: {
+                let n = self.u32()? as usize;
+                let mut runs = Vec::with_capacity(n.min(1 << 16));
+                for _ in 0..n {
+                    runs.push(([self.i32()?, self.i32()?, self.i32()?], self.u32()?));
+                }
+                runs
+            },
         })
     }
     fn flat(&mut self) -> Res<FlatMesh> {
@@ -705,6 +718,8 @@ pub fn encode_output(id: u32, out: &Output) -> Vec<u8> {
                 w.u32(t.stage);
                 t.stem.into_iter().for_each(|v| w.i32(v));
                 w.u8(t.stem_cells);
+                t.columns.into_iter().for_each(|v| w.i32(v));
+                t.rows.into_iter().for_each(|v| w.i32(v));
             }
         }
     }
@@ -816,6 +831,8 @@ pub fn decode_output(bytes: &[u8]) -> Result<(u32, Output), DecodeError> {
                     stage: r.u32()?,
                     stem: [r.i32()?, r.i32()?, r.i32()?],
                     stem_cells: r.u8()?,
+                    columns: [r.i32()?, r.i32()?, r.i32()?, r.i32()?],
+                    rows: [r.i32()?, r.i32()?],
                 });
             }
             Output::FarTrees(trees)
@@ -1043,6 +1060,8 @@ mod tests {
             stage: 6,
             stem: [-6, 130, 77],
             stem_cells: 9,
+            columns: [-12, 70, 2, 84],
+            rows: [128, 170],
         }]);
         assert_eq!(
             decode_output(&encode_output(7, &trees)).unwrap(),

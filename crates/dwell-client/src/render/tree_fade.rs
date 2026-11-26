@@ -7,8 +7,10 @@
 //! tree at any distance.
 //!
 //! The GPU reads the states from one map: a square of [`window`] metres about the eye (face-local
-//! x and z, one byte a metre, the near tree's share 0–255), each texel the share of the tree whose
-//! crown covers it (the nearest foot within its bounding radius). The near leaves look their
+//! x and z, one byte a metre, the near tree's share 0–255), each texel the share of the tree that
+//! owns its column by the chunk meshers' rule (`dwell_world::tree_tint::column_rank` over each
+//! tree's box, `FarTree::columns`; BUGS.md #197: by the baked impostor's radius before, a real
+//! crown wider than its baked variant's had leaves no tree owned). The near leaves look their
 //! fragment's texel up (`cutout_fs`, `tree_near_share`) and the impostor its tree's foot
 //! (`imp_vs`), so a tree's leaves and its impostor fade as one and keep complementary pixels.
 //! Leaves no listed tree owns (a player's) are the real ones within `inM` of the eye.
@@ -26,8 +28,10 @@ use dwell_worldgen::impostor::{Config, Far};
 
 /// The frame group's binding.
 pub const BINDING: u32 = 21;
-/// The farthest (m) a near tree's leaf lies from its crown's centre: the leaves are dropped
-/// whole past `outM` + this (`card_dropped`), and the map reaches this far past `outM`.
+/// How far (m) past `outM` a near tree's leaf may lie: the leaves are dropped whole past `outM` +
+/// this (`card_dropped`), and the map reaches this far past `outM`. A tree whose box reaches
+/// farther from its crown's centre switches sooner ([`switch_distance`]), so none of a near tree's
+/// leaves lies past it.
 pub const CROWN_M: f32 = 10.0;
 /// The map recentres on the eye in steps of this many metres.
 const SNAP_M: i32 = 8;
@@ -110,16 +114,44 @@ impl State {
     }
 }
 
-/// A tree the map places: its key (face-local foot, rows), its foot (face-local m), its crown's
-/// centre height over the foot and its bounding radius (m), and whether its impostor is baked (an
-/// unbaked impostor draws nothing, so its tree stays the real one).
+/// A tree the map places: its key (its anchor, face-local cells: x, rows, z), its foot (face-local
+/// m), its crown's centre height over the foot, the columns it can own ([x0, z0, x1, z1]
+/// inclusive, `FarTree::columns`), and whether its impostor is baked (an unbaked impostor draws
+/// nothing, so its tree stays the real one).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Tree {
     pub key: [i32; 3],
     pub foot: [f32; 3],
     pub centre_y: f32,
-    pub radius: f32,
+    pub columns: [i32; 4],
+    pub rows: [i32; 2],
     pub baked: bool,
+}
+
+/// The distance (m) a tree switches by, the eye at `e` (face-local): its crown's centre's, or, for
+/// a tree whose box reaches farther than [`CROWN_M`] from it, its box's farthest point's less
+/// `CROWN_M`, so a near tree's every leaf lies within [`leaves_reach`] (BUGS.md #197: a big crown's
+/// far leaves, past the reach, were dropped while the tree was near; the crown's centre is its
+/// baked variant's, and a giant grows far past it).
+pub fn switch_distance(t: &Tree, e: [f64; 3]) -> f32 {
+    let c = [t.foot[0], t.foot[1] + t.centre_y, t.foot[2]].map(f64::from);
+    let crown = (0..3).map(|k| (c[k] - e[k]).powi(2)).sum::<f64>().sqrt();
+    let h = dwell_world::CELL_H;
+    let lo = [
+        f64::from(t.columns[0]),
+        f64::from(t.rows[0]) * h,
+        f64::from(t.columns[1]),
+    ];
+    let hi = [
+        f64::from(t.columns[2] + 1),
+        f64::from(t.rows[1] + 1) * h,
+        f64::from(t.columns[3] + 1),
+    ];
+    let farthest = (0..3)
+        .map(|k| (e[k] - lo[k]).abs().max((e[k] - hi[k]).abs()).powi(2))
+        .sum::<f64>()
+        .sqrt();
+    crown.max(farthest - f64::from(CROWN_M)) as f32
 }
 
 /// The chunk whose mesh holds a tree's real foot: the ground cell under its trunk (face-local, a
@@ -266,10 +298,11 @@ impl TreeFades {
             // Near only where its real mesh draws (BUGS.md #172: the impostor faded out over a
             // chunk not streamed yet, or the LOD's ground, which holds no trees while impostors
             // draw); asked only of the trees its distance would make near.
+            let sd = switch_distance(t, e);
             let s = self.states.entry(t.key).or_insert_with(|| {
-                State::settled(!t.baked || (d <= (far.in_m + far.out_m) * 0.5 && drawn(t)))
+                State::settled(!t.baked || (sd <= (far.in_m + far.out_m) * 0.5 && drawn(t)))
             });
-            let want = !t.baked || (far.near_after(s.near, d) && drawn(t));
+            let want = !t.baked || (far.near_after(s.near, sd) && drawn(t));
             s.switch(want, now, far.fade_s);
             shares.push((s.near_share(now, far.fade_s) * 255.0).round() as u8);
             // Its cards: on nearer than `cards_in`, off farther than `cards_out`, faded in time.
@@ -309,26 +342,21 @@ impl TreeFades {
         changed
     }
 
-    /// Each texel's tree: the nearest foot whose bounding radius covers the texel's centre.
+    /// Each texel's tree: of the trees whose columns hold it, the least by the meshers' rank
+    /// (`tree_tint::column_rank`), so a leaf hands over with the tree its chunk owned it to.
     fn raster(&mut self) {
         let n = self.n as i32;
         self.owner.fill(NONE);
-        let mut best = vec![f32::MAX; self.owner.len()];
+        let mut best: Vec<Option<(i64, [i32; 3])>> = vec![None; self.owner.len()];
         for (ti, t) in self.trees.iter().enumerate() {
-            let (fx, fz) = (
-                t.foot[0] - self.origin[0] as f32,
-                t.foot[2] - self.origin[1] as f32,
-            );
-            let r = t.radius.max(1.0);
-            let lo = |c: f32| ((c - r).floor() as i32).clamp(0, n - 1);
-            let hi = |c: f32| ((c + r).ceil() as i32).clamp(0, n - 1);
-            for k in lo(fz)..=hi(fz) {
-                for i in lo(fx)..=hi(fx) {
-                    let (dx, dz) = (i as f32 + 0.5 - fx, k as f32 + 0.5 - fz);
-                    let d2 = dx * dx + dz * dz;
-                    let at = (k * n + i) as usize;
-                    if d2 <= r * r && d2 < best[at] {
-                        best[at] = d2;
+            let [x0, z0, x1, z1] = t.columns;
+            let (o0, o1) = (self.origin[0], self.origin[1]);
+            for z in (z0.max(o1))..=(z1.min(o1 + n - 1)) {
+                for x in (x0.max(o0))..=(x1.min(o0 + n - 1)) {
+                    let at = ((z - o1) * n + (x - o0)) as usize;
+                    let rank = dwell_world::tree_tint::column_rank(t.key, x, z);
+                    if best[at].is_none_or(|b| rank < b) {
+                        best[at] = Some(rank);
                         self.owner[at] = ti as u32;
                     }
                 }
@@ -448,6 +476,17 @@ mod tests {
         Config::get().far("on").expect("the on tier")
     }
 
+    /// A small tree's rows from its anchor's (`Tree::rows`): 6 m tall.
+    fn rows_of(row: i32) -> [i32; 2] {
+        [row, row + 12]
+    }
+
+    /// The columns a tree anchored at `key` owns `r` m round it (`Tree::columns`).
+    fn square(key: [i32; 3], r: f32) -> [i32; 4] {
+        let r = r.floor() as i32;
+        [key[0] - r, key[2] - r, key[0] + r, key[2] + r]
+    }
+
     /// A row of trees along +x from the eye's column, 2 m apart.
     fn row(ground: f32) -> Vec<Tree> {
         (0..60)
@@ -457,7 +496,8 @@ mod tests {
                     key: [x as i32, 0, 0],
                     foot: [x + 0.5, ground, 0.5],
                     centre_y: 6.0,
-                    radius: 1.2,
+                    columns: square([x as i32, 0, 0], 1.2),
+                    rows: rows_of(0),
                     baked: true,
                 }
             })
@@ -500,7 +540,7 @@ mod tests {
                     key: [3, row + 1, -40],
                     foot: [3.5, foot_y, -39.5],
                     centre_y: 5.0,
-                    radius: 2.0,
+                    columns: square([3, row + 1, -40], 2.0), rows: rows_of(row + 1),
                     baked: true,
                 };
                 let under = face.cell([3, row, -40]);
@@ -525,7 +565,7 @@ mod tests {
                 key: [0, 0, 0],
                 foot: [0.5, 10.0, 0.5],
                 centre_y: 5.0,
-                radius: 2.0,
+                columns: square([0, 0, 0], 2.0), rows: rows_of(0),
                 baked: true,
             };
             let trees = [tree];
@@ -602,7 +642,7 @@ mod tests {
                 key: [0, 0, 0],
                 foot: [0.5, 10.0, 0.5],
                 centre_y: 6.0,
-                radius: 1.2,
+                columns: square([0, 0, 0], 1.2), rows: rows_of(0),
                 baked: true,
             };
             let trees = vec![tree];
@@ -640,7 +680,7 @@ mod tests {
                 key: [0, 0, 0],
                 foot: [0.5, 10.0, 0.5],
                 centre_y: 5.0,
-                radius: 2.0,
+                columns: square([0, 0, 0], 2.0), rows: rows_of(0),
                 baked: true,
             };
             let trees = [tree];
@@ -675,7 +715,7 @@ mod tests {
                 key: [0, 0, 0],
                 foot: [0.5, 10.0, 0.5],
                 centre_y: 5.0,
-                radius: 2.0,
+                columns: square([0, 0, 0], 2.0), rows: rows_of(0),
                 baked: true,
             };
             let trees = [tree];
@@ -702,8 +742,8 @@ mod tests {
             let far = far();
             let d = f64::from(far.out_m) + 4.0;
             let trees = [
-                Tree { key: [0, 0, 0], foot: [0.5, 10.0, 0.5], centre_y: 4.0, radius: 3.0, baked: true },
-                Tree { key: [0, 0, 8], foot: [0.5, 10.0, 8.5], centre_y: 4.0, radius: 3.0, baked: false },
+                Tree { key: [0, 0, 0], foot: [0.5, 10.0, 0.5], centre_y: 4.0, columns: square([0, 0, 0], 3.0), rows: rows_of(0), baked: true },
+                Tree { key: [0, 0, 8], foot: [0.5, 10.0, 8.5], centre_y: 4.0, columns: square([0, 0, 8], 3.0), rows: rows_of(0), baked: false },
             ];
             let mut f = TreeFades::new(window());
             step(&mut f, 0.0, face, eye_at(face, [0.5 - d, 14.0, 4.5]), &trees);
@@ -755,7 +795,7 @@ mod tests {
                 key: [0, 0, 0],
                 foot: [0.5, 10.0, 0.5],
                 centre_y: 5.0,
-                radius: 2.0,
+                columns: square([0, 0, 0], 2.0), rows: rows_of(0),
                 baked: true,
             };
             let trees = [tree];

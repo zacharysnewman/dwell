@@ -362,6 +362,18 @@ fade, decided from the same data the renderer and the chunk mesher use (the hand
 far tile's stage); plus a counter in the dev telemetry of trees drawn both ways in a frame, read by a bench flight
 through a forest. Owner should see: flying over and through forests at any day, no tree drawn as billboard and full
 tree at once, no trunk beside a billboard.
+**Fixed 2026-11-25 (open until the owner's look):** the invariant test `crates/dwell-client/src/render/tree_once.rs` (every
+species, stage, seed variant, 6–110 m coming and going, both faces; decided by the renderer's own rules) found three
+causes. (1) A chunk drew all its listed trees' logs while its nearest point was within ~70 m, so a tree 54–90 m off,
+already its billboard, drew its trunk too (red: bush stage 0 at 59–70 m coming). Now each tree's logs are their own run
+in the mesh (`tree_log_runs`) and draw while the tree is (`tree_logs_drawn`). (2) The fade map owned a column by the
+billboard's radius, from a baked variant at the nearest baked stage, not the real tree; the meshers owned leaves by the
+full-grown box (red with the radius: oak stage 13 drew 2–15 real cells under its billboard at 52–55 m, and 19 cells
+missing while near). Now the map owns columns by the meshers' rule over the same box (`FarTree::columns`, `rows`,
+`tree_tint::column_rank`; the meshers' tie on height dropped, a column has one owner). (3) Big crowns (a big-seeded old
+pine's leaves 72 m from its baked crown's centre) lost their far leaves past the 70 m leaf reach while the tree was near;
+a tree now switches by its box's farthest point less 10 m when that is farther. Not done: the telemetry counter and
+the bench flight; a giant still draws its baked variant's size as its billboard.
 
 ### 196. Realistic's rivers don't start in the mountains
 

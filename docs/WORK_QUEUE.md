@@ -278,6 +278,15 @@ context) at a time with a choice to table it as well as the other options?" Answ
      it as a theoretical follow or tabled"), FUTURE.md.
   4. Section 8: far trees drawn exactly once at every distance, stage and variant (#197: the invariant test, then the
      fixes).
+     Owner (2026-11-25): "Set a reminder to start far trees at 5:30pm." Started 2026-11-25 17:30. Found: (1) a chunk
+     drew every listed tree's logs while its nearest point was within the hand-over's reach (~70 m), so trees 54–90 m
+     off drew their trunk under their billboard; (2) the fade map owned a column by the billboard's radius (a baked
+     variant at the nearest baked stage), so a real crown wider than it had leaves no tree owned, drawn or dropped by
+     distance alone. Fix: each tree's logs drawn while the tree is (its fade share at its anchor, the texel its
+     impostor reads); the map owns columns by the meshers' rule over the same box (`FarTree::columns`,
+     `tree_tint::column_rank`). Test: `render/tree_once.rs`, every species, stage, variant and distance, coming and
+     going, both faces. **Owner should see:** flying over and through forests at any day, no tree drawn as billboard
+     and full tree at once, no trunk beside or under a billboard.
   5. Section 4, blocks: the door and ladder recipes; the hit-rule table for the owner; tall grass at most three cells,
      drawn as one connected stalk (#192); particles scaled with the hit; leafy trees' leaves fading up close (#225).
   6. Section 3: the creative water bucket (sources added and removed, marked while held).

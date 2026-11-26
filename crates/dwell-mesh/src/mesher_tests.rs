@@ -3823,6 +3823,33 @@ dwell_world::both_faces!(
         let ranges = facing_ranges(&m);
         assert_eq!(ranges[0].start, 0);
         assert_eq!(ranges[FACING_GROUPS - 1].end, tail.start);
+        // BUGS.md #197: tree by tree, each drawn while its own tree is; two listed trees, two runs
+        // covering the tail in anchor order, each holding only its own tree's logs.
+        let other = dwell_world::tree_tint::TreeTint {
+            anchor: [20, 0, 8],
+            min: [16, i32::MIN / 2, 4],
+            max: [24, i32::MAX / 2, 12],
+            tint: dwell_world::tree_tint::Tint::NONE,
+        };
+        let two = mesh(&[other, tree]);
+        let runs = super::tree_log_ranges(&two);
+        assert_eq!(
+            runs.iter().map(|r| r.0).collect::<Vec<_>>(),
+            [tree.anchor, other.anchor]
+        );
+        assert_eq!(runs[0].1.start, tree_logs_range(&two).start);
+        assert_eq!(runs[1].1.end, two.indices.len() as u32);
+        assert_eq!(runs[0].1.end, runs[1].1.start);
+        let x = |v: u32| two.positions[v as usize * 3];
+        for (anchor, r) in &runs {
+            let near = |v: &u32| (x(*v) - anchor[0] as f32).abs() < 4.0;
+            assert!(
+                two.indices[r.start as usize..r.end as usize]
+                    .iter()
+                    .all(near),
+                "{anchor:?}"
+            );
+        }
     }
 );
 

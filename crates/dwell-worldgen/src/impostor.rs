@@ -1031,6 +1031,10 @@ pub fn variant_seed(v: u32) -> u32 {
 /// tree and its impostor are the same tree. `stem` is its stem's bottom cell (face-local) and
 /// `stem_cells` the solid cells standing straight up from it (`Planter::stem`): a client that holds
 /// one of those cells as air sees the tree felled and draws no impostor for it ([`standing`]).
+/// `columns` is the columns its leaves and logs can take, [x0, z0, x1, z1] inclusive (face-local):
+/// the box the chunk meshers own its cells by (`TerrainGenerator::tree_tints`, its full-grown
+/// reach), so the far trees' hand-over owns the same columns by the same rule (BUGS.md #197);
+/// `rows` the box's rows [y0, y1] (face-local): with `columns`, how far its cells can reach.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FarTree {
     pub anchor: [i32; 3],
@@ -1039,6 +1043,8 @@ pub struct FarTree {
     pub stage: u32,
     pub stem: [i32; 3],
     pub stem_cells: u8,
+    pub columns: [i32; 4],
+    pub rows: [i32; 2],
 }
 
 impl FarTree {
@@ -1194,6 +1200,8 @@ mod tests {
                     stage: 1,
                     stem: [0; 3],
                     stem_cells: 1,
+                    columns: [0; 4],
+                    rows: [0; 2],
                 };
                 let record = crate::growth::Record {
                     anchor: [0; 3],
@@ -1225,6 +1233,8 @@ mod tests {
             stage: 0,
             stem: [0; 3],
             stem_cells: 1,
+            columns: [0; 4],
+            rows: [0; 2],
         };
         assert_eq!(hand_built.grown_by(400.0), hand_built);
     }
@@ -1334,6 +1344,8 @@ mod tests {
             stage: 5,
             stem: [4, 20, -9],
             stem_cells: 4,
+            columns: [4, -9, 4, -9],
+            rows: [20, 20],
         };
         let i = c.instances(&[t])[0];
         assert_eq!(i.foot, [4.5, 10.0, -8.5]);
