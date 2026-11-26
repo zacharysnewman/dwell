@@ -838,6 +838,66 @@ mod tests {
         }
     );
 
+    dwell_world::both_faces!(
+        /// BUGS.md #197 (owner, 2026-11-25: "These should be concretely testable, even unit
+        /// testable"): a chunk mesh job on a world with trees meshes every tree leaf and log with
+        /// the trees that grew it, so none is drawn while its tree is its billboard: its leaf
+        /// faces in runs of their trees, each carrying its fade tree; none meshed without.
+        fn a_chunk_mesh_job_hands_every_tree_cell_over_with_its_trees(f: dwell_world::FaceFrame) {
+            let r = Runner::world(GENERATOR_TERRAIN, 1);
+            let t = dwell_worldgen::BifacialTerrain::for_generator(GENERATOR_TERRAIN, 1)
+                .expect("terrain");
+            // A listed species tree, and the chunk 8 m up its trunk (its crown).
+            let tree = (0..40)
+                .flat_map(|k| {
+                    let (x, z) = (k * 64, k * 37);
+                    t.local(f.face).far_trees((x, z), (x + 63, z + 63))
+                })
+                .find(|t| usize::from(t.species) < dwell_worldgen::species::SPECIES.len())
+                .expect("a species tree");
+            let w = f.cell([tree.anchor[0], tree.anchor[1] + 16, tree.anchor[2]]);
+            let coord = dwell_world::chunk_of(w[0], w[1], w[2]);
+            let mut world = dwell_world::VoxelWorld::new(
+                dwell_worldgen::generator_for(GENERATOR_TERRAIN, 1),
+                None,
+            );
+            let padded = world.padded_box(coord, [1, 1, 1]);
+            let Output::ChunkMesh(m) = r.run(Job::MeshChunk {
+                padded,
+                light: Vec::new(),
+                mirror: f.is_b(),
+                origin: [coord.x, coord.y, coord.z].map(|v| v * dwell_world::CHUNK_SIZE),
+                cuts: Vec::new(),
+                damage: Vec::new(),
+                ground: None,
+                water_tops: true,
+                cards: false,
+                plants: 0,
+                day: 0.0,
+            }) else {
+                panic!("a chunk's mesh")
+            };
+            let leaves: Vec<&[f32]> = m
+                .cutout
+                .plants
+                .chunks(4)
+                .filter(|p| p[3] == dwell_mesh::TREE_LEAF_FADE)
+                .collect();
+            assert!(!leaves.is_empty(), "the crown's leaves are a tree's");
+            assert!(
+                leaves.iter().all(|p| p[2] >= 0.0),
+                "every tree leaf face carries its fade tree"
+            );
+            let runs = dwell_mesh::tree_leaf_ranges(&m.cutout);
+            assert!(!runs.is_empty() && runs.iter().all(|r| !r.0.is_empty()));
+            assert_eq!(
+                runs.last().map(|r| r.1.end as usize),
+                Some(m.cutout.indices.len()),
+                "the runs cover the leaves"
+            );
+        }
+    );
+
     #[test]
     fn a_stand_in_job_meshes_a_portals_shaft_as_generated() {
         // face-a-only: a chunk of the shaft under face A's opening; the stand-ins' rows on both

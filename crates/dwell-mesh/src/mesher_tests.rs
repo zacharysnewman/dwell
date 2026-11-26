@@ -4033,3 +4033,42 @@ dwell_world::both_faces!(
         }
     }
 );
+
+dwell_world::both_faces!(
+    /// BUGS.md #197: with the trees' claims, a leaf no tree grew (a player's, placed in a crown) is
+    /// no tree's: it has no impostor to hand over to, so it is drawn always (BUGS.md #186), not
+    /// handed to the nearest trunk's billboard.
+    fn a_leaf_no_tree_grew_is_no_trees(f: FaceFrame) {
+        let leaf = require("dwell:leaves");
+        let padded = voxels(&[(4, 8, 8, leaf)]);
+        let near = dwell_world::tree_tint::TreeTint {
+            anchor: [5, 0, 8],
+            min: [0, i32::MIN / 2, 0],
+            max: [15, i32::MAX / 2, 15],
+            tint: dwell_world::tree_tint::Tint::NONE,
+        };
+        let m = super::mesh_chunk_claimed(
+            &padded,
+            &[],
+            f.is_b(),
+            [0; 3],
+            &[],
+            None,
+            ChunkFlags {
+                water_tops: true,
+                ..ChunkFlags::default()
+            },
+            &[],
+            &[near],
+            &dwell_world::tree_tint::Claims::default(),
+        )
+        .expect("padded")
+        .cutout;
+        assert!(!m.plants.is_empty());
+        assert!(
+            m.plants.chunks(4).all(|p| p[3] != crate::TREE_LEAF_FADE),
+            "an unclaimed leaf is not handed over"
+        );
+        assert!(super::tree_leaf_ranges(&m).is_empty());
+    }
+);

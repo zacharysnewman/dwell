@@ -410,7 +410,15 @@ are meshed in runs by those sets, drawn while every tree of the set is real, and
 (its anchor packed in the vertex). A chunk of trunk alone now lists its trees too (its logs drew always). Tests:
 `tree_once.rs` `every_tree_in_a_stand_is_drawn_once_beside_its_neighbours` (a 64 m stand of the forest world, the
 camera through the canopy both ways, both faces): red with the old rule (a real tree's leaves missing, following a
-neighbour's billboard), green now; `mesher_tests.rs` `a_leaf_hands_over_with_the_trees_that_grew_it`. Not fixed: baking more or bigger variants for
+neighbour's billboard), green now; `mesher_tests.rs` `a_leaf_hands_over_with_the_trees_that_grew_it`.
+Owner (2026-11-25): "These should be concretely testable, even unit testable" (the gaps left: cells meshed without
+their trees, a real tree that differs from the model). Unit tests added: `forest_world.rs`
+`every_cell_the_generator_places_for_a_tree_is_claimed_by_it` (green: generation and the growth model agree),
+`a_tree_a_stage_either_side_of_the_clients_day_is_wholly_claimed` (red: on the day a tree came due, the stage the server
+may still hold was unclaimed; now a tree claims its due stage and one either side), `mesher_tests.rs`
+`a_leaf_no_tree_grew_is_no_trees` (red: with claims, a player's leaf still went to the nearest trunk's billboard; now
+it is no tree's, drawn always), `jobs/mod.rs` `a_chunk_mesh_job_hands_every_tree_cell_over_with_its_trees` (the
+client's only world-chunk mesh path gives every tree leaf face its trees). Not fixed: baking more or bigger variants for
 giants would sharpen them.
 
 ### 196. Realistic's rivers don't start in the mountains
