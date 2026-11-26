@@ -233,3 +233,116 @@ dwell_world::both_faces! {
         assert!(failures.is_empty(), "{} checks; drawn other than once:\n{}", checked, failures.join("\n"));
     }
 }
+
+/// The forest world's generator on face `f` (`dwell-worldgen` tests/forest_world.rs `generator`):
+/// old pines and oaks standing close, giants among them.
+fn forest(f: FaceFrame) -> dwell_worldgen::terrain::TerrainGenerator {
+    use dwell_worldgen::bifacial::face_seed;
+    let name = "test:forest";
+    let e = dwell_worldgen::config::world_config(name)
+        .unwrap()
+        .expect("the forest world's edit");
+    let map = dwell_worldgen::worldmap::WorldMap::for_height_with_worldgen(
+        face_seed(0, f.face),
+        e.height.expect("its height field"),
+        name,
+    )
+    .unwrap();
+    dwell_worldgen::terrain::TerrainGenerator::with_map(
+        face_seed(0, f.face),
+        std::sync::Arc::new(map),
+    )
+    .with_biomes_and_geology(&e.biomes, e.map, e.geology)
+    .with_vegetation(e.vegetation)
+}
+
+dwell_world::both_faces! {
+    /// The owner, 2026-11-25, on the before/after flight: "I'm seeing giants with their billboards
+    /// at the same time in the after?" A giant's crown reaches across its neighbours' trunks, and
+    /// its leaves followed the nearest trunk's state. A stand of the forest world, the camera
+    /// flying through it at the canopy both ways: no tree's cell is drawn while its billboard is,
+    /// and a real tree's cell is missing only where another tree that grew it is a billboard (whose
+    /// billboard draws it) or past the leaves' reach. Decided by the claims the mesh workers make
+    /// (`TerrainGenerator::tree_claims`) and the renderer's rules (`tree_set_drawn`, the leaf's
+    /// fade tree's share at its anchor).
+    fn every_tree_in_a_stand_is_drawn_once_beside_its_neighbours(f: FaceFrame) {
+        let g = forest(f);
+        let config = Config::get();
+        let far = far();
+        let (lo, hi) = ((0, -400), (63, -337));
+        let m = 16;
+        let listed = g.far_trees((lo.0 - m, lo.1 - m), (hi.0 + m, hi.1 + m));
+        let placed = g.trees_in((lo.0 - m, lo.1 - m), (hi.0 + m, hi.1 + m));
+        let rows = listed.iter().fold((i32::MAX, i32::MIN), |(a, b), t| (a.min(t.rows[0]), b.max(t.rows[1])));
+        let claims = g.tree_claims(lo, hi, rows, 0.0);
+        // Every patch tree's cells (as the growers place them) and whether each is a leaf.
+        let mut cells: Vec<([i32; 3], bool)> = Vec::new();
+        for t in listed.iter().filter(|t| {
+            (lo.0..=hi.0).contains(&t.anchor[0]) && (lo.1..=hi.1).contains(&t.anchor[2])
+        }) {
+            let turns = placed.iter().find(|p| p.anchor == t.anchor).expect("placed").quarter_turns;
+            let p = dwell_worldgen::growth::stage_cells(t.species, t.seed, t.stage as u8, t.anchor, turns)
+                .expect("a species tree");
+            cells.extend(p.cells().map(|(c, s)| (c, dwell_blocks::block_of(s).name.contains("leaves"))));
+        }
+        cells.sort_unstable();
+        cells.dedup_by_key(|c| c.0);
+        let mut layers: HashMap<u32, [f32; 4]> = HashMap::new();
+        let trees: Vec<tree_fade::Tree> = listed
+            .iter()
+            .zip(config.instances(&listed))
+            .map(|(t, inst)| {
+                let l = *layers.entry(inst.layer).or_insert_with(|| {
+                    let b = config.bake_layer(inst.layer, 8).expect("a layer");
+                    [b.centre[1], b.radius, 1.0, 0.0]
+                });
+                impostors::fade_tree(&inst, t.columns, t.rows, l)
+            })
+            .collect();
+        let ground = trees.iter().map(|t| t.foot[1]).fold(f32::MAX, f32::min);
+        let eye_y = f64::from(ground) + 60.0;
+        let x = f64::from(lo.0 + hi.0) * 0.5;
+        let mut fades = TreeFades::new(tree_fade::window());
+        let mut now = 0.0;
+        let mut failures: Vec<String> = Vec::new();
+        let reach = tree_fade::leaves_reach(&far) + 2.0;
+        let cell_h = dwell_world::CELL_H;
+        let steps: Vec<i32> = {
+            let path: Vec<i32> = (-520..=-220).step_by(3).collect();
+            path.iter().chain(path.iter().rev()).copied().collect()
+        };
+        for z in steps {
+            let e = f.point([x, eye_y, f64::from(z)]);
+            for dt in [0.0, 5.0] {
+                now += dt;
+                fades.update(now, f, e, &far, || Box::new(trees.clone().into_iter()), |_| true);
+            }
+            let share = |a: [i32; 3]| fades.share_at(f64::from(a[0]) + 0.5, f64::from(a[2]) + 0.5);
+            let billboard = |a: [i32; 3]| share(a) < 0.999;
+            for &(c, leaf) in &cells {
+                let Some(set) = claims.of(c) else { continue };
+                let w = f.point([f64::from(c[0]) + 0.5, (f64::from(c[1]) + 0.5) * cell_h, f64::from(c[2]) + 0.5]);
+                let d = (0..3).map(|k| (w[k] - e[k]).powi(2)).sum::<f64>().sqrt() as f32;
+                let gated = impostors::tree_set_drawn(Some(far), set.iter().map(|&a| share(a)));
+                let drawn = gated
+                    && (!leaf
+                        || (d <= reach
+                            && impostors::cutout_draw(Some(far), chunk_distance(f, c, e)) == CutoutDraw::All
+                            && share(set[0]) > 0.0));
+                // Settled shares only (0 or 1): a fade is the one time both may draw.
+                if set.iter().any(|&a| { let s = share(a); s > 0.0 && s < 1.0 }) {
+                    continue;
+                }
+                let any_billboard = set.iter().any(|&a| billboard(a));
+                if drawn && any_billboard && failures.len() < 12 {
+                    failures.push(format!("eye z {z}: cell {c:?} ({}) drawn under the billboard of one of {set:?}", if leaf { "leaf" } else { "log" }));
+                }
+                if !drawn && !any_billboard && (!leaf || d <= reach) && failures.len() < 12 {
+                    failures.push(format!("eye z {z}: cell {c:?} ({}) of real trees {set:?} missing at {d:.0} m", if leaf { "leaf" } else { "log" }));
+                }
+            }
+        }
+        assert!(!cells.is_empty());
+        assert!(failures.is_empty(), "drawn other than once:\n{}", failures.join("\n"));
+    }
+}

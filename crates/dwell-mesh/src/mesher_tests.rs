@@ -2626,10 +2626,13 @@ dwell_world::both_faces!(
             without.positions.len() / 3 + carded.len()
         );
         // Its faces are a tree's leaves (`TREE_LEAF_FADE`): no sway, handed over to the far
-        // trees' impostors by the frame's distances (WORK_QUEUE item 31).
+        // trees' impostors by the frame's distances (WORK_QUEUE item 31), fading by their tree's
+        // state at its anchor (its column from the chunk's origin in the fade start; BUGS.md #197).
         assert!(!without.plants.is_empty());
+        let owner = crate::pack_tree_owner([8, 8]);
+        assert_eq!(crate::unpack_tree_owner(owner), [8, 8]);
         for v in without.plants.chunks(4) {
-            assert_eq!(v, [0.0, 0.0, crate::TREE_LEAF_FADE, crate::TREE_LEAF_FADE]);
+            assert_eq!(v, [0.0, 0.0, owner, crate::TREE_LEAF_FADE]);
         }
         let faces = (0..with.positions.len() / 3).filter(|&i| with.plants[i * 4 + 3] < 0.0);
         assert_eq!(faces.count(), without.positions.len() / 3);
@@ -3834,15 +3837,15 @@ dwell_world::both_faces!(
         let two = mesh(&[other, tree]);
         let runs = super::tree_log_ranges(&two);
         assert_eq!(
-            runs.iter().map(|r| r.0).collect::<Vec<_>>(),
-            [tree.anchor, other.anchor]
+            runs.iter().map(|r| r.0.clone()).collect::<Vec<_>>(),
+            [vec![tree.anchor], vec![other.anchor]]
         );
         assert_eq!(runs[0].1.start, tree_logs_range(&two).start);
         assert_eq!(runs[1].1.end, two.indices.len() as u32);
         assert_eq!(runs[0].1.end, runs[1].1.start);
         let x = |v: u32| two.positions[v as usize * 3];
         for (anchor, r) in &runs {
-            let near = |v: &u32| (x(*v) - anchor[0] as f32).abs() < 4.0;
+            let near = |v: &u32| (x(*v) - anchor[0][0] as f32).abs() < 4.0;
             assert!(
                 two.indices[r.start as usize..r.end as usize]
                     .iter()
@@ -3948,3 +3951,85 @@ fn a_stand_of_tall_grass_draws_as_one_plant_stretching_up() {
         }
     }
 }
+
+dwell_world::both_faces!(
+    /// BUGS.md #197 (owner, 2026-11-25: "Leaves follow their own tree"): a leaf a giant grew
+    /// beside a neighbour's trunk hands over with the giant, not the nearest trunk: its faces fade
+    /// by the giant's anchor and sit in the giant's run; one both grew sits in a run of both.
+    fn a_leaf_hands_over_with_the_trees_that_grew_it(f: FaceFrame) {
+        let leaf = require("dwell:leaves");
+        let padded = voxels(&[(4, 8, 8, leaf), (10, 8, 8, leaf)]);
+        let near = dwell_world::tree_tint::TreeTint {
+            anchor: [5, 0, 8],
+            min: [0, i32::MIN / 2, 0],
+            max: [15, i32::MAX / 2, 15],
+            tint: dwell_world::tree_tint::Tint::NONE,
+        };
+        let giant = dwell_world::tree_tint::TreeTint {
+            anchor: [20, 0, 8],
+            ..near
+        };
+        // The cells' face-local rows: a face-B chunk at origin 0 meshes at its own.
+        let mesh_once = |claims: &dwell_world::tree_tint::Claims| {
+            super::mesh_chunk_claimed(
+                &padded,
+                &[],
+                f.is_b(),
+                [0; 3],
+                &[],
+                None,
+                ChunkFlags {
+                    water_tops: true,
+                    ..ChunkFlags::default()
+                },
+                &[],
+                &[near, giant],
+                claims,
+            )
+            .expect("padded")
+            .cutout
+        };
+        // Which rows the mesher reads the cells at (face-local): any row of those columns.
+        let claims = dwell_world::tree_tint::Claims::of_trees(
+            [
+                (
+                    giant.anchor,
+                    (-4096..4096).map(|y| [4, y, 8]).collect::<Vec<_>>(),
+                ),
+                (giant.anchor, (-4096..4096).map(|y| [10, y, 8]).collect()),
+                (near.anchor, (-4096..4096).map(|y| [10, y, 8]).collect()),
+            ],
+            |_| true,
+        );
+        let m = mesh_once(&claims);
+        let runs = super::tree_leaf_ranges(&m);
+        assert_eq!(runs.len(), 2);
+        let run = |set: Vec<[i32; 3]>| {
+            runs.iter()
+                .find(|r| r.0 == set)
+                .map(|r| r.1.clone())
+                .expect("a run of that set")
+        };
+        let (alone, both) = (
+            run(vec![giant.anchor]),
+            run(vec![near.anchor, giant.anchor]),
+        );
+        // The giant's leaf (x 4, beside the near trunk) fades by the giant's anchor.
+        let x = |v: u32| m.positions[v as usize * 3];
+        for &v in &m.indices[alone.start as usize..alone.end as usize] {
+            assert!(x(v) < 6.0, "the giant's run holds the leaf at x 4");
+            assert_eq!(
+                crate::unpack_tree_owner(m.plants[v as usize * 4 + 2]),
+                [20, 8],
+                "it fades by the giant's state"
+            );
+        }
+        // The leaf both grew: by the nearer one's (column_rank), drawn while both are real.
+        for &v in &m.indices[both.start as usize..both.end as usize] {
+            assert_eq!(
+                crate::unpack_tree_owner(m.plants[v as usize * 4 + 2]),
+                [5, 8]
+            );
+        }
+    }
+);

@@ -397,6 +397,21 @@ billboard is scaled to its real tree's height (`Config::scale_of`, the instance'
 checks that a tree within `inM` − 16 m is real, that a real tree misses only leaves past the reach, and that a
 billboard is its tree's height (within a quarter, or 1 m). Red before: an old-oak giant sapling a billboard at 32 m;
 an oak sapling 2 m tall drawn as a 5–6 m billboard.
+Seen in the v2 video (0.76.22, 2026-11-25): the forest world's far trees are scaled 0.3–2.5× (a third or more of
+its old pines and oaks 1.5–2.5×, measured on a tile's far tree list), so the canopy reads much taller than before,
+and the biggest billboards are soft (a 64 px view stretched 2.5×). **The owner saw giants with their billboards at once
+in it:** a leaf hands over with the nearest trunk (the meshers' rule, which can't know which tree grew it), so a
+giant's outer leaves (its crown 10–16 m across its neighbours' trunks) follow the neighbours, and the capped early
+switch makes the giant its billboard up to 16 m before they switch: in between, its billboard and part of its real
+crown draw. `tree_once.rs` checks one tree alone and missed it; it needs neighbours.
+Owner: "Leaves follow their own tree". **Fixed 2026-11-25 (open until the owner's look):** the mesh workers ask the
+generator which trees' current stages grew each cell (`tree_claims`, the growth day in the mesh job); leaves and logs
+are meshed in runs by those sets, drawn while every tree of the set is real, and a leaf fades by its own tree's state
+(its anchor packed in the vertex). A chunk of trunk alone now lists its trees too (its logs drew always). Tests:
+`tree_once.rs` `every_tree_in_a_stand_is_drawn_once_beside_its_neighbours` (a 64 m stand of the forest world, the
+camera through the canopy both ways, both faces): red with the old rule (a real tree's leaves missing, following a
+neighbour's billboard), green now; `mesher_tests.rs` `a_leaf_hands_over_with_the_trees_that_grew_it`. Not fixed: baking more or bigger variants for
+giants would sharpen them.
 
 ### 196. Realistic's rivers don't start in the mountains
 

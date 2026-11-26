@@ -960,6 +960,9 @@ struct CutoutOut {
     @location(10) @interpolate(flat) leaf: f32,
     // A plant's distance fade, blade by blade (`blade_fade`): 1 drawn in full, 0 dropped.
     @location(11) @interpolate(flat) blade: f32,
+    // A tree leaf face's fade tree (BUGS.md #197): its anchor's column in the far trees' map
+    // (`tree_owner_at`), x −1e6 for none (the leaf reads the map at its own column).
+    @location(12) @interpolate(flat) owner: vec2f,
 };
 
 // The gust field: travelling waves whose wavelengths divide WIND_PERIOD, sampled at the world
@@ -1116,6 +1119,7 @@ fn cutout_vertex(v: CutoutIn, k: u32, back_cull: bool, cards: bool) -> CutoutOut
     o.uv = v.uv;
     o.tile = v.tile;
     o.fade = v.plant.zw;
+    o.owner = tree_owner_at(v.plant, draw.offset.xyz);
     o.bare = v.lit.w;
     o.light = v.lit.x;
     o.flood = v.lit.yz;
@@ -1201,7 +1205,7 @@ fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut
     // A tree's leaf face hands over to the far trees' impostors by its tree's state, cross-faded
     // in time (render/tree_fade.rs; `imp_fs` keeps the other pixels).
     if (i.fade.y < 0.0) {
-        fade = tree_near_share(i.rel);
+        fade = select(tree_near_share(i.rel), tree_owner_share(i.owner, i.rel), i.owner.x > -1e5);
         cover *= fade;
     }
     // Near the eye a leaf's faces dissolve (dithered, as a fading plant), from a third of its

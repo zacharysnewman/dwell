@@ -1195,9 +1195,13 @@ struct Chunk {
     opaque: Option<GpuMesh>,
     water: Option<GpuMesh>,
     cutout: Option<GpuMesh>,
-    /// Its opaque mesh's listed trees' logs, tree by tree: each tree's anchor (face-local) and
-    /// index range (`dwell_mesh::tree_log_ranges`), drawn while their tree is (BUGS.md #197).
-    tree_logs: Vec<([i32; 3], std::ops::Range<u32>)>,
+    /// Its opaque mesh's listed trees' logs set by set of the trees that grew them (anchors,
+    /// face-local) with their index ranges (`dwell_mesh::tree_log_ranges`), drawn while those trees
+    /// are their real selves (BUGS.md #197).
+    tree_logs: Vec<(Vec<[i32; 3]>, std::ops::Range<u32>)>,
+    /// Its cutout mesh's tree leaves the same way (`dwell_mesh::tree_leaf_ranges`; empty when
+    /// meshed without claims: then its leaves draw whole and fade by the map alone).
+    tree_leaves: Vec<(Vec<[i32; 3]>, std::ops::Range<u32>)>,
 }
 
 /// `Part::Facing`'s bit for the listed trees' logs (`MeshArrays::tree_logs`): left out past the
@@ -1252,6 +1256,11 @@ enum Part {
     /// [`Part::Facing`] with the listed trees' logs of the trees drawn as themselves, not as
     /// their impostors (`impostors::tree_logs_drawn`, BUGS.md #197), in place of all of them.
     FacingTrees(u8),
+    /// [`Part::Cutout`] with the tree leaves whose trees are drawn as themselves (BUGS.md #197,
+    /// the chunk's `tree_leaves` runs) in place of all of them: the main passes', with impostors.
+    CutoutTrees,
+    /// [`Part::CutoutCards`] the same way.
+    CutoutCardsTrees,
     /// The cutout mesh past `blades::BILLBOARD_M`: its plants' first quads (each a card turned to
     /// the eye there) and its trees' leaves, without the plants' other quads.
     CutoutCards,
@@ -1407,6 +1416,11 @@ impl TerrainRenderer for RasterTerrain {
             origin: chunk_origin_m(coord),
             tree_logs: if opaque.is_some() {
                 dwell_mesh::tree_log_ranges(&m.opaque)
+            } else {
+                Vec::new()
+            },
+            tree_leaves: if cutout.is_some() {
+                dwell_mesh::tree_leaf_ranges(&m.cutout)
             } else {
                 Vec::new()
             },
@@ -4282,6 +4296,38 @@ impl Renderer {
         ]
     }
 
+    /// The ranges of a chunk's tree runs (`Chunk::tree_logs`, `tree_leaves`: each the trees that
+    /// grew it and its indices) to draw: those whose every tree is drawn as itself, not as its
+    /// impostor (its fade map share at its anchor, the texel its impostor reads;
+    /// `impostors::tree_set_drawn`, BUGS.md #197). A chunk on the other face draws all: no
+    /// impostors draw there.
+    fn tree_runs_drawn(
+        &self,
+        coord: ChunkCoord,
+        runs: &[(Vec<[i32; 3]>, std::ops::Range<u32>)],
+    ) -> Vec<std::ops::Range<u32>> {
+        let face = FaceFrame::at_row(coord.y * dwell_world::CHUNK_SIZE);
+        let fades = self
+            .impostors
+            .as_ref()
+            .filter(|_| face == self.face)
+            .map(|i| &i.fades);
+        let far = self.far_drawn();
+        runs.iter()
+            .filter(|(set, _)| {
+                impostors::tree_set_drawn(
+                    far,
+                    set.iter().map(|a| {
+                        fades.map_or(1.0, |f| {
+                            f.share_at(f64::from(a[0]) + 0.5, f64::from(a[2]) + 0.5)
+                        })
+                    }),
+                )
+            })
+            .map(|(_, r)| r.clone())
+            .collect()
+    }
+
     /// The draws of one pass: everything whose distance range meets [near, far].
     /// A draw's mesh and the index ranges it draws (a section's surface and its shown skirts).
     fn mesh_of(&self, m: &DrawMesh) -> (&GpuMesh, Vec<std::ops::Range<u32>>) {
@@ -4308,28 +4354,27 @@ impl Renderer {
                     | Part::Plants
                     | Part::Leaves
                     | Part::CutoutCards
-                    | Part::PlantCards => chunk.cutout.as_ref(),
+                    | Part::PlantCards
+                    | Part::CutoutTrees
+                    | Part::CutoutCardsTrees => chunk.cutout.as_ref(),
                 }
                 .expect("collected");
                 match part {
                     Part::Facing(mask) => (m, facing_draws(&m.parts, *mask)),
                     Part::FacingTrees(mask) => {
-                        let face = FaceFrame::at_row(c.y * dwell_world::CHUNK_SIZE);
-                        let fades = self
-                            .impostors
-                            .as_ref()
-                            .filter(|_| face == self.face)
-                            .map(|i| &i.fades);
-                        let far = self.far_drawn();
                         let mut r = facing_draws(&m.parts, *mask & !TREE_LOGS_BIT);
-                        let trees = chunk.tree_logs.iter().filter(|(a, _)| {
-                            // A tree on the other face has no impostor drawn: its own.
-                            let share = fades.map_or(1.0, |f| {
-                                f.share_at(f64::from(a[0]) + 0.5, f64::from(a[2]) + 0.5)
-                            });
-                            impostors::tree_logs_drawn(far, share)
-                        });
-                        r.extend(trees.map(|(_, x)| x.clone()));
+                        r.extend(self.tree_runs_drawn(*c, &chunk.tree_logs));
+                        (m, merge_ranges(r))
+                    }
+                    Part::CutoutTrees | Part::CutoutCardsTrees => {
+                        // The plants (or their cards) as `Part::Cutout`/`CutoutCards`, then the
+                        // leaves of the trees drawn as themselves.
+                        let mut r = if *part == Part::CutoutTrees {
+                            vec![m.part(Part::Plants)]
+                        } else {
+                            vec![m.parts.get(2).unwrap_or(&m.parts[0]).clone()]
+                        };
+                        r.extend(self.tree_runs_drawn(*c, &chunk.tree_leaves));
                         (m, merge_ranges(r))
                     }
                     Part::PlantCards | Part::CutoutCards => {
@@ -4464,6 +4509,10 @@ impl Renderer {
                     })
                     .sum();
                 match impostors::cutout_draw(far, d2.sqrt() as f32) {
+                    // Leaf by leaf with the trees that grew it, where the mesh knows them.
+                    impostors::CutoutDraw::All if !c.tree_leaves.is_empty() => {
+                        Some(Part::CutoutTrees)
+                    }
                     impostors::CutoutDraw::All => Some(Part::Cutout),
                     impostors::CutoutDraw::Plants => Some(Part::Plants),
                     impostors::CutoutDraw::Nothing => None,
@@ -4485,6 +4534,7 @@ impl Renderer {
             let cutout_part = if across > f64::from(blades::BILLBOARD_M) + 2.0 {
                 cutout_part.map(|p| match p {
                     Part::Cutout => Part::CutoutCards,
+                    Part::CutoutTrees => Part::CutoutCardsTrees,
                     Part::Plants => Part::PlantCards,
                     p => p,
                 })
@@ -4492,9 +4542,9 @@ impl Renderer {
                 cutout_part
             };
             if let Some(part) = cutout_part
-                && c.cutout
-                    .as_ref()
-                    .is_some_and(|m| part == Part::Cutout || m.drawn(part) > 0)
+                && c.cutout.as_ref().is_some_and(|m| {
+                    matches!(part, Part::Cutout | Part::CutoutTrees) || m.drawn(part) > 0
+                })
                 && self.cutout_shown
             {
                 out.push(DrawItem {

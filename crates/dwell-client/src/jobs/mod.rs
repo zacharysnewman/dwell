@@ -76,6 +76,9 @@ pub enum Job {
         cards: bool,
         /// The share of cross plants meshed, percent (Graphics → Tall grass; `ChunkFlags::plants`).
         plants: u8,
+        /// The world's growth day (`Pool::day`): the stage each listed tree has grown to, for which
+        /// trees grew each cell (BUGS.md #197).
+        day: f64,
     },
     /// An LOD section's meshes.
     MeshSection {
@@ -377,6 +380,7 @@ impl Runner {
                     water_tops,
                     cards,
                     plants,
+                    day: 0.0,
                 })
             }
             Job::Generate { coord } => {
@@ -590,7 +594,8 @@ impl Runner {
                 water_tops,
                 cards,
                 plants,
-            } => match dwell_mesh::mesh_chunk_trees(
+                day,
+            } => match dwell_mesh::mesh_chunk_claimed(
                 &padded,
                 &light,
                 mirror,
@@ -611,8 +616,10 @@ impl Runner {
                     plants,
                 },
                 &damage,
-                // Its species trees' leaf tints, from the generator this worker runs (ADR 0079).
+                // Its species trees' leaf tints, from the generator this worker runs (ADR 0079),
+                // and which of them grew each cell on the world's day (BUGS.md #197).
                 &self.tree_tints(origin, &padded),
+                &self.tree_claims(origin, &padded, day),
             ) {
                 Ok(m) => Output::ChunkMesh(Box::new(m)),
                 Err(e) => Output::Failed(format!("{e:?}")),
@@ -656,12 +663,31 @@ impl Runner {
         padded: &[u16],
     ) -> Vec<dwell_world::tree_tint::TreeTint> {
         match &self.terrain {
-            Some(t) if dwell_mesh::has_leaves(padded) => {
+            Some(t) if dwell_mesh::has_tree_cells(padded) => {
                 t.tree_tints(dwell_world::ChunkCoord::from_array(
                     origin.map(|v| v.div_euclid(dwell_world::CHUNK_SIZE)),
                 ))
             }
             _ => Vec::new(),
+        }
+    }
+
+    /// Which listed trees grew each cell of the chunk at `origin` (world cells) on growth day
+    /// `day`, face-local as [`Self::tree_tints`] (BUGS.md #197): none without terrain or tree cells.
+    fn tree_claims(
+        &self,
+        origin: [i32; 3],
+        padded: &[u16],
+        day: f64,
+    ) -> dwell_world::tree_tint::Claims {
+        match &self.terrain {
+            Some(t) if dwell_mesh::has_tree_cells(padded) => t.tree_claims(
+                dwell_world::ChunkCoord::from_array(
+                    origin.map(|v| v.div_euclid(dwell_world::CHUNK_SIZE)),
+                ),
+                day,
+            ),
+            _ => Default::default(),
         }
     }
 

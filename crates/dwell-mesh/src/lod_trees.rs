@@ -43,6 +43,12 @@ pub fn has_leaves(cells: &[u16]) -> bool {
     cells.iter().any(|&m| tree_kind(m) == 1)
 }
 
+/// Whether `cells` hold any tree cell, a leaf or a log (BUGS.md #197: a chunk of trunk alone
+/// listed no trees, so its logs drew under their trees' impostors).
+pub fn has_tree_cells(cells: &[u16]) -> bool {
+    cells.iter().any(|&m| tree_kind(m) != 0)
+}
+
 const FACES: [(usize, i32); 6] = [(0, 1), (0, -1), (1, 1), (1, -1), (2, 1), (2, -1)];
 
 /// Draws the section's tree cells into `out` (positions in cells, normals in cell space, linear

@@ -86,10 +86,16 @@ impl W {
         self.u32s(&m.cracks);
         self.u32s(&m.indices);
         self.u32(m.tree_logs);
-        self.u32(m.tree_log_runs.len() as u32);
-        for &(anchor, n) in &m.tree_log_runs {
-            anchor.into_iter().for_each(|v| self.i32(v));
-            self.u32(n);
+        self.runs(&m.tree_log_runs);
+        self.runs(&m.tree_leaf_runs);
+    }
+    /// Runs of tree sets (`MeshArrays::tree_log_runs`): each set's anchors, then its count.
+    fn runs(&mut self, runs: &[(Vec<[i32; 3]>, u32)]) {
+        self.u32(runs.len() as u32);
+        for (set, n) in runs {
+            self.u32(set.len() as u32);
+            set.iter().flatten().for_each(|&v| self.i32(v));
+            self.u32(*n);
         }
     }
     fn flat(&mut self, m: &FlatMesh) {
@@ -213,15 +219,22 @@ impl R<'_> {
             cracks: self.u32s()?,
             indices: self.u32s()?,
             tree_logs: self.u32()?,
-            tree_log_runs: {
-                let n = self.u32()? as usize;
-                let mut runs = Vec::with_capacity(n.min(1 << 16));
-                for _ in 0..n {
-                    runs.push(([self.i32()?, self.i32()?, self.i32()?], self.u32()?));
-                }
-                runs
-            },
+            tree_log_runs: self.runs()?,
+            tree_leaf_runs: self.runs()?,
         })
+    }
+    fn runs(&mut self) -> Res<Vec<(Vec<[i32; 3]>, u32)>> {
+        let n = self.u32()? as usize;
+        let mut runs = Vec::with_capacity(n.min(1 << 16));
+        for _ in 0..n {
+            let k = self.u32()? as usize;
+            let mut set = Vec::with_capacity(k.min(64));
+            for _ in 0..k {
+                set.push([self.i32()?, self.i32()?, self.i32()?]);
+            }
+            runs.push((set, self.u32()?));
+        }
+        Ok(runs)
     }
     fn flat(&mut self) -> Res<FlatMesh> {
         Ok(FlatMesh {
@@ -298,6 +311,7 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             water_tops,
             cards,
             plants,
+            day,
         } => {
             w.u8(4);
             // The message's size up front: one allocation, not a doubling buffer.
@@ -311,6 +325,7 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             // Bit 0 the mirror, bit 1 no water tops, bit 2 no leaf cards.
             w.u8(u8::from(*mirror) | if *water_tops { 0 } else { 2 } | if *cards { 0 } else { 4 });
             w.u8(*plants);
+            w.f64(*day);
             origin.iter().for_each(|v| w.i32(*v));
             w.u16s(padded);
             w.bytes(light);
@@ -462,6 +477,7 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
             let bits = r.u8()?;
             let (mirror, water_tops, cards) = (bits & 1 != 0, bits & 2 == 0, bits & 4 == 0);
             let plants = r.u8()?;
+            let day = r.f64()?;
             let origin = [r.i32()?, r.i32()?, r.i32()?];
             let padded = r.u16s()?;
             let light = r.bytes()?;
@@ -522,6 +538,7 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
                 water_tops,
                 cards,
                 plants,
+                day,
             }
         }
         5 => {
@@ -864,6 +881,7 @@ mod tests {
             water_tops: true,
             cards: true,
             plants: 100,
+            day: 2.5,
         };
         let out = encode_job(9, &job);
         assert!(
@@ -985,6 +1003,7 @@ mod tests {
             water_tops: false,
             cards: false,
             plants: 37,
+            day: 2.5,
         });
         jobs.push(Job::MeshSection {
             cells: vec![1; dwell_world::lod::VOLUME],
@@ -1084,6 +1103,7 @@ mod tests {
                 water_tops: true,
                 cards: true,
                 plants: 100,
+                day: 2.5,
             },
         );
         for n in 0..bytes.len() {

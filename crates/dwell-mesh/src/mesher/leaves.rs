@@ -547,8 +547,16 @@ pub(super) fn leaf_voxel(
         emit(b, cells, crowns, k, (cell, ex), &piece, tint);
     }
     // Only a listed tree's leaves hand over to its impostor (BUGS.md #186).
-    if k.style.render == dwell_blocks::RenderMode::Cutout && cells.tree_owned(cell) {
-        mark_tree_leaves(b, first);
+    if k.style.render == dwell_blocks::RenderMode::Cutout
+        && let Some(set) = cells.tree_claimants(cell)
+    {
+        // Its fade's tree (BUGS.md #197): the shader reads that tree's state at its anchor.
+        let rel = [set[0][0] - cells.origin[0], set[0][2] - cells.origin[2]];
+        mark_tree_leaves(b, first, crate::pack_tree_owner(rel));
+        let end = b.vertex_count();
+        if end as usize > first {
+            b.tree_vertices.push((first as u32..end, set));
+        }
     }
     if with_cards && k.style.render == dwell_blocks::RenderMode::Cutout {
         let world: [i64; 3] =
@@ -621,8 +629,9 @@ fn flush_holes(cells: &Cells<'_>, log: [i32; 3], i: usize) -> Vec<Vec<V>> {
 
 /// Marks the leaf faces from vertex `first` on as a tree's ([`crate::TREE_LEAF_FADE`] in their
 /// `plants` fade): the shader hands them over to the far trees' impostors by the frame's far
-/// trees distances (WORK_QUEUE item 31), dropping them whole past the hand-over.
-fn mark_tree_leaves(b: &mut Builder, first: usize) {
+/// trees distances (WORK_QUEUE item 31), dropping them whole past the hand-over; `owner` (in the
+/// fade's start, [`crate::pack_tree_owner`]) the tree whose state they fade by (BUGS.md #197).
+fn mark_tree_leaves(b: &mut Builder, first: usize, owner: f32) {
     let end = b.vertex_count() as usize;
     if end == first {
         return;
@@ -630,8 +639,7 @@ fn mark_tree_leaves(b: &mut Builder, first: usize) {
     b.m.plants.resize(first * 4, 0.0);
     b.m.bare.resize(first, 0.0);
     for _ in first..end {
-        b.m.plants
-            .extend([0.0, 0.0, crate::TREE_LEAF_FADE, crate::TREE_LEAF_FADE]);
+        b.m.plants.extend([0.0, 0.0, owner, crate::TREE_LEAF_FADE]);
         b.m.bare.push(0.0);
     }
 }

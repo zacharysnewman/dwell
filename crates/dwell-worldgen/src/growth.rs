@@ -339,6 +339,31 @@ fn placed(r: &Record, stage: u8, swaps: &[(StateId, StateId)]) -> Option<Placed>
     Some(p)
 }
 
+/// A species tree's cells at `stage` (face-local), placed at face-local `anchor` turned `turns`
+/// quarter turns, as the growers place its stages ([`step`]): which tree's cells the far trees'
+/// hand-over hands over with it (`TerrainGenerator::tree_claims`, BUGS.md #197).
+pub fn stage_cells(
+    species: u16,
+    seed: u32,
+    stage: u8,
+    anchor: [i32; 3],
+    turns: u8,
+) -> Option<Placed> {
+    let r = Record {
+        anchor,
+        face: Face::A,
+        species,
+        seed,
+        stage,
+        since: 0.0,
+        turns,
+        planter: 0,
+        variant: 0,
+        stopped: false,
+    };
+    placed(&r, stage, &[])
+}
+
 /// The cells (world cells and states) of the record's tree at `stage`, no variant (tests, tools).
 pub fn cells_at(r: &Record, stage: u8) -> Vec<([i32; 3], StateId)> {
     let f = FaceFrame { face: r.face };

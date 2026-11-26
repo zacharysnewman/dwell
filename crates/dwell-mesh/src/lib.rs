@@ -53,6 +53,21 @@ mod lod_trees;
 /// (a plant's are ≥ 0): the shader fades it out by the frame's far trees hand-over instead of a
 /// fixed distance, the impostors taking over (docs/proposals/TREE_IMPOSTORS.md §5).
 pub const TREE_LEAF_FADE: f32 = -1.0;
+
+/// A tree leaf face's fade tree in its `plants` fade start (the third value; BUGS.md #197): its
+/// anchor's column from the chunk's origin (`rel`, x and z cells, each within −128..127) packed as
+/// a whole number (`(x + 128) × 256 + z + 128`), exact in an f32; the shader looks the tree's state
+/// up there. [`unpack_tree_owner`] is its inverse (the WGSL `tree_owner_at`'s twin).
+pub fn pack_tree_owner(rel: [i32; 2]) -> f32 {
+    let q = |v: i32| (v.clamp(-128, 127) + 128) as u32;
+    (q(rel[0]) * 256 + q(rel[1])) as f32
+}
+
+/// [`pack_tree_owner`]'s inverse: the anchor's column from the chunk's origin.
+pub fn unpack_tree_owner(v: f32) -> [i32; 2] {
+    let k = v as u32;
+    [(k / 256) as i32 - 128, (k % 256) as i32 - 128]
+}
 mod mesher;
 mod sky;
 mod style;
@@ -63,15 +78,15 @@ pub use lod_mesher::{
     FlatMesh, MeshSectionOptions, SKIRT_SINK, SURFACE_STEPS, SURFACE_STRIDE, SectionMeshes,
     lod_color, mesh_section, mesh_section_tinted, mesh_section_trees, mirror_rows, section_bytes,
 };
-pub use lod_trees::has_leaves;
+pub use lod_trees::{has_leaves, has_tree_cells};
 pub use mesher::relief;
 pub use mesher::{
     ChunkFlags, ChunkMeshes, FACING_GROUPS, FACING_OTHER, GroundJob, MeshArrays, PAD,
-    PADDED_VOLUME, SECOND_QUAD_U, face_covered, facing_mask, facing_mask_toward, facing_ranges,
-    ground_scatter, group_by_facing, look_mesh, look_swatch, mesh_chunk, mesh_chunk_at,
-    mesh_chunk_cut, mesh_chunk_damaged, mesh_chunk_flags, mesh_chunk_ground, mesh_chunk_lit,
-    mesh_chunk_trees, mirror_padded, padded_index, plant_kept, second_quads_from, tree_leaves_from,
-    tree_log_ranges, tree_logs_range,
+    PADDED_VOLUME, SECOND_QUAD_U, Trees, face_covered, facing_mask, facing_mask_toward,
+    facing_ranges, ground_scatter, group_by_facing, look_mesh, look_swatch, mesh_chunk,
+    mesh_chunk_at, mesh_chunk_claimed, mesh_chunk_cut, mesh_chunk_damaged, mesh_chunk_flags,
+    mesh_chunk_ground, mesh_chunk_lit, mesh_chunk_trees, mirror_padded, padded_index, plant_kept,
+    second_quads_from, tree_leaf_ranges, tree_leaves_from, tree_log_ranges, tree_logs_range,
 };
 /// The `fluids` stream's value for a see-through face that is not a fluid's.
 pub const NO_FLUID: f32 = 255.0;
