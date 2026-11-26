@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "Trees that have just grown a stage no longer show a few leaves under their billboard.",
-    "Leaves you place in a tree's crown stay drawn when the tree turns into its billboard."
-  ]
-}
