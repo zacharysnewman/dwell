@@ -2,6 +2,14 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.76.27",
+      "changes": [
+        "Paint your character: the game menu's new Character page opens a painter where your character stands 30 m tall on an empty stage.",
+        "Fly round it, pick one of seven colours (1–7, C for the palette) and paint any face with the brush (drag) or fill a connected patch (right click); Ctrl+Z undoes.",
+        "Your look is kept on this device and other players see it. A controller works too."
+      ]
+    },
+    {
       "version": "0.76.26",
       "changes": [
         "In adventure, a door can be crafted from 4 planks and a ladder from 4 sticks, in the backpack's Combine."
