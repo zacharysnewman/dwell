@@ -17,6 +17,24 @@ cannons only hold rules." The 2026-11-18 hold ("Put a hold on everything except 
 failures, the queued items and the owner's list of 2026-11-23 are all workable again. (The parked cold desert fix rides
 the deep-seas line, PR #1109.)
 
+## Cherry-picked next (owner, 2026-11-26)
+
+"We're going to cherry pick since we're low on tokens. Add the door and ladder recipes. Character painting. Inventory
+icons from meshes. Those 3 in that order, save any questions for when you can't proceed farther without them.
+Initially though ask any questions you have now." The rest of the first and second passes waits.
+1. Door and ladder recipes ("Door 4 takes wood planks, ladder takes 4 sticks"). Owner should see: a door and a ladder
+   craftable in adventure from the backpack's Combine at those costs. Built 2026-11-26 (`shared/inventory/inventory.json`;
+   test `items.rs` `a_door_and_a_ladder_are_crafted`, red before, green after).
+2. Character painting (decisions under "Character painting" below: pause menu "Character", skin and hair each one
+   colour, clothes and hat face by face, hat on/off, saved per device, seen by others). Owner should see: that menu,
+   and another player seeing the result.
+3. Inventory icons from meshes (section 9). Owner should see: every hotbar and inventory icon distinct and reading as
+   what it is, blocks in one standard three-quarter view, flat items drawn flat.
+Answers (owner, 2026-11-26): recipes "4 Planks → 1 door; 4 sticks → 1 ladder"; painting's clothes and hat colours "Art
+palette swatches" (a fixed grid from shared/textures/palette.json); icons "Rendered in game at load" (the client renders
+each item's mesh once and caches it, so new blocks get icons by themselves) in a "Classic isometric" view (down 30°,
+turned 45°).
+
 ## Desktop app performance (owner, 2026-11-26)
 
 "Why does it run worst native than in chrome?" (~30 fps on mobile settings, the GPU time "-"); then "Yeah upgrade

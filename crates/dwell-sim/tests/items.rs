@@ -1062,3 +1062,26 @@ fn a_cannon_and_a_ships_wheel_are_crafted() {
         (1, 0, 0)
     );
 }
+
+#[test]
+fn a_door_and_a_ladder_are_crafted() {
+    // face-a-only: inventory counts, no geometry. Owner, 2026-11-26: "Door 4 takes wood planks,
+    // ladder takes 4 sticks" (4 Planks → 1 door, 4 sticks → 1 ladder).
+    let mut fx = scene(FaceFrame::A, "adventure");
+    let count = |fx: &Fixture, item: &str| fx.server.inventory_of(1).unwrap().count_of(item);
+    fx.server.give(1, "dwell:planks", 3);
+    combine(&mut fx, "dwell:door");
+    assert_eq!(count(&fx, "dwell:door"), 0, "refused: 3 planks");
+    fx.server.give(1, "dwell:planks", 1);
+    combine(&mut fx, "dwell:door");
+    assert_eq!(
+        (count(&fx, "dwell:door"), count(&fx, "dwell:planks")),
+        (1, 0)
+    );
+    fx.server.give(1, "dwell:stick", 4);
+    combine(&mut fx, "dwell:ladder");
+    assert_eq!(
+        (count(&fx, "dwell:ladder"), count(&fx, "dwell:stick")),
+        (1, 0)
+    );
+}
