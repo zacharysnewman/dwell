@@ -295,6 +295,8 @@ context) at a time with a choice to table it as well as the other options?" Answ
      tree switches at most ~16 m sooner for its size (a giant is real again within ~40 m; its top past 70 m may lose
      leaves while real), and each billboard is scaled to its real tree's size. **Owner should see:** the giants real
      when near, and far giants drawn giant-sized as billboards.
+     Owner (2026-11-25): "Also, shouldn't the billboards not tip side to side?" (BUGS.md #246). **Owner should see:** far
+     trees upright as the camera passes over and beside them.
   5. Section 4, blocks: the door and ladder recipes; the hit-rule table for the owner; tall grass at most three cells,
      drawn as one connected stalk (#192); particles scaled with the hit; leafy trees' leaves fading up close (#225).
   6. Section 3: the creative water bucket (sources added and removed, marked while held).
