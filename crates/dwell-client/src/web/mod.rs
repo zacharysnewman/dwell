@@ -269,11 +269,18 @@ pub async fn ping_server(
 }
 
 /// Runs when the module loads (on the page and in every worker): panics are logged with their
-/// message and location, rather than surfacing only as `RuntimeError: unreachable`.
+/// message and location, rather than surfacing only as `RuntimeError: unreachable`, and kept in
+/// `globalThis.__dwellPanic` so the server's worker can say it crashed and why (BUGS.md #245).
 #[wasm_bindgen(start)]
 pub fn start() {
     std::panic::set_hook(Box::new(|info| {
-        web_sys::console::error_1(&format!("Dwell panicked: {info}").into());
+        let text = format!("{info}");
+        web_sys::console::error_1(&format!("Dwell panicked: {text}").into());
+        let _ = js_sys::Reflect::set(
+            &js_sys::global(),
+            &"__dwellPanic".into(),
+            &text.as_str().into(),
+        );
     }));
 }
 

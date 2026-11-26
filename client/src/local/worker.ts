@@ -5,6 +5,7 @@ import type { FromWorker, ToWorker } from './messages';
 import { installWorldMap } from '../engine/wasm';
 import { LocalCore, OutgoingKind } from './wasmCore';
 import { localWorldName, openWorldFile } from './worldFiles';
+import { workerFailure } from '../net/loopback';
 
 interface WorkerScope {
   postMessage(message: FromWorker, transfer?: Transferable[]): void;
@@ -22,6 +23,8 @@ let water: Worker | null = null;
 let jobs: Worker | null = null;
 /** Water reports asked for and not yet come back from the water worker. */
 let reportsDue = 0;
+/** The server's heap at its last report (bytes): a trap near the limit is memory running out. */
+let heapBytes = 0;
 /** This second's server ticks: their count and wall time, and the worst `advance` call (ms). */
 const tickStats = { ticks: 0, ms: 0, maxMs: 0 };
 /** The host paused the world (their page is hidden, §10.2): no simulation steps. */
@@ -361,7 +364,8 @@ async function start(
   let tick: number | null = null;
   setInterval(() => {
     if (!core) return;
-    scope.postMessage({ t: 'memory', bytes: core.heapBytes() });
+    heapBytes = core.heapBytes();
+    scope.postMessage({ t: 'memory', bytes: heapBytes });
     scope.postMessage({ t: 'perf', ticks, busyMs });
     scope.postMessage({
       t: 'stats',
@@ -404,6 +408,14 @@ async function start(
 let mapsArrived: (maps: Uint8Array[]) => void = () => undefined;
 const laterMaps = new Promise<Uint8Array[]>((resolve) => {
   mapsArrived = resolve;
+});
+
+// A trap in the server (a panic, a failed allocation) is said here, where the panic's message
+// and the heap's size are known (BUGS.md #245); the page's `onerror` stays the fallback.
+self.addEventListener('error', (e: ErrorEvent) => {
+  e.preventDefault();
+  const panic = (globalThis as { __dwellPanic?: string }).__dwellPanic;
+  scope.postMessage({ t: 'error', message: workerFailure(e.message, panic, heapBytes) });
 });
 
 scope.onmessage = (e) => {

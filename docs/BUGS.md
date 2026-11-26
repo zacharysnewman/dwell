@@ -6,6 +6,18 @@ pins it.
 
 ## Open
 
+### 245. "The world's server ran out of memory" at ~3 GB on a 64 GB Mac (owner, 2026-11-25; tabled)
+
+"On the Mac the game disconnected due to running out of memory on has 64Gb of ram. It was at around 3GB." Tabled by the
+owner ("stop investigating for now, table it"). Known: the module declares no memory maximum (4 GB an instance), the
+local server measured ~220 MB at spawn (#237); `workerFailure` (`client/src/net/loopback.ts`) calls a worker's
+`unreachable` or `memory access out of bounds` trap "out of memory", and `unreachable` is a Rust panic in this build:
+likely a crash misnamed. Next: the browser's words in the message's parentheses, or the console's `panicked at` line;
+and the message telling a crash from an allocation failure. Owner (2026-11-25): "Fix the error label". Done: the panic
+hook keeps the panic's message (`globalThis.__dwellPanic`) and the server's worker says it, "The world's server crashed:
+panicked at …"; a bare trap is "crashed" unless the heap was within 0.5 GiB of 4 GiB (a Rust allocation failure aborts
+with the same trap). Red → green: `loopback.test.ts`. The crash itself stays tabled: the next one names its panic.
+
 ### 240. The dam-break scene is built 544 m underground since 0.76
 
 Found 2026-11-24 (building `dam_blast`): `shared/theater/scenes/dam_break.json` puts its land at 32 m, the flat world's

@@ -254,7 +254,22 @@ context) at a time with a choice to table it as well as the other options?" Answ
      Owner (2026-11-25): "The dynamic object flipping and water emptying doesn't seem to work, I keep pressing and holding
      E while aiming at a block on the boat." BUGS.md #244: hold E never switched on at the join; fixed
      (`claude/hold-e-join`). Owner should see: holding E at a boat with a helm rights it; holding E standing in a boat's
-     hull in creative bails it. Owner (2026-11-25), on a shortcut: "like if a chain of blocks were
+     hull in creative bails it.
+     Owner (2026-11-25): "Also we keep running out of memory around 2.5GB in browser. Is there a cap there? I would
+     imagine we want access to more ram than that." Answered: no cap of ours; each WASM instance (the page and every
+     worker) may grow to 4 GB, and a tab dies when the Mac runs short, not at a browser limit; the lever is using less
+     (BUGS.md #237: ~3 GB a tab, the 4 generation workers' own copies of the world maps ~800 MB). Asked what exactly
+     happens and the Mac's memory.
+     Owner (2026-11-25): "Definitely not hitting the Mac running out of ram. On the Mac the game disconnected due to running
+     out of memory on has 64Gb of ram. It was at around 3GB", then "But stop investigating for now, table it." Tabled.
+     Found so far: the module declares no memory maximum (each instance may reach 4 GB); the "ran out of memory" message
+     (`client/src/net/loopback.ts` `workerFailure`) also names `unreachable` and `memory access out of bounds`, which is
+     how a Rust panic in the server worker shows, so it was likely a crash, not memory. Next, when picked up: the
+     message's text in parentheses or the console's `panicked at` line; say a crash is a crash (BUGS.md #245).
+     Owner (2026-11-25): "Fix the error label". Done: a server panic now reads "The world's server crashed: panicked
+     at <file:line>: <message>"; "ran out of memory" only for a real allocation failure (or a trap near the 4 GB limit).
+     **Owner should see:** the next time the world's server stops, the message says "crashed" with the panic's file and
+     words (send that line), or "ran out of memory" only when it did. Owner (2026-11-25), on a shortcut: "like if a chain of blocks were
      already marked … all are already marked as connecting so the search would stop at the first marked unnatural
      block?"; a plain mark goes stale when a block on its path breaks, so a stored distance to natural ground instead:
      "I like the distance marks do that." Each placed block keeps its steps to as-generated ground (placing: the least

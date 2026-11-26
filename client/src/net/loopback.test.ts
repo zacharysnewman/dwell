@@ -28,14 +28,31 @@ async function started(): Promise<{ worker: FakeWorker; transport: LoopbackTrans
 }
 
 describe('loopback transport', () => {
-  it("says the world's server ran out of memory when its worker dies of it (BUGS.md #91)", async () => {
+  it("says the world's server crashed when its worker traps, not that memory ran out (BUGS.md #245)", async () => {
     const worker = new FakeWorker();
     const pending = LoopbackTransport.start(worker as unknown as Worker, {
       worldSeed: 7,
       generatorVersion: 8,
     });
     worker.onerror?.({ message: 'Uncaught RuntimeError: unreachable' } as ErrorEvent);
-    await expect(pending).rejects.toThrow(/ran out of memory.*unreachable/);
+    await expect(pending).rejects.toThrow(/crashed.*unreachable/);
+    // A panic is a crash, said with its message.
+    expect(
+      workerFailure(
+        'Uncaught RuntimeError: unreachable',
+        'panicked at crates/dwell-sim/src/server.rs:10:5:\nindex out of bounds',
+      ),
+    ).toBe(
+      "The world's server crashed: panicked at crates/dwell-sim/src/server.rs:10:5: index out of bounds",
+    );
+    expect(workerFailure('RuntimeError: memory access out of bounds', undefined, 3e9)).toMatch(
+      /crashed/,
+    );
+    // A bare trap with the heap near its 4 GiB limit is a failed allocation: memory.
+    expect(workerFailure('Uncaught RuntimeError: unreachable', undefined, 3.9 * 1024 ** 3)).toMatch(
+      /ran out of memory/,
+    );
+    expect(workerFailure('unreachable', 'capacity overflow')).toMatch(/ran out of memory/);
     expect(workerFailure('')).toBe("The world's server stopped (it stopped without saying why).");
     expect(workerFailure('boom')).toBe("The world's server stopped (boom).");
   });
