@@ -4098,6 +4098,52 @@ impl TerrainGenerator {
             .collect()
     }
 
+    /// Which listed trees claim each cell of columns [x0, x1] × [z0, z1] and rows `rows`
+    /// (face-local, inclusive) on world day `day` (BUGS.md #197, owner 2026-11-25: "Leaves follow
+    /// their own tree"): each species tree's cells at the stage it has grown to by then
+    /// (`growth::due_stage`, placed as the growers place it), a hand-built tree's as placed. The
+    /// trees [`Self::tree_tints`] lists for the same columns.
+    pub fn tree_claims(
+        &self,
+        lo: (i32, i32),
+        hi: (i32, i32),
+        rows: (i32, i32),
+        day: f64,
+    ) -> dwell_world::tree_tint::Claims {
+        if !self
+            .planters
+            .iter()
+            .any(|p| p.active() && p.has_far_trees())
+        {
+            return Default::default();
+        }
+        let m = GROWN_REACH;
+        let keep = |c: [i32; 3]| {
+            (lo.0..=hi.0).contains(&c[0])
+                && (lo.1..=hi.1).contains(&c[2])
+                && (rows.0..=rows.1).contains(&c[1])
+        };
+        let trees = self
+            .trees_in((lo.0 - m, lo.1 - m), (hi.0 + m, hi.1 + m))
+            .into_iter()
+            .filter_map(|t| {
+                let p = &self.planters[t.planter as usize];
+                let (species, seed, stage) = p.far_tree(&t)?;
+                let cells: Vec<[i32; 3]> = match p.grown(&t) {
+                    Some(_) => {
+                        let now = crate::growth::due_stage(species, seed, stage as u8, 0.0, day);
+                        crate::growth::stage_cells(species, seed, now, t.anchor, t.quarter_turns)?
+                            .cells()
+                            .map(|(c, _)| c)
+                            .collect()
+                    }
+                    None => p.place(&t).cells().map(|(c, _)| c).collect(),
+                };
+                Some((t.anchor, cells))
+            });
+        dwell_world::tree_tint::Claims::of_trees(trees, keep)
+    }
+
     /// The species trees anchored in columns [x0, x1] × [z0, z1] (face-local), each listed once
     /// (by its anchor, so neighbouring sections never share a tree), sorted: the far tree list an
     /// impostor section draws (docs/proposals/TREE_IMPOSTORS.md I-2): species trees and the

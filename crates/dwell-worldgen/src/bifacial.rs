@@ -349,6 +349,21 @@ impl BifacialTerrain {
             .tree_tints((x0, z0), (x0 + S - 1, z0 + S - 1))
     }
 
+    /// Which listed trees claim each cell of chunk `coord` on world day `day` (BUGS.md #197), in
+    /// its face's face-local frame, as [`Self::tree_tints`].
+    pub fn tree_claims(&self, coord: ChunkCoord, day: f64) -> dwell_world::tree_tint::Claims {
+        const S: i32 = CHUNK_SIZE;
+        let f = dwell_world::FaceFrame::of(face_of_chunk_y(coord.y));
+        let (x0, z0, y0) = (coord.x * S, coord.z * S, coord.y * S);
+        let (a, b) = (f.row(y0), f.row(y0 + S - 1));
+        self.local(face_of_chunk_y(coord.y)).tree_claims(
+            (x0, z0),
+            (x0 + S - 1, z0 + S - 1),
+            (a.min(b), a.max(b)),
+            day,
+        )
+    }
+
     /// The leaf tints of LOD section `c`'s tree cells as [`BifacialTerrain::generate_lod`] put them
     /// in `cells` (ADR 0079; `dwell_mesh::mesh_section_tinted`): each face's rows from that face's
     /// trees, the cells indexed in the section's world rows.

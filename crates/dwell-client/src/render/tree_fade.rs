@@ -457,6 +457,31 @@ fn tree_cards_share(rel: vec3f) -> f32 {{
     return tree_plane_at(1u, frame.far_trees.xy + face_vector(face, rel).xz);
 }}
 
+// A tree leaf vertex's fade tree (`plant`: its `plants` stream; BUGS.md #197): the column in the
+// map of the anchor its fade start packs (`dwell_mesh::pack_tree_owner`, from its chunk's origin
+// `origin` relative to the eye), or x −1e6 for none (a leaf meshed without the trees' claims).
+fn tree_owner_at(plant: vec4f, origin: vec3f) -> vec2f {{
+    if (plant.w >= 0.0 || plant.z < 0.0) {{
+        return vec2f(-1e6, 0.0);
+    }}
+    let k = u32(plant.z);
+    let rel = vec2f(f32(i32(k / 256u) - 128), f32(i32(k % 256u) - 128)) + 0.5;
+    return frame.far_trees.xy + origin.xz + rel;
+}}
+
+// A leaf fragment's share by its fade tree's state at `owner` (the map's texel of its anchor,
+// the one its impostor reads), 1 when no impostors draw or on the other face (`tree_near_share`).
+fn tree_owner_share(owner: vec2f, rel: vec3f) -> f32 {{
+    if (frame.far_trees.w < 0.5) {{
+        return 1.0;
+    }}
+    let face = frame.eye.y;
+    if (face_at(frame.eye.x + rel.y) != face) {{
+        return 1.0;
+    }}
+    return tree_near_at(owner);
+}}
+
 // The near trees' share of a leaf fragment `rel` from the eye (`TreeFades`): its tree's state, 1
 // when no impostors draw. A leaf on the other face (no impostors there) is the real tree's.
 fn tree_near_share(rel: vec3f) -> f32 {{

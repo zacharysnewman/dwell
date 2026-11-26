@@ -6458,6 +6458,7 @@ impl<S: Scene> Game<S> {
         let growth_day =
             self.clock.seconds(now_ms).unwrap_or(0.0) / self.world_day.day_length_s().max(1.0);
         self.scene.borrow_mut().set_growth_day(growth_day);
+        self.pool.borrow_mut().day = growth_day;
         // On another grid the view is in its frame: the sky's directions turned into it, its own
         // far disc not drawn (MOON_WORLD.md §7.3).
         if let Some(m) = self.travel.as_ref().filter(|_| self.grid_drawn != 0) {

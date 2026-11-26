@@ -175,6 +175,9 @@ pub struct Pool {
     pub plants: u8,
     /// LOD sections draw their trees (Graphics → Far trees, `Scene::draws_far_trees`).
     pub trees: bool,
+    /// The world's growth day (the server's ticks over the day's length): chunk meshes hand each
+    /// tree cell over with the trees grown there by then (`Job::MeshChunk::day`, BUGS.md #197).
+    pub day: f64,
     /// Where the player is (m; [`Self::set_focus`]): chunk jobs near it start first.
     focus: Option<[f64; 3]>,
     /// How many times the usual chunk meshes are in flight (`set_frame_ms`).
@@ -226,6 +229,7 @@ impl Pool {
             water_tops: true,
             cards: true,
             plants: 100,
+            day: 0.0,
             trees: true,
             focus: None,
             frame_scale: 1,
@@ -478,9 +482,9 @@ impl Mesher for MeshJobs {
         2 * pool.capacity(true) * pool.frame_scale
     }
     fn mesh(&mut self, job: MeshJob) {
-        let (water_tops, cards, plants) = {
+        let (water_tops, cards, plants, day) = {
             let p = self.0.borrow();
-            (p.water_tops, p.cards, p.plants)
+            (p.water_tops, p.cards, p.plants, p.day)
         };
         self.0.borrow_mut().submit(
             Purpose::ChunkMesh(job.coord, job.token),
@@ -495,6 +499,7 @@ impl Mesher for MeshJobs {
                 water_tops,
                 cards,
                 plants,
+                day,
             },
         );
     }

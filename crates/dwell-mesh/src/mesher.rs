@@ -96,11 +96,18 @@ pub struct MeshArrays {
     /// to the trees' impostors, which draw the trunk too (owner, 2026-11-15: "fold trunks into
     /// billboards").
     pub tree_logs: u32,
-    /// The opaque mesh only: those logs tree by tree, in their order at the end of `indices`:
-    /// each tree's anchor (face-local) and its count of indices, summing to `tree_logs`. A tree's
-    /// logs draw while the tree itself does, not its impostor (BUGS.md #197: a chunk drew every
-    /// listed tree's logs to the hand-over's reach, under trees already their impostors).
-    pub tree_log_runs: Vec<([i32; 3], u32)>,
+    /// The opaque mesh only: those logs set by set of the trees claiming them (their anchors,
+    /// face-local, the fade's tree first; one tree's mostly), in order at the end of `indices`,
+    /// with each set's count of indices, summing to `tree_logs`. A log draws while every tree that
+    /// grew it is its real self, not its impostor (BUGS.md #197: a chunk drew every listed tree's
+    /// logs to the hand-over's reach, under trees already their impostors).
+    pub tree_log_runs: Vec<(Vec<[i32; 3]>, u32)>,
+    /// The cutout mesh only: its trees' leaf faces (the indices from [`tree_leaves_from`]) set by
+    /// set of the trees claiming them (`tree_tint::Claims`, their fade's tree first) and the count
+    /// of indices each, in order (BUGS.md #197, owner 2026-11-25: "Leaves follow their own tree"):
+    /// a leaf draws while every tree that grew it is its real self. Empty when the chunk was meshed
+    /// with no claims (then all its leaves are one run).
+    pub tree_leaf_runs: Vec<(Vec<[i32; 3]>, u32)>,
 }
 
 impl MeshArrays {
@@ -397,6 +404,24 @@ struct Cells<'a> {
     flood: &'a Flood,
     /// The species trees reaching the chunk (ADR 0079 leaf tints), face-local world cells.
     trees: &'a [TreeTint],
+    /// Which of them grew each cell (BUGS.md #197); none: the nearest whose box holds it.
+    claims: Option<&'a dwell_world::tree_tint::Claims>,
+}
+
+/// The trees a chunk is meshed with: their leaf tints and boxes, and which grew each cell.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Trees<'a> {
+    pub tints: &'a [TreeTint],
+    pub claims: Option<&'a dwell_world::tree_tint::Claims>,
+}
+
+impl<'a> From<&'a [TreeTint]> for Trees<'a> {
+    fn from(tints: &'a [TreeTint]) -> Self {
+        Self {
+            tints,
+            claims: None,
+        }
+    }
 }
 
 impl<'a> Cells<'a> {
@@ -416,26 +441,22 @@ impl<'a> Cells<'a> {
             shaped_rays: Default::default(),
             origin,
             trees: &[],
+            claims: None,
         }
     }
 
+    /// The anchors (face-local) of the listed trees that grew `cell` (chunk-local), its fade's tree
+    /// first: the claims' (BUGS.md #197), else the nearest whose box holds it; `None` for a cell no
+    /// listed tree owns (a player's).
+    fn tree_claimants(&self, cell: [i32; 3]) -> Option<Vec<[i32; 3]>> {
+        let w = std::array::from_fn(|a| self.origin[a] + cell[a]);
+        if let Some(set) = self.claims.and_then(|c| c.of(w)) {
+            return Some(set.to_vec());
+        }
+        dwell_world::tree_tint::owner(self.trees, w).map(|t| vec![t.anchor])
+    }
+
     /// The leaf tint of chunk-local cell `cell`: its owning tree's (ADR 0079), else none.
-    /// Whether a species tree the generator lists owns `cell` (chunk-local): its leaves hand over
-    /// to that tree's far impostor (BUGS.md #186: a leaf no listed tree owns, a hand-built pine's or
-    /// a placed one, has no impostor to hand over to, so it stays drawn).
-    fn tree_owned(&self, cell: [i32; 3]) -> bool {
-        self.tree_owner(cell).is_some()
-    }
-
-    /// The anchor (face-local) of the listed tree owning `cell` (chunk-local), if one does.
-    fn tree_owner(&self, cell: [i32; 3]) -> Option<[i32; 3]> {
-        dwell_world::tree_tint::owner(
-            self.trees,
-            std::array::from_fn(|a| self.origin[a] + cell[a]),
-        )
-        .map(|t| t.anchor)
-    }
-
     fn tint(&self, cell: [i32; 3]) -> dwell_world::tree_tint::Tint {
         dwell_world::tree_tint::tint_at(
             self.trees,
@@ -493,6 +514,8 @@ fn channel(color: u32, shift: u32) -> f64 {
 #[derive(Default)]
 struct Builder {
     m: MeshArrays,
+    /// The trees' leaf faces' vertices with the trees claiming them (the cutout's; BUGS.md #197).
+    tree_vertices: Vec<(std::ops::Range<u32>, Vec<[i32; 3]>)>,
 }
 
 impl Builder {
@@ -2522,7 +2545,7 @@ pub fn mesh_chunk_cut(
         None,
         ChunkFlags::default(),
         &[],
-        &[],
+        Trees::default(),
     )
 }
 
@@ -2598,7 +2621,40 @@ pub fn mesh_chunk_trees(
         ground,
         flags,
         damage,
-        trees,
+        trees.into(),
+    )
+}
+
+/// [`mesh_chunk_trees`] with which trees grew each cell (`claims`, BUGS.md #197): each tree leaf
+/// and log hands over with the trees that grew it ([`MeshArrays::tree_leaf_runs`] and
+/// `tree_log_runs`), not with the nearest trunk.
+#[allow(clippy::too_many_arguments)]
+pub fn mesh_chunk_claimed(
+    padded: &[u16],
+    light: &[u8],
+    mirror: bool,
+    origin: [i32; 3],
+    cuts: &[([i32; 3], Cut)],
+    ground: Option<&GroundJob>,
+    flags: ChunkFlags,
+    damage: &[([i32; 3], DamageView)],
+    trees: &[TreeTint],
+    claims: &dwell_world::tree_tint::Claims,
+) -> Result<ChunkMeshes, LengthError> {
+    mesh_chunk_full(
+        Kinds::build(),
+        padded,
+        light,
+        mirror,
+        origin,
+        cuts,
+        ground,
+        flags,
+        damage,
+        Trees {
+            tints: trees,
+            claims: Some(claims),
+        },
     )
 }
 
@@ -2686,7 +2742,7 @@ pub fn mesh_chunk_flags(
         ground,
         flags,
         &[],
-        &[],
+        Trees::default(),
     )
 }
 
@@ -2709,7 +2765,7 @@ pub(crate) fn mesh_chunk_with(
         None,
         ChunkFlags::default(),
         &[],
-        &[],
+        Trees::default(),
     )
 }
 
@@ -2725,7 +2781,7 @@ pub(crate) fn mesh_chunk_full(
     ground: Option<&GroundJob>,
     flags: ChunkFlags,
     damage: &[([i32; 3], DamageView)],
-    trees: &[TreeTint],
+    trees: Trees<'_>,
 ) -> Result<ChunkMeshes, LengthError> {
     let items = ground.map_or(Vec::new(), |g| ground_mesh::scatter(padded, origin, g));
     // The one-voxel apron, or the sky volume's deeper one (the client's jobs): the faces are
@@ -2974,21 +3030,67 @@ pub fn facing_ranges(m: &MeshArrays) -> [std::ops::Range<u32>; FACING_GROUPS] {
     })
 }
 
+/// Splits `indices` into the triangles of no listed tree's and those of `owned` (vertex ranges in
+/// order with the trees that grew them), the latter set by set (a stable sort: each set's in their
+/// order), with each set's count of indices.
+#[allow(clippy::type_complexity)]
+fn split_runs(
+    indices: &[u32],
+    owned: &[(std::ops::Range<u32>, Vec<[i32; 3]>)],
+) -> (Vec<u32>, Vec<u32>, Vec<(Vec<[i32; 3]>, u32)>) {
+    // The ranges come in vertex order: a vertex's trees by binary search.
+    let owner = |v: u32| {
+        let i = owned.partition_point(|(r, _)| r.end <= v);
+        owned.get(i).filter(|(r, _)| r.contains(&v)).map(|(_, s)| s)
+    };
+    let mut rest = Vec::with_capacity(indices.len());
+    let mut tris: Vec<(&Vec<[i32; 3]>, [u32; 3])> = Vec::new();
+    for tri in indices.chunks_exact(3) {
+        match owner(tri[0]) {
+            Some(set) => tris.push((set, [tri[0], tri[1], tri[2]])),
+            None => rest.extend_from_slice(tri),
+        }
+    }
+    tris.sort_by(|a, b| a.0.cmp(b.0));
+    let mut runs: Vec<(Vec<[i32; 3]>, u32)> = Vec::new();
+    let mut out = Vec::with_capacity(tris.len() * 3);
+    for (set, tri) in tris {
+        match runs.last_mut() {
+            Some((last, n)) if last == set => *n += 3,
+            _ => runs.push((set.clone(), 3)),
+        }
+        out.extend_from_slice(&tri);
+    }
+    (rest, out, runs)
+}
+
 /// The range of `indices` holding the listed trees' logs (`MeshArrays::tree_logs`; empty for none).
 pub fn tree_logs_range(m: &MeshArrays) -> std::ops::Range<u32> {
     let n = m.indices.len() as u32;
     n - m.tree_logs.min(n)..n
 }
 
-/// Each listed tree's logs: its anchor (face-local) and its range of `indices`
-/// (`MeshArrays::tree_log_runs`, within [`tree_logs_range`]).
-pub fn tree_log_ranges(m: &MeshArrays) -> Vec<([i32; 3], std::ops::Range<u32>)> {
-    let mut at = tree_logs_range(m).start;
-    m.tree_log_runs
-        .iter()
-        .map(|&(a, n)| {
+/// The listed trees' logs set by set: the trees that grew them (anchors, face-local) and their
+/// range of `indices` (`MeshArrays::tree_log_runs`, within [`tree_logs_range`]).
+pub fn tree_log_ranges(m: &MeshArrays) -> Vec<(Vec<[i32; 3]>, std::ops::Range<u32>)> {
+    runs_from(tree_logs_range(m).start, &m.tree_log_runs)
+}
+
+/// The trees' leaf faces set by set: the trees that grew them and their range of `indices`
+/// (`MeshArrays::tree_leaf_runs`, from [`tree_leaves_from`]); empty for a mesh meshed without
+/// claims.
+pub fn tree_leaf_ranges(m: &MeshArrays) -> Vec<(Vec<[i32; 3]>, std::ops::Range<u32>)> {
+    runs_from(tree_leaves_from(m) as u32, &m.tree_leaf_runs)
+}
+
+fn runs_from(
+    mut at: u32,
+    runs: &[(Vec<[i32; 3]>, u32)],
+) -> Vec<(Vec<[i32; 3]>, std::ops::Range<u32>)> {
+    runs.iter()
+        .map(|(a, n)| {
             at += n;
-            (a, at - n..at)
+            (a.clone(), at - n..at)
         })
         .collect()
 }
@@ -3060,7 +3162,7 @@ fn mesh_cells(
     origin: [i32; 3],
     carved: &HashMap<[i32; 3], Cut>,
     flags: ChunkFlags,
-    trees: &[TreeTint],
+    trees: Trees<'_>,
     damaged: &[([i32; 3], u16, DamageView)],
     border: &HashSet<[i32; 3]>,
 ) -> ChunkMeshes {
@@ -3136,7 +3238,8 @@ fn mesh_cells(
     let mut opaque = Builder::default();
     let mut transparent = Builder::default();
     let mut cells = Cells::new(kinds, padded, occ, flood, origin);
-    cells.trees = trees;
+    cells.trees = trees.tints;
+    cells.claims = trees.claims;
     // The heightfield's skirts draw the top water's sides to open air (W2): its runs, face-local.
     let runs = (!flags.water_tops).then(|| water_runs(kinds, padded));
     let mut cutout = Builder::default();
@@ -3485,7 +3588,7 @@ fn mesh_cells(
     // Leaves (shared/look/leaves.json): whole cells, chamfered where exposed, lit as a crown.
     let crowns = leaves::Crowns::new(&cells);
     // The listed trees' logs' vertices (`MeshArrays::tree_logs`).
-    let mut tree_log_vertices: Vec<(std::ops::Range<u32>, [i32; 3])> = Vec::new();
+    let mut tree_log_vertices: Vec<(std::ops::Range<u32>, Vec<[i32; 3]>)> = Vec::new();
     // Shaped blocks (the generated ramps): whole voxels, not slices.
     for cy in 0..N {
         for cz in 0..N {
@@ -3517,8 +3620,8 @@ fn mesh_cells(
                     let from = opaque.vertex_count();
                     let beside = |c: [i32; 3]| damaged_here.contains(&c) || border.contains(&c);
                     octagon_voxel(&mut opaque, &cells, &k, m, [cx, cy, cz], hit, &beside);
-                    if let Some(anchor) = cells.tree_owner([cx, cy, cz]) {
-                        tree_log_vertices.push((from..opaque.vertex_count(), anchor));
+                    if let Some(set) = cells.tree_claimants([cx, cy, cz]) {
+                        tree_log_vertices.push((from..opaque.vertex_count(), set));
                     }
                 }
                 if k.style.leafy
@@ -3592,36 +3695,14 @@ fn mesh_cells(
         }
     }
     // The listed trees' logs last (`MeshArrays::tree_logs`), each part keeping its order.
-    // Tree by tree (`MeshArrays::tree_log_runs`), each tree's in their order.
+    // Set by set of the trees that grew them (`MeshArrays::tree_log_runs`).
     if !tree_log_vertices.is_empty() {
-        // The ranges come in vertex order: a vertex's tree by binary search.
-        let owner = |v: u32| {
-            let i = tree_log_vertices.partition_point(|(r, _)| r.end <= v);
-            tree_log_vertices
-                .get(i)
-                .filter(|(r, _)| r.contains(&v))
-                .map(|&(_, a)| a)
-        };
-        let mut rest = Vec::with_capacity(opaque.m.indices.len());
-        let mut logs: Vec<([i32; 3], [u32; 3])> = Vec::new();
-        for tri in opaque.m.indices.chunks_exact(3) {
-            match owner(tri[0]) {
-                Some(a) => logs.push((a, [tri[0], tri[1], tri[2]])),
-                None => rest.extend_from_slice(tri),
-            }
-        }
-        logs.sort_by_key(|&(a, _)| a);
-        let mut runs: Vec<([i32; 3], u32)> = Vec::new();
-        for &(a, tri) in &logs {
-            match runs.last_mut() {
-                Some((last, n)) if *last == a => *n += 3,
-                _ => runs.push((a, 3)),
-            }
-            rest.extend_from_slice(&tri);
-        }
-        opaque.m.tree_logs = (logs.len() * 3) as u32;
+        let indices = std::mem::take(&mut opaque.m.indices);
+        let (rest, logs, runs) = split_runs(&indices, &tree_log_vertices);
+        opaque.m.tree_logs = logs.len() as u32;
         opaque.m.tree_log_runs = runs;
         opaque.m.indices = rest;
+        opaque.m.indices.extend(logs);
     }
     // The crack overlay's stream, once any face has it, covers every opaque vertex (0: none).
     if !opaque.m.cracks.is_empty() {
@@ -3631,8 +3712,21 @@ fn mesh_cells(
     let vertices = cutout.m.positions.len() / 3;
     cutout.m.plants.resize(vertices * 4, 0.0);
     cutout.m.bare.resize(vertices, 0.0);
-    // The trees' leaves last, so a far chunk can draw its plants alone (`tree_leaves_from`).
+    // The trees' leaves last, so a far chunk can draw its plants alone (`tree_leaves_from`), set
+    // by set of the trees that grew them (`tree_leaf_runs`).
     tree_leaves_last(&mut cutout.m);
+    if cells.claims.is_some() && !cutout.tree_vertices.is_empty() {
+        let from = tree_leaves_from(&cutout.m);
+        let tail = cutout.m.indices.split_off(from);
+        let (rest, leaves, mut runs) = split_runs(&tail, &cutout.tree_vertices);
+        // Leaf faces no tree claims (none, as meshed) draw always: a run of no trees, first.
+        if !rest.is_empty() {
+            runs.insert(0, (Vec::new(), rest.len() as u32));
+        }
+        cutout.m.indices.extend(rest);
+        cutout.m.indices.extend(leaves);
+        cutout.m.tree_leaf_runs = runs;
+    }
     // Fluids and see-through faces are lit by their own shader: no baked light, but the flood
     // light (docs/DAY_NIGHT.md §11), so water in a cave or under a roof is dark.
     transparent.m.light.clear();

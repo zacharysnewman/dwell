@@ -79,6 +79,59 @@ pub fn owner(trees: &[TreeTint], c: [i32; 3]) -> Option<&TreeTint> {
         .min_by_key(|t| column_rank(t.anchor, c[0], c[2]))
 }
 
+/// Which listed trees' current stages put a block at each cell of a region (BUGS.md #197, owner
+/// 2026-11-25: "Leaves follow their own tree"): a leaf or log hands over with the trees that grew
+/// it, not with the nearest trunk (a giant's crown reaches across its neighbours'). Face-local
+/// cells and anchors; each cell's claimants ordered by [`column_rank`] from the cell, the first
+/// its fade's tree.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Claims {
+    cells: std::collections::HashMap<[i32; 3], u32>,
+    sets: Vec<Vec<[i32; 3]>>,
+}
+
+impl Claims {
+    /// The claims of `trees` (each its anchor and its cells), the cells `keep` holds.
+    pub fn of_trees<I: IntoIterator<Item = [i32; 3]>>(
+        trees: impl IntoIterator<Item = ([i32; 3], I)>,
+        keep: impl Fn([i32; 3]) -> bool,
+    ) -> Self {
+        let mut by: std::collections::HashMap<[i32; 3], Vec<[i32; 3]>> = Default::default();
+        for (anchor, cells) in trees {
+            for c in cells {
+                if keep(c) {
+                    let v = by.entry(c).or_default();
+                    if !v.contains(&anchor) {
+                        v.push(anchor);
+                    }
+                }
+            }
+        }
+        let mut out = Claims::default();
+        let mut index: std::collections::HashMap<Vec<[i32; 3]>, u32> = Default::default();
+        for (c, mut v) in by {
+            v.sort_by_key(|&a| column_rank(a, c[0], c[2]));
+            let k = *index.entry(v.clone()).or_insert_with(|| {
+                out.sets.push(v);
+                (out.sets.len() - 1) as u32
+            });
+            out.cells.insert(c, k);
+        }
+        out
+    }
+
+    /// Cell `c`'s claimants, its fade's tree first; `None` where no listed tree claims it.
+    pub fn of(&self, c: [i32; 3]) -> Option<&[[i32; 3]]> {
+        self.cells
+            .get(&c)
+            .map(|&k| self.sets[k as usize].as_slice())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.cells.is_empty()
+    }
+}
+
 /// How a tree anchored at `anchor` ranks for column (`x`, `z`) among those whose box holds it,
 /// the least owning: its squared distance across, then its anchor.
 pub fn column_rank(anchor: [i32; 3], x: i32, z: i32) -> (i64, [i32; 3]) {

@@ -349,7 +349,15 @@ pub fn cutout_draw(far: Option<Far>, d: f32) -> CutoutDraw {
 /// 2026-11-15: "fold trunks into billboards"; BUGS.md #197: a chunk drew every listed tree's logs
 /// within the hand-over's reach, under trees already their impostors). With no impostors, always.
 pub fn tree_logs_drawn(far: Option<Far>, share: f32) -> bool {
-    far.is_none_or(|f| !f.impostor) || share > 0.0
+    tree_set_drawn(far, std::iter::once(share))
+}
+
+/// Whether a tree cell claimed by a set of trees draws as itself (`Part::FacingTrees`,
+/// `CutoutTrees`; BUGS.md #197, owner 2026-11-25: "Leaves follow their own tree"), `shares` each
+/// tree's share of the fade map at its anchor: while every one of them is its real self or fading
+/// (an impostor of any of them draws the cell), always with no impostors or no trees.
+pub fn tree_set_drawn(far: Option<Far>, mut shares: impl Iterator<Item = f32>) -> bool {
+    far.is_none_or(|f| !f.impostor) || shares.all(|s| s > 0.0)
 }
 
 /// The quad's right in the baked tree's frame for the view toward `v` (`imp_basis_right`): level,

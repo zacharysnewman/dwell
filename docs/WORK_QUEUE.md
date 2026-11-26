@@ -297,6 +297,13 @@ context) at a time with a choice to table it as well as the other options?" Answ
      when near, and far giants drawn giant-sized as billboards.
      Owner (2026-11-25): "Also, shouldn't the billboards not tip side to side?" (BUGS.md #246). **Owner should see:** far
      trees upright as the camera passes over and beside them.
+     Owner (2026-11-25), on the v2 video: "I'm seeing giants with their billboards at the same time in the after? Why is
+     that, is it expected?" Not expected (BUGS.md #197): a leaf hands over with the nearest trunk, so a giant's outer
+     leaves go with its neighbours, and the capped early switch makes a giant its billboard up to 16 m before them;
+     between, its billboard and part of its real crown both draw. The test checked one tree alone. Asked how to fix; owner:
+     "Leaves follow their own tree": the mesh workers work out which tree grew each leaf (re-placing the overlapping
+     trees as generation and growth do), so every leaf switches with its own tree; the test gains neighbours. **Owner
+     should see:** no giant (or any tree) drawn as its billboard and part of its real crown at once.
   5. Section 4, blocks: the door and ladder recipes; the hit-rule table for the owner; tall grass at most three cells,
      drawn as one connected stalk (#192); particles scaled with the hit; leafy trees' leaves fading up close (#225).
   6. Section 3: the creative water bucket (sources added and removed, marked while held).
