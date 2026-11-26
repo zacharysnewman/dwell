@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "A giant tree's leaves now switch to its billboard together with it, instead of staying real around its neighbours' trunks.",
-    "Trunks standing in a chunk with no leaves no longer show under their tree's billboard."
-  ]
-}
