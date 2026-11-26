@@ -28,6 +28,7 @@ export const HUD_ELEMENTS = [
   'registryPrompt',
   'hudLayout probe',
   'TheaterMode #theater-open',
+  'characterPainter (the Character painter: its slots, crosshair and palette)',
   'main (the blueprint have/need panel)',
   'index.html #net-status',
   'index.html #perf-status',

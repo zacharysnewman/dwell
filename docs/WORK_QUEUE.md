@@ -28,8 +28,45 @@ Initially though ask any questions you have now." The rest of the first and seco
 2. Character painting (decisions under "Character painting" below: pause menu "Character", skin and hair each one
    colour, clothes and hat face by face, hat on/off, saved per device, seen by others). Owner should see: that menu,
    and another player seeing the result.
+   Built 2026-11-26 (CHARACTERS.md §9.4), for the owner's look. Tests: `dwell-models` `paint` (the default paint
+   draws the model, carried to every level), `looks.rs` `the_painter_paints_the_giant_where_it_is_aimed` (both faces:
+   hit, brush, fill, undo, redo, reset, slots), `dwell-protocol` `looks`, `dwell-sim` `tests/looks.rs` (relay, join,
+   leave), `characterPainter.test.ts`; checked in Chrome on the GPU (the giant, a stroke, the soles from below).
+   Left: touch; the bands start with fewer colours (7 slots); hat off.
 3. Inventory icons from meshes (section 9). Owner should see: every hotbar and inventory icon distinct and reading as
    what it is, blocks in one standard three-quarter view, flat items drawn flat.
+Owner (2026-11-26), on the painting's scope: "Why is this tough, the character is already painted for all the unique NPCs
+who have different colors?" and "Ensure you deploy up each of these 3 changes as they're ready don't wait until they're
+all done." So painting ships first as the NPCs' part colours (skin, hair, hat, shirt, trousers each one colour, hat on
+or off, seen by others); face-by-face painting of the clothes and hat follows as its own step. Each of the three merges
+and releases as soon as it is ready.
+Owner (2026-11-26): "Today it doesn't get one color per part. There's multi colored patterns on the player shirt and hat.
+Discuss first." Discussed: the shirt's waist ring and the hat's band are their own four parts (pattern_1..4); options were
+parts plus the four pattern colours picked separately, pattern presets, or face by face. Owner: "^" (taken as the first:
+skin, hair, shirt, trousers and hat one colour each, and each of the four pattern colours picked, as the villagers vary).
+Owner (2026-11-26), painting's questions: "Face by face, own map" (the Model Part Painter's picker in a Character menu,
+each player's own per-vertex paint sent to the others); colours: "I want full face painting freedom first, no per
+section. Find to limit to 7 colors for now. Partly I want this because some of the faces that are currently marked skin,
+hair, hat, etc. are incorrect."; tools: "Brush, Fill connected"; hat off: "Drop hat-off for now".
+Then: "Yes, 7 editable slots" (7 palette colours; a face painted with a slot; changing a slot recolours all its faces;
+skin and hair ordinary slots) and paint starts from "The model's current colours". Owner should see: a Character menu in
+the pause menu showing the player model, 7 colour slots from the palette, a brush and a connected fill to paint any face
+with a slot, the look kept on this device and seen by other players.
+Owner (2026-11-26): "Ideally I'd like you to have flight controls like in game flying, as if the character model was a
+giant 30m tall." (the painter's view: fly round the model as the game flies, the model 30 m tall).
+Stage: "In an empty stage (like the sandbox stage), since you can't fly in adventure mode if you could fly while editing
+it would be like cheating, unless theater mode already works like this, if so that's fine. But I'm thinking an empty
+stage like sandbox, the player model 5m in the air, so the feet bottoms are visible."
+Mesh: asked "Which mesh do you see in third person view?" and "When you're driving a boat, you are in third person."
+(the helm's third person, the shadow and other players all draw the 60 % mesh); then "The 60% mesh": paint the 60 %
+mesh face for face.
+Controls: "Hotbar-style": 1–7 pick a colour slot (a 7-slot bar like the hotbar), left click/drag paints with the brush,
+right click fills the connected patch, scroll or [ ] sizes the brush, C changes the selected slot's colour from the
+palette, Esc done; flight as in game.
+Pose: "Rest pose, arms out" (the model's A pose, still).
+Undo: "Undo/redo + reset": Ctrl+Z / Ctrl+Shift+Z through strokes and fills; Reset returns to the model's own colours.
+Inputs: "Mouse + controller" (keyboard and mouse, and a controller: sticks fly, triggers paint and fill, bumpers pick
+slots); touch later.
 Answers (owner, 2026-11-26): recipes "4 Planks → 1 door; 4 sticks → 1 ladder"; painting's clothes and hat colours "Art
 palette swatches" (a fixed grid from shared/textures/palette.json); icons "Rendered in game at load" (the client renders
 each item's mesh once and caches it, so new blocks get icons by themselves) in a "Classic isometric" view (down 30°,

@@ -8,6 +8,7 @@ pub mod first_person;
 pub mod glb;
 pub mod grip;
 pub mod math;
+pub mod paint;
 pub mod retarget;
 
 #[rustfmt::skip]
@@ -15,8 +16,8 @@ mod table {
     include!("models.gen.rs");
 }
 pub use table::{
-    DETAIL_DEFAULT, DETAIL_LEVELS, GLBS, HAND_GRIP, MODELS, PLAYER, PLAYER_GLB, PROP_GLBS, PROPS,
-    RAMP_BASES,
+    DETAIL_DEFAULT, DETAIL_LEVELS, GLBS, HAND_GRIP, MODELS, PAINT_RAMPS, PLAYER, PLAYER_GLB,
+    PROP_GLBS, PROPS, RAMP_BASES,
 };
 
 /// The most colours one body's remap swaps (the skinned shader's `remap` rows).

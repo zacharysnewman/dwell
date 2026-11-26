@@ -4909,7 +4909,13 @@ structure's cells as runs, face-local, turned); without it neither is sent. **[b
 `npcs.carry` ([BLUEPRINTS.md](BLUEPRINTS.md) §9, WORK_QUEUE item 57): a `Creatures` message ends, after the
 poses' part (it and the NPCs' part written empty if need be), with the carrying NPCs' loads (`CarryNet`: `u16`
 count, each `u32` id, `u8` kinds ≤ 16, each `str` block state name and `u8` count), drawn as a stack on the back
-(`blueprints.json` `carryLook`); without it the part is left out. **[built, 0.76]** `bodies.hold`: `BodyHold` 0x6E (C→S,
+(`blueprints.json` `carryLook`); without it the part is left out. **[built, 0.76]** `players.looks` (the Character
+painter, [CHARACTERS.md](CHARACTERS.md) §9.4): `Looks` 0x70 (both ways, `dwell_protocol::looks::PlayerLook`: a player
+id, up to 7 slots each a palette ramp name, and a slot per face of the player model's 60 % mesh as runs); C→S your look
+on each change, S→C every player's once after the client's `Capabilities`, then each change, and a departed player's
+cleared (`dwell-sim` `server/looks.rs`); the client draws each look as its own copy of the player mesh's vertices
+coloured by face (`render/skinned.rs` `painted_vertex_bytes`), a look that doesn't fit its model drawn as the model.
+Without it no look is sent. **[built, 0.76]** `bodies.hold`: `BodyHold` 0x6E (C→S,
 control: a `u32` body id), sent every 100 ms while interact (E, X on a controller) is held aimed at a moving body past
 `shared/physics/bodies.json` `hold.holdSeconds` (`dwell-client` `Game::hold_interact`); the server
 (`dwell-sim` `server/body_hold.rs`) keeps each player's hold a quarter second after the last one and each tick bails the

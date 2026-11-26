@@ -210,6 +210,7 @@ pub enum MessageType {
     Blueprints = 109,
     BodyHold = 110,
     BodyPaste = 111,
+    Looks = 112,
 }
 
 impl MessageType {
@@ -282,6 +283,7 @@ impl MessageType {
             109 => Some(Self::Blueprints),
             110 => Some(Self::BodyHold),
             111 => Some(Self::BodyPaste),
+            112 => Some(Self::Looks),
             _ => None,
         }
     }
@@ -703,6 +705,8 @@ pub mod capability_names {
     pub const BODIES_PASTE: &str = "bodies.paste";
     /// A Creatures message ends, after the animals' poses (written empty if need be), with the NPCs' carried loads (B5, docs/BLUEPRINTS.md §9): per NPC carrying something its id and its items (each a block state name and how many, in load order), drawn as a stack of those blocks on its back by blueprints.json `carryLook`. Without it the server leaves the part out and a carrying villager is drawn with nothing on its back.
     pub const NPCS_CARRY: &str = "npcs.carry";
+    /// Players' looks travel (docs/CHARACTERS.md §9.4, the Character menu): a `Looks` message both ways, C→S your look on each change, S→C every player's once after the client's `Capabilities` and each changed one after; each look its parts' colours by name and whether the hat is worn. Without it nobody's look is sent and players are drawn as the model is.
+    pub const PLAYERS_LOOKS: &str = "players.looks";
     /// Every capability this build knows, in the table's order.
-    pub const ALL: &[&str] = &[STRUCTURES_PLACE, GRID_FRAMES, DAMAGE_CHUNKS, CREATURES_NPCS, WEAPONS_CLASH, CREATURES_POSES, NPCS_SWINGS, HUMANS_DEFEAT, THEATER_VIEWPOINT, HITS_AT_CONTACT, MARKERS_PRIVATE, GRID_SUN, BLUEPRINTS_WORLD, BODIES_HOLD, BODIES_PASTE, NPCS_CARRY];
+    pub const ALL: &[&str] = &[STRUCTURES_PLACE, GRID_FRAMES, DAMAGE_CHUNKS, CREATURES_NPCS, WEAPONS_CLASH, CREATURES_POSES, NPCS_SWINGS, HUMANS_DEFEAT, THEATER_VIEWPOINT, HITS_AT_CONTACT, MARKERS_PRIVATE, GRID_SUN, BLUEPRINTS_WORLD, BODIES_HOLD, BODIES_PASTE, NPCS_CARRY, PLAYERS_LOOKS];
 }

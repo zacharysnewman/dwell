@@ -54,6 +54,7 @@ pub use grids::{GridSlot, Grids};
 mod blueprints;
 mod body_hold;
 mod body_paste;
+mod looks;
 pub use body_hold::HoldDone;
 mod ground;
 mod growth;
@@ -765,6 +766,10 @@ struct Session {
     markers_sent: bool,
     /// Whether the world's blueprints went to its client (`blueprints.world`, BLUEPRINTS.md).
     blueprints_sent: bool,
+    /// Its player's look (the Character painter, `players.looks`), and whether its client has had
+    /// everyone's (it then gets each change).
+    look: Option<dwell_protocol::looks::PlayerLook>,
+    looks_sent: bool,
     /// The last damage cause its client understands (`CausesHello`; 0: it never said, so only the
     /// causes every build knows, and `Drown` with `vitals_hello`).
     known_cause: u8,
@@ -876,6 +881,8 @@ impl Session {
             markers_loaded: false,
             markers_sent: false,
             blueprints_sent: false,
+            look: None,
+            looks_sent: false,
             burn: dwell_lava::Burn::default(),
             grid_spawn_due: None,
             grid_respawn: false,
@@ -1685,6 +1692,9 @@ impl Server {
         let Some(s) = self.sessions.remove(&id) else {
             return;
         };
+        if s.look.is_some() {
+            self.clear_look(s.player_id);
+        }
         if self.config.store.is_some() && s.joined() {
             self.departed.push(self.record_of(&s));
             if !s.inventory_unread {
@@ -2113,6 +2123,7 @@ impl Server {
                 self.swordplay_hello(id);
                 self.send_markers(id);
                 self.send_blueprints(id);
+                self.send_looks(id);
             }
             Message::TheaterViewpoint(at) => self.theater_viewpoint(id, at),
             Message::BodyHold(body) => self.body_hold(id, body),
@@ -2121,6 +2132,7 @@ impl Server {
             }
             Message::Markers(m) => self.set_markers(id, m),
             Message::Blueprints(m) => self.blueprints_message(id, m),
+            Message::Looks(m) => self.set_look(id, m),
             Message::WorldgenRequest => {
                 let m = Message::WorldgenConfig(self.worldgen_text.clone());
                 self.send_reliable(id, &m, Channel::Control);

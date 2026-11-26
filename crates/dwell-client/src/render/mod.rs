@@ -1893,6 +1893,11 @@ pub struct Renderer {
     /// arrives), the rings this frame (none: off), and whether the frame groups bind the full one.
     color_map: lod_map::ColorMapGpu,
     lod_map: Option<crate::lod_map::LodMap>,
+    /// Each other player's paint key and your own's (the Character painter, `set_paints`).
+    paint_keys: dwell_world::hash::HashMap<u32, u64>,
+    paint_own: u64,
+    /// The Character painter's empty stage: the world, your body and others' left undrawn.
+    stage: bool,
     lod_map_full: bool,
     lod_schedule: lod_shadows::Schedule,
     height_pipelines: HashMap<(Kind, bool), pipeline::Lazy>,
@@ -2840,6 +2845,9 @@ impl Renderer {
             lod_maps,
             color_map,
             lod_map: None,
+            paint_keys: Default::default(),
+            paint_own: 0,
+            stage: false,
             lod_map_full: false,
             lod_schedule: lod_shadows::Schedule::new(1),
             height_pipelines,
@@ -5170,6 +5178,7 @@ impl Renderer {
         // their own projection (characters.rs).
         // Your own body casts whole (a shadow in first person, `set_own_shadow`) and is drawn
         // from the neck down (`set_own_body`, CHARACTERS.md §5.1).
+        let (paint_keys, paint_own) = (&self.paint_keys, self.paint_own);
         let body =
             |seed: u32, v: &PlayerView, cast_only: bool, first_person: bool| characters::BodyDraw {
                 feet: v.feet,
@@ -5183,6 +5192,11 @@ impl Renderer {
                 light: v.light,
                 seed,
                 role: v.role,
+                paint: if seed == 0 {
+                    paint_own
+                } else {
+                    paint_keys.get(&seed).copied().unwrap_or(0)
+                },
             };
         let bodies: Vec<characters::BodyDraw> = self
             .players
@@ -5195,7 +5209,9 @@ impl Renderer {
                     .map(|v| body(0, v, true, false)),
             )
             .chain(self.own_body.as_ref().map(|v| body(0, v, false, true)))
+            .filter(|_| !self.stage)
             .collect();
+        let arms = self.arms.as_ref().filter(|_| !self.stage);
         self.characters.prepare(
             &self.device,
             &self.queue,
@@ -5204,7 +5220,7 @@ impl Renderer {
             &passes,
             shadow_plan.as_ref().map_or(0.0, |p| p.distance),
             &bodies,
-            self.arms.as_ref(),
+            arms,
         );
         // The dynamic lights (docs/LIGHTS.md §3): the held torches and, with Torch shadows on, the
         // placed ones near the eye, nearest first, flickering by the frame's clock; and the torch
@@ -5451,6 +5467,8 @@ impl Renderer {
         let names = [timing::FAR, timing::NEAR];
         let water_names = [timing::FAR_WATER, timing::NEAR_WATER];
         for (i, pass_draws) in draws[..scene_passes].iter().enumerate() {
+            // The Character painter's stage: nothing of the world, the giant alone.
+            let pass_draws: &[_] = if self.stage { &[] } else { pass_draws };
             let query = self.timer.as_mut().and_then(|t| t.pass(names[i]));
             let split = reads_scene
                 .then(|| pass_draws.iter().position(|d| d.water))
@@ -5492,7 +5510,7 @@ impl Renderer {
                     pass.set_bind_group(1, &self.draw_group, &[]);
                 }
                 // The far trees' impostors, with the opaque draws (render/impostors.rs).
-                if let Some(imp) = &self.impostors {
+                if let Some(imp) = self.impostors.as_ref().filter(|_| !self.stage) {
                     let n = triangles;
                     imp.draw(&mut pass, &mut calls, &mut triangles);
                     impostor_triangles += triangles - n;
@@ -5508,7 +5526,7 @@ impl Renderer {
                 );
                 // The flames in the near pass (flames.rs): drawn now, or with see-through water
                 // their mask now and their colour after the water.
-                if i + 1 == scene_passes {
+                if i + 1 == scene_passes && !self.stage {
                     if split.is_some() {
                         self.flames
                             .draw_mask(&mut pass, flames::Group::Scene, &mut calls);
@@ -7275,6 +7293,41 @@ impl crate::game::Scene for Renderer {
     }
     fn set_lod_map(&mut self, map: Option<&crate::lod_map::LodMap>) {
         self.lod_map = map.filter(|_| self.lod_map_supported()).cloned();
+    }
+    fn set_stage(&mut self, giant: Option<crate::looks::StageGiant>) {
+        self.stage = giant.is_some();
+        self.characters
+            .set_stage(giant.map(|g| skinned::SkinnedDraw {
+                seed: u32::MAX - 2,
+                model: dwell_models::PLAYER,
+                feet: g.feet,
+                yaw: g.yaw,
+                face: g.face,
+                role: "idle",
+                light: [1.0, 0.0],
+                cast_only: false,
+                rig_pose: None,
+                grip: None,
+                remap: skinned::NO_REMAP,
+                idle_pose: None,
+                tint: skinned::NO_TINT,
+                paint: g.paint,
+                size: g.size,
+                rest: true,
+            }));
+    }
+    fn set_paints(&mut self, looks: &crate::looks::Looks) {
+        self.paint_keys = looks
+            .by_player()
+            .map(|(id, k)| (u32::from(id), k))
+            .collect();
+        self.paint_own = looks.own().map_or(0, |(k, _)| *k);
+        self.characters.set_paints(
+            &self.device,
+            &self.queue,
+            looks.paints().map(|(k, p)| (*k, p)),
+            self.paint_own,
+        );
     }
     fn take_cloud_noise_request(&mut self) -> bool {
         Renderer::take_cloud_noise_request(self)

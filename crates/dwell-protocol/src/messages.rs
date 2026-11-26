@@ -673,6 +673,10 @@ pub enum Message {
     /// sides (WORK_QUEUE item 56, docs/BLUEPRINTS.md): S→C every blueprint once after the client's
     /// `Capabilities`, then each placed or gone; C→S a place or a removal.
     Blueprints(crate::blueprints::BlueprintsMessage),
+    /// Both ways, reliable, world channel, only with the `players.looks` capability on both sides
+    /// (docs/CHARACTERS.md §9.4): C→S your look (one, its id ignored) on each change; S→C every
+    /// player's once after the client's `Capabilities`, then each changed one.
+    Looks(Vec<crate::looks::PlayerLook>),
 }
 
 /// Who fights: a player (its id) or a creature (an NPC, its id).
@@ -1079,6 +1083,7 @@ impl Message {
             M::BodyPaste(_) => MessageType::BodyPaste,
             M::Markers(_) => MessageType::Markers,
             M::Blueprints(_) => MessageType::Blueprints,
+            M::Looks(_) => MessageType::Looks,
             M::SwingHello => MessageType::SwingHello,
             M::BitesHello => MessageType::BitesHello,
             M::Steam(_) => MessageType::Steam,
@@ -1792,6 +1797,7 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
         M::Capabilities(c) => c.write(w),
         M::Markers(m) => m.encode_into(w),
         M::Blueprints(m) => m.encode_into(w),
+        M::Looks(l) => crate::looks::encode_looks(l, w),
         M::BodyHold(body) => w.u32(*body),
         M::BodyPaste(m) => {
             write_coord(w, &m.min);
@@ -2443,6 +2449,7 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
         T::Capabilities => M::Capabilities(crate::capabilities::Capabilities::read(r)?),
         T::Markers => M::Markers(crate::markers::Markers::decode_from(r)),
         T::Blueprints => M::Blueprints(crate::blueprints::BlueprintsMessage::decode_from(r)),
+        T::Looks => M::Looks(crate::looks::decode_looks(r)),
         T::BodyHold => M::BodyHold(r.u32()),
         T::BodyPaste => {
             let min = read_coord(r);

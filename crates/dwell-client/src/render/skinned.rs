@@ -77,6 +77,12 @@ pub struct SkinnedDraw {
     /// A flash over its colours (sRGB 0..1 and the strength mixed toward it): a hit creature's hurt
     /// look (shared/creatures `hurtLook`, WORK_QUEUE item 35); [`NO_TINT`]: none.
     pub tint: [f32; 4],
+    /// Its paint's key (the Character painter, [`Skinned::set_paints`]); 0: the model's colours.
+    pub paint: u64,
+    /// Its size over the model's own (1: life size; the Character painter's giant is 30 m tall).
+    pub size: f32,
+    /// Drawn in the model's rest pose, still (the painter's giant), not its clips.
+    pub rest: bool,
 }
 
 /// A body drawn without a flash.
@@ -200,7 +206,7 @@ pub fn body_matrix(d: &SkinnedDraw, data: &ModelData, eye: V3) -> Mat4 {
         [place.t[0], place.t[1], place.t[2], 1.0],
     ];
     let turn = mm::axis_angle([0.0, 1.0, 0.0], data.yaw);
-    mm::mul(&p, &mm::trs([0.0; 3], turn, [data.scale; 3]))
+    mm::mul(&p, &mm::trs([0.0; 3], turn, [data.scale * d.size; 3]))
 }
 
 /// The interleaved vertices of a model's detail level `level` (ADR 0070 §10) and its indices:
@@ -220,6 +226,49 @@ pub fn vertex_bytes(model: &Model, level: usize, parts: &[u8]) -> (Vec<u8>, Vec<
     }
     let idx = m.indices.iter().flat_map(|i| i.to_le_bytes()).collect();
     (v, idx)
+}
+
+/// [`vertex_bytes`] coloured by a paint (the Character painter): each face's vertices in its slot's
+/// colour, no part (so no remap).
+pub fn painted_vertex_bytes(
+    model: &Model,
+    level: usize,
+    paint: &dwell_models::paint::Paint,
+) -> Vec<u8> {
+    let (mut v, _) = vertex_bytes(model, level, &[]);
+    let m = model.level(level);
+    let slots = paint.slot_bytes();
+    for (t, &slot) in m
+        .indices
+        .chunks_exact(3)
+        .zip(&paint.level_faces(model, level))
+    {
+        let c = slots[usize::from(slot).min(slots.len() - 1)];
+        for &i in t {
+            let at = i as usize * VERTEX_BYTES + 24;
+            v[at..at + 4].copy_from_slice(&[c[0], c[1], c[2], 0]);
+        }
+    }
+    v
+}
+
+fn painted_buffer(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    _data: &'static ModelData,
+    model: &'static Model,
+    level: usize,
+    paint: &dwell_models::paint::Paint,
+) -> wgpu::Buffer {
+    let v = painted_vertex_bytes(model, level, paint);
+    let b = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("painted vertices"),
+        size: (v.len() as u64).max(4).next_multiple_of(4),
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&b, 0, &v);
+    b
 }
 
 /// A matrix's top three rows for the shader.
@@ -374,6 +423,8 @@ struct Draw {
     cast_only: bool,
     /// Your own body in first person: drawn by the body's index buffer (`own_index`).
     own: bool,
+    /// Its paint's key (0: the model's colours).
+    paint: u64,
 }
 
 /// A model's mesh on the GPU.
@@ -443,6 +494,11 @@ pub struct SkinnedRenderer {
     /// count and the vertices they use (skinned on the CPU to keep them clear of the eye); None:
     /// the player model draws no body.
     own_index: Option<(wgpu::Buffer, u32, Vec<u32>)>,
+    /// Players' paints (the Character painter): each a copy of the player mesh's vertices at the
+    /// drawn level coloured by its faces' slots, by key ([`SkinnedDraw::paint`]); and your own's
+    /// key (your body in first person and your arms).
+    paints: HashMap<u64, (std::sync::Arc<dwell_models::paint::Paint>, wgpu::Buffer)>,
+    own_paint: u64,
 }
 
 /// Your own body to draw in first person from the player model (docs/CHARACTERS.md §5.1, §11.12).
@@ -820,6 +876,37 @@ impl SkinnedRenderer {
             arms_index,
             arms: None,
             own_index,
+            paints: HashMap::default(),
+            own_paint: 0,
+        }
+    }
+
+    /// The paints drawn now (each key once) and your own's key (0: none): new ones are built at
+    /// the drawn level, gone ones dropped.
+    pub fn set_paints<'a>(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        paints: impl Iterator<Item = (u64, &'a std::sync::Arc<dwell_models::paint::Paint>)>,
+        own: u64,
+    ) {
+        let wanted: HashMap<u64, &std::sync::Arc<dwell_models::paint::Paint>> = paints.collect();
+        self.paints.retain(|k, _| wanted.contains_key(k));
+        let (data, model) = (self.meshes[0].data, self.meshes[0].model);
+        for (k, p) in wanted {
+            if !self.paints.contains_key(&k) {
+                let b = painted_buffer(device, queue, data, model, self.level, p);
+                self.paints.insert(k, (p.clone(), b));
+            }
+        }
+        self.own_paint = own;
+    }
+
+    /// The player mesh's vertices for paint `key`, else its own.
+    fn vertices_for(&self, mesh: usize, key: u64) -> &wgpu::Buffer {
+        match self.paints.get(&key) {
+            Some((_, b)) if mesh == 0 && key != 0 => b,
+            _ => &self.meshes[mesh].vertex,
         }
     }
 
@@ -836,6 +923,9 @@ impl SkinnedRenderer {
         let (data, model) = (self.meshes[0].data, self.meshes[0].model);
         self.arms_index = arms_index(device, queue, data, model, level);
         self.own_index = own_index(device, queue, data, model, level);
+        for (p, b) in self.paints.values_mut() {
+            *b = painted_buffer(device, queue, data, model, level, p);
+        }
     }
 
     /// Whether the player model draws your own body in first person.
@@ -928,7 +1018,11 @@ impl SkinnedRenderer {
             let mut place = body_matrix(d, data, eye);
             let blend = self.idle_poses.entry((mesh, d.seed)).or_insert((None, 0.0));
             *blend = blend_pose(*blend, d.idle_pose, dt, data.pose_blend_s);
-            let mut local = model_pose(data, model, p, d.rig_pose.as_ref(), d.grip);
+            let mut local = if d.rest {
+                anim::rest(model)
+            } else {
+                model_pose(data, model, p, d.rig_pose.as_ref(), d.grip)
+            };
             if let (Some(name), w) = *blend
                 && let Some(turns) = data.pose(name)
             {
@@ -972,6 +1066,7 @@ impl SkinnedRenderer {
                 casts,
                 cast_only: d.cast_only,
                 own: false,
+                paint: d.paint,
             });
         }
         // Your own body in first person (§11.12): its joints, the near margin in `light.z`.
@@ -1004,6 +1099,7 @@ impl SkinnedRenderer {
                 casts: false,
                 cast_only: false,
                 own: true,
+                paint: self.own_paint,
             });
         }
         self.arms = None;
@@ -1045,7 +1141,7 @@ impl SkinnedRenderer {
         };
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(1, &self.group, &[instance * INSTANCE_BYTES as u32]);
-        pass.set_vertex_buffer(0, self.meshes[0].vertex.slice(..));
+        pass.set_vertex_buffer(0, self.vertices_for(0, self.own_paint).slice(..));
         pass.set_index_buffer(index.slice(..), wgpu::IndexFormat::Uint32);
         pass.draw_indexed(0..*count, 0, 0..1);
         *calls += 1;
@@ -1080,7 +1176,7 @@ impl SkinnedRenderer {
             (Some((b, n, _)), true) => (b, *n),
             _ => (&m.index, m.count),
         };
-        pass.set_vertex_buffer(0, m.vertex.slice(..));
+        pass.set_vertex_buffer(0, self.vertices_for(d.mesh, d.paint).slice(..));
         pass.set_index_buffer(index.slice(..), wgpu::IndexFormat::Uint32);
         pass.draw_indexed(0..count, 0, 0..1);
         *calls += 1;
@@ -1198,6 +1294,9 @@ mod tests {
                 remap: NO_REMAP,
                 idle_pose: None,
                 tint: NO_TINT,
+                paint: 0,
+                size: 1.0,
+                rest: false,
             };
             let place = body_matrix(&d, data, [0.0; 3]);
             let joints: Vec<Mat4> = anim::joint_matrices(model, &anim::rest(model))
@@ -1230,6 +1329,9 @@ mod tests {
             remap: NO_REMAP,
             idle_pose: None,
             tint: NO_TINT,
+            paint: 0,
+            size: 1.0,
+            rest: false,
         };
         let place = body_matrix(&d, data, [0.0; 3]);
         let mut p = Player::new(data, model, "walk");
@@ -1429,6 +1531,9 @@ mod tests {
                         remap: NO_REMAP,
                         idle_pose: None,
                         tint: NO_TINT,
+                        paint: 0,
+                        size: 1.0,
+                        rest: false,
                     };
                     let place = body_matrix(&d, data, [0.0; 3]);
                     let p = Player::new(data, model, "idle");
@@ -1539,6 +1644,9 @@ mod tests {
                     remap: NO_REMAP,
                     idle_pose: None,
                     tint: NO_TINT,
+                    paint: 0,
+                    size: 1.0,
+                    rest: false,
                 };
                 let place = body_matrix(&d, data, eye);
                 let p = Player::new(data, model, "idle");
@@ -1626,6 +1734,9 @@ mod tests {
                         remap: NO_REMAP,
                         idle_pose: None,
                         tint: NO_TINT,
+                        paint: 0,
+                        size: 1.0,
+                        rest: false,
                     };
                     let place = body_matrix(&d, data, eye);
                     let p = Player::new(data, model, role);

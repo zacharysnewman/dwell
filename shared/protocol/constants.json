@@ -160,7 +160,8 @@
     "Markers": 108,
     "Blueprints": 109,
     "BodyHold": 110,
-    "BodyPaste": 111
+    "BodyPaste": 111,
+    "Looks": 112
   },
   "rejectReasons": {
     "ProtocolVersion": 1,

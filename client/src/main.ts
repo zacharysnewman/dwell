@@ -159,6 +159,7 @@ import { startThumbnailCapture, WorldThumbs } from './local/worldThumbs';
 import { pauseFromQuery, togglePause } from './debug/pause';
 import { THEATER } from './theater/config';
 import { TheaterMode } from './theater/mode';
+import { CharacterPainter, LOOK_KEY } from './ui/characterPainter';
 import type { PathJson } from './theater/keyframes';
 import { PathStore } from './theater/store';
 import {
@@ -323,6 +324,11 @@ interface DwellDebug {
    * path, `endTake` ends it. `audio: true` adds the game's sound (effects and ambience, no music).
    */
   theaterMode(op: string, args?: Record<string, unknown>): unknown;
+  /**
+   * The Character painter (docs/CHARACTERS.md §9.4) for the bench: `enter`, `done`, `state`,
+   * `fly` [forward, right, up, yaw, pitch], `paint` [op, slot, radiusCm], `slot` [k, ramp].
+   */
+  painter(op: string, args?: unknown[]): unknown;
   /**
    * A cinematic take (THEATER_MODE.md §6.1, the record skill's `render: "cinematic"`): the path
    * rendered offline, frame-exact — the game stepped 1 / fps a frame, each frame settled, PNG frames
@@ -742,6 +748,8 @@ interface App {
   mapShading: boolean;
   /** Theater mode (docs/THEATER_MODE.md): the free camera, paths and recording. */
   theater: TheaterMode | null;
+  /** The Character painter (docs/CHARACTERS.md §9.4). */
+  painter: CharacterPainter | null;
   /** Which panel is open (the inventory, the game menu, the big map) and the pointer lock with it. */
   panels: Panels;
 }
@@ -838,6 +846,10 @@ function forwardInput(app: App): void {
       return;
     // Theater mode's key (shared/theater/theater.json) toggles it; while it is on, the keys fly
     // its camera and the body hears none of them.
+    if (app.painter?.key(e.code, true, e.shiftKey, e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      return;
+    }
     const th = app.theater;
     if (th && e.code === THEATER.key && !e.repeat && app.playing && !app.settings?.isOpen) {
       e.preventDefault();
@@ -852,6 +864,7 @@ function forwardInput(app: App): void {
     if (client.keyDown(e.code, e.repeat, e.ctrlKey, e.metaKey, e.timeStamp)) e.preventDefault();
   });
   window.addEventListener('keyup', (e) => {
+    if (app.painter?.key(e.code, false, e.shiftKey, e.ctrlKey || e.metaKey)) return;
     if (app.theater?.key(e.code, false, e.shiftKey)) return;
     client.keyUp(e.code);
   });
@@ -865,12 +878,19 @@ function forwardInput(app: App): void {
   });
   document.addEventListener('pointerlockchange', () => {
     client.setPointerLocked(document.pointerLockElement === canvas);
+    // Esc in the painter (the browser's lock released) is "done"; the palette frees it on purpose.
+    const p = app.painter;
+    if (p?.active && !p.choosing && document.pointerLockElement !== canvas) p.done();
     // A lock lost while playing (Esc, alt-tab) opens the game menu; one a panel freed doesn't.
     app.panels.lockChanged(performance.now());
   });
   // In theater mode the panel keeps the mouse free: a drag on the view turns the camera.
   let theaterDrag = false;
   canvas.addEventListener('mousedown', (e) => {
+    if (app.painter?.active) {
+      app.painter.mouseDown(e.button);
+      return;
+    }
     if (app.theater?.active) {
       theaterDrag = true;
       return;
@@ -880,6 +900,7 @@ function forwardInput(app: App): void {
   // Letting go of Place stops building on (docs/ITEMS.md §5); on the document, so a release off
   // the canvas counts too.
   document.addEventListener('mouseup', (e) => {
+    app.painter?.mouseUp(e.button);
     theaterDrag = false;
     client.mouseUp(e.button);
   });
@@ -887,6 +908,10 @@ function forwardInput(app: App): void {
     e.preventDefault();
   });
   document.addEventListener('mousemove', (e) => {
+    if (app.painter?.active) {
+      if (document.pointerLockElement === canvas) app.painter.mouse(e.movementX, e.movementY);
+      return;
+    }
     if (app.theater?.active) {
       if (document.pointerLockElement === canvas || theaterDrag)
         app.theater.mouse(e.movementX, e.movementY);
@@ -923,6 +948,10 @@ function forwardInput(app: App): void {
     (e) => {
       // Line or page deltas (Firefox's mouse wheel) as pixels, for the notch accumulator.
       const px = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 800 : 1;
+      if (app.painter?.active) {
+        app.painter.wheel(e.deltaY * px);
+        return;
+      }
       if (app.theater?.active) {
         app.theater.wheel(e.deltaY * px);
         return;
@@ -1176,6 +1205,7 @@ async function start(): Promise<App | null> {
     world: null,
     playing: false,
     theater: null,
+    painter: null,
     panels: new Panels(document, canvas, {
       show: (panel, open) => showPanel(app, panel, open),
       escape: (panel) => panel === 'theater' && (app.theater?.escape() ?? false),
@@ -1663,6 +1693,26 @@ async function start(): Promise<App | null> {
     },
     theater: (op, args) => theaterOp(client, document, op, args),
     theaterMode: (op, args = {}) => theaterModeOp(app, op, args),
+    painter: (op, args = []) => {
+      const a = args as (number | string)[];
+      switch (op) {
+        case 'enter':
+          return app.painter?.enter() ?? false;
+        case 'done':
+          app.painter?.done();
+          return true;
+        case 'state':
+          return { active: app.painter?.active ?? false, slots: client.painterSlots() };
+        case 'fly':
+          return client.theaterFly(...(a.map(Number) as [number, number, number, number, number]));
+        case 'paint':
+          return client.paint(String(a[0]), Number(a[1]), Number(a[2]));
+        case 'slot':
+          return client.paintSlot(Number(a[0]), String(a[1]));
+        default:
+          throw new Error(`painter: unknown op ${op}`);
+      }
+    },
     cinematic: (opts) => runCinematic(cinematicHost(), opts),
     clearance: (path, settings) => {
       const host = cinematicHost();
@@ -1927,6 +1977,24 @@ async function start(): Promise<App | null> {
     },
   });
   app.theater = theater;
+  // The Character painter (docs/CHARACTERS.md §9.4): from the game menu's Character page.
+  const painter = new CharacterPainter(
+    document,
+    client,
+    JSON.parse(client.paintRamps()) as [string, string][],
+    localStorage,
+    {
+      lock: () => {
+        app.panels.lock();
+      },
+      unlock: () => {
+        document.exitPointerLock();
+      },
+      closed: () => undefined,
+    },
+  );
+  app.painter = painter;
+  settings.addCharacterPage(() => painter.enter());
   window.addEventListener('resize', () => {
     theater.relayout(innerWidth, innerHeight);
   });
@@ -1950,8 +2018,9 @@ async function start(): Promise<App | null> {
     // The host may turn theater mode off for guests (THEATER_MODE.md §7); the host always may.
     theater.setAllowed(app.loopback !== null || client.theaterGuests());
     theater.frame(now, theater.active ? gp : null);
+    painter.frame(now, painter.active ? gp : null);
     theater.showOpenButton(touchWanted && app.playing);
-    if (!theater.active) pad.poll(now);
+    if (!theater.active && !painter.active) pad.poll(now);
     // Only the frames drawn count (one is skipped while the GPU is behind).
     const drawn = client.frame(now);
     for (const w of cine.waiters.splice(0)) {
@@ -2156,6 +2225,12 @@ function showInventory(app: App, open: boolean): void {
 /** Once joined: the hotbar, the block dump's world, and the debug tools. */
 function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): void {
   app.playing = true;
+  // Your look as this device keeps it (the Character painter): drawn and sent to the others.
+  try {
+    app.client.setOwnLook(localStorage.getItem(LOOK_KEY) ?? 'null');
+  } catch {
+    // No store: the model's colours.
+  }
   app.world = { seed: joined.worldSeed, generatorVersion: joined.generatorVersion };
   const size = swatchSize();
   const slots = app.client.palette().map((name, i) => ({ name, swatch: hotbarSwatch(i), size }));

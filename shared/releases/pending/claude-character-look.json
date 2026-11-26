@@ -1,0 +1,7 @@
+{
+  "changes": [
+    "Paint your character: the game menu's new Character page opens a painter where your character stands 30 m tall on an empty stage.",
+    "Fly round it, pick one of seven colours (1–7, C for the palette) and paint any face with the brush (drag) or fill a connected patch (right click); Ctrl+Z undoes.",
+    "Your look is kept on this device and other players see it. A controller works too."
+  ]
+}

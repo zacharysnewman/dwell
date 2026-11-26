@@ -30,6 +30,7 @@ pub mod hit_shards;
 pub mod jobs;
 pub mod local;
 pub mod lod_map;
+pub mod looks;
 pub mod loose_items;
 pub mod map_markers;
 pub mod map_reveal;
