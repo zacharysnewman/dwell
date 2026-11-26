@@ -13,18 +13,29 @@ export type GuestOutput = Extract<FromWorker, { session: number }>;
 /** A loading stage of the local world's start began or ended (`atMs` on the page's clock). */
 export type StageReport = (id: string, phase: 'begin' | 'end', atMs: number) => void;
 
+/** A server heap this big when it trapped means memory ran out (a module's limit is 4 GiB). */
+const NEAR_MEMORY_LIMIT = 3.5 * 1024 ** 3;
+
 /**
- * What the player reads when the local world's worker failed (BUGS.md #91: a 10× world's server
- * ran out of WebAssembly memory and the page said only "Could not connect"): a WebAssembly trap or
- * allocation failure is named as the server running out of memory, with the browser's words kept.
+ * What the player reads when the local world's worker failed (BUGS.md #91, #245). `panic`: the
+ * Rust panic's message, when the server panicked (its hook keeps it); `heapBytes`: the server's
+ * last heap size. A panic is a crash, said with its message. A Rust allocation failure aborts
+ * with the same `unreachable` trap as a panic but without its message, so a bare trap is named as
+ * running out of memory only when the heap was near the limit; otherwise it is a crash.
  */
-export function workerFailure(message: string): string {
+export function workerFailure(message: string, panic?: string, heapBytes?: number): string {
   const m = message.trim() || 'it stopped without saying why';
   const memory =
-    /out of memory|memory access out of bounds|unreachable|could not allocate|capacity overflow|allocation failed|Maximum call stack|WebAssembly\.Memory/i;
-  return memory.test(m)
-    ? `The world's server ran out of memory and stopped (${m}). A smaller world size may fit.`
-    : `The world's server stopped (${m}).`;
+    /out of memory|could not allocate|allocation failed|memory allocation of|capacity overflow|Maximum memory size|WebAssembly\.Memory/i;
+  const outOfMemory = `The world's server ran out of memory and stopped (${m}). A smaller world size may fit.`;
+  const p = panic?.trim().replace(/\s*\n\s*/g, ' ');
+  if (p) return memory.test(p) ? outOfMemory : `The world's server crashed: ${p}`;
+  if (memory.test(m)) return outOfMemory;
+  if (/unreachable|memory access out of bounds|Maximum call stack/i.test(m)) {
+    if ((heapBytes ?? 0) >= NEAR_MEMORY_LIMIT) return outOfMemory;
+    return `The world's server crashed (${m}).`;
+  }
+  return `The world's server stopped (${m}).`;
 }
 
 /**
