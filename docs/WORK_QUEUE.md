@@ -304,6 +304,12 @@ context) at a time with a choice to table it as well as the other options?" Answ
      "Leaves follow their own tree": the mesh workers work out which tree grew each leaf (re-placing the overlapping
      trees as generation and growth do), so every leaf switches with its own tree; the test gains neighbours. **Owner
      should see:** no giant (or any tree) drawn as its billboard and part of its real crown at once.
+     Owner (2026-11-25), on whether a live counter was needed: "You should be able to tell without visual testing though.
+     Aren't the billboards associated with the tree? So you could actually verify when one is shown for a tree, while
+     the tree is shown too?", then: "These should be concretely testable, even unit testable." (the gaps: tree cells
+     meshed without their trees, and a real tree that differs from the generator's model). Unit tests: every tree
+     cell the generator places is claimed by its tree; a tree the server has grown a stage behind or ahead of the
+     client's day is still wholly claimed; a cell no tree grew (a player's leaf) is no tree's, drawn always.
   5. Section 4, blocks: the door and ladder recipes; the hit-rule table for the owner; tall grass at most three cells,
      drawn as one connected stalk (#192); particles scaled with the hit; leafy trees' leaves fading up close (#225).
   6. Section 3: the creative water bucket (sources added and removed, marked while held).

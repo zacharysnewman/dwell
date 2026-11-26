@@ -446,14 +446,15 @@ impl<'a> Cells<'a> {
     }
 
     /// The anchors (face-local) of the listed trees that grew `cell` (chunk-local), its fade's tree
-    /// first: the claims' (BUGS.md #197), else the nearest whose box holds it; `None` for a cell no
-    /// listed tree owns (a player's).
+    /// first: the claims' (BUGS.md #197); meshed without claims, the nearest whose box holds it.
+    /// `None` for a cell no listed tree grew (a player's: no impostor draws it, so it is drawn
+    /// always, BUGS.md #186).
     fn tree_claimants(&self, cell: [i32; 3]) -> Option<Vec<[i32; 3]>> {
         let w = std::array::from_fn(|a| self.origin[a] + cell[a]);
-        if let Some(set) = self.claims.and_then(|c| c.of(w)) {
-            return Some(set.to_vec());
+        match self.claims {
+            Some(c) => c.of(w).map(<[[i32; 3]]>::to_vec),
+            None => dwell_world::tree_tint::owner(self.trees, w).map(|t| vec![t.anchor]),
         }
-        dwell_world::tree_tint::owner(self.trees, w).map(|t| vec![t.anchor])
     }
 
     /// The leaf tint of chunk-local cell `cell`: its owning tree's (ADR 0079), else none.

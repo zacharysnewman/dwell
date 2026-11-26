@@ -4101,8 +4101,9 @@ impl TerrainGenerator {
     /// Which listed trees claim each cell of columns [x0, x1] × [z0, z1] and rows `rows`
     /// (face-local, inclusive) on world day `day` (BUGS.md #197, owner 2026-11-25: "Leaves follow
     /// their own tree"): each species tree's cells at the stage it has grown to by then
-    /// (`growth::due_stage`, placed as the growers place it), a hand-built tree's as placed. The
-    /// trees [`Self::tree_tints`] lists for the same columns.
+    /// (`growth::due_stage`, placed as the growers place it) and the stages either side (the
+    /// server's clock may be a little off the client's), a hand-built tree's as placed. The trees
+    /// [`Self::tree_tints`] lists for the same columns.
     pub fn tree_claims(
         &self,
         lo: (i32, i32),
@@ -4131,11 +4132,26 @@ impl TerrainGenerator {
                 let (species, seed, stage) = p.far_tree(&t)?;
                 let cells: Vec<[i32; 3]> = match p.grown(&t) {
                     Some(_) => {
+                        // The stage it is due by `day`, and one either side: the server grows it
+                        // on its own clock, a little ahead of or behind the client's, so the
+                        // world may hold either (BUGS.md #197).
                         let now = crate::growth::due_stage(species, seed, stage as u8, 0.0, day);
-                        crate::growth::stage_cells(species, seed, now, t.anchor, t.quarter_turns)?
-                            .cells()
-                            .map(|(c, _)| c)
-                            .collect()
+                        let last = crate::species::SPECIES
+                            .get(usize::from(species))
+                            .map_or(now, |s| s.stages.saturating_sub(1) as u8);
+                        let mut all = Vec::new();
+                        for s in now.saturating_sub(1).max(stage as u8)..=(now + 1).min(last) {
+                            if let Some(p) = crate::growth::stage_cells(
+                                species,
+                                seed,
+                                s,
+                                t.anchor,
+                                t.quarter_turns,
+                            ) {
+                                all.extend(p.cells().map(|(c, _)| c));
+                            }
+                        }
+                        all
                     }
                     None => p.place(&t).cells().map(|(c, _)| c).collect(),
                 };

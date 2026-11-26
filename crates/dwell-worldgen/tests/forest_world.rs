@@ -284,3 +284,97 @@ dwell_world::both_faces!(
         }
     }
 );
+
+/// A stand of the forest world for the claims' tests: its columns and the species trees in it.
+fn stand_trees(g: &TerrainGenerator) -> Vec<(dwell_worldgen::placements::Tree, u16, u32, u32)> {
+    g.trees_in((0, -400), (47, -353))
+        .into_iter()
+        .filter_map(|t| {
+            let p = &g.planters()[t.planter as usize];
+            let (species, seed, stage) = p.far_tree(&t)?;
+            p.grown(&t)?;
+            Some((t, species, seed, stage))
+        })
+        .collect()
+}
+
+/// The claims of the columns round `t`'s anchor (its whole reach) on world day `day`.
+fn claims_round(
+    g: &TerrainGenerator,
+    t: &dwell_worldgen::placements::Tree,
+    day: f64,
+) -> dwell_world::tree_tint::Claims {
+    let [x, y, z] = t.anchor;
+    g.tree_claims((x - 40, z - 40), (x + 40, z + 40), (y - 8, y + 400), day)
+}
+
+dwell_world::both_faces!(
+    /// BUGS.md #197 (owner, 2026-11-25: "These should be concretely testable, even unit
+    /// testable"): the far trees' hand-over hands a cell over with the trees the generator's
+    /// growth model says grew it (`tree_claims`); every cell the generator places for a listed
+    /// tree must be claimed by that tree, or it is drawn while the tree is its billboard.
+    fn every_cell_the_generator_places_for_a_tree_is_claimed_by_it(f: FaceFrame) {
+        let g = generator(&edit(), f, SEED);
+        let trees = stand_trees(&g);
+        assert!(trees.len() > 10, "{} trees in the stand", trees.len());
+        let mut unclaimed = Vec::new();
+        for (t, ..) in &trees {
+            let claims = claims_round(&g, t, 0.0);
+            let placed = g.planters()[t.planter as usize].place(t);
+            for (c, _) in placed.cells() {
+                if !claims.of(c).is_some_and(|s| s.contains(&t.anchor)) && unclaimed.len() < 8 {
+                    unclaimed.push((t.anchor, c));
+                }
+            }
+        }
+        assert!(
+            unclaimed.is_empty(),
+            "placed but not claimed by their tree: {unclaimed:?}"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// The server grows a tree a stage every `daysPerStage` days and the client's clock may be a
+    /// little ahead of or behind it (BUGS.md #197): on the day a tree comes due for its next stage
+    /// and just before, every cell of both stages is claimed by it, so whichever the world holds
+    /// hands over with the tree.
+    fn a_tree_a_stage_either_side_of_the_clients_day_is_wholly_claimed(f: FaceFrame) {
+        let g = generator(&edit(), f, SEED);
+        let mut checked = 0;
+        let mut unclaimed = Vec::new();
+        for (t, species, seed, stage) in stand_trees(&g).into_iter().take(12) {
+            let Some(next) = (1..=1600).map(|k| f64::from(k) * 0.25).find(|&d| {
+                dwell_worldgen::growth::due_stage(species, seed, stage as u8, 0.0, d) > stage as u8
+            }) else {
+                continue; // full-grown
+            };
+            for day in [next - 0.25, next] {
+                let claims = claims_round(&g, &t, day);
+                for s in [stage as u8, stage as u8 + 1] {
+                    let cells = dwell_worldgen::growth::stage_cells(
+                        species,
+                        seed,
+                        s,
+                        t.anchor,
+                        t.quarter_turns,
+                    )
+                    .expect("a species tree");
+                    for (c, _) in cells.cells() {
+                        if !claims.of(c).is_some_and(|set| set.contains(&t.anchor))
+                            && unclaimed.len() < 8
+                        {
+                            unclaimed.push((t.anchor, s, day, c));
+                        }
+                    }
+                }
+            }
+            checked += 1;
+        }
+        assert!(checked > 3, "{checked} growing trees");
+        assert!(
+            unclaimed.is_empty(),
+            "a stage's cells not claimed by their tree: {unclaimed:?}"
+        );
+    }
+);
