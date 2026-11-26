@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "The desktop app runs on a newer engine (Electron 45, Chromium 156): it draws as smoothly as Chrome, where it often ran at 30 fps before.",
-    "The desktop app's performance line shows the GPU time again."
-  ]
-}
