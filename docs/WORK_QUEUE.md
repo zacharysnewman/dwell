@@ -17,6 +17,12 @@ cannons only hold rules." The 2026-11-18 hold ("Put a hold on everything except 
 failures, the queued items and the owner's list of 2026-11-23 are all workable again. (The parked cold desert fix rides
 the deep-seas line, PR #1109.)
 
+## Desktop app performance (owner, 2026-11-26)
+
+"Why does it run worst native than in chrome?" (~30 fps on mobile settings, the GPU time "-"); then "Yeah upgrade
+electron." BUGS.md #247. Electron 44.4.5 (Chromium 152) → 45.5.0 (Chromium 156, the newest stable; Chrome is 158).
+Owner should see: Dwell.app as smooth as Chrome on the same world and settings, with a GPU time in the perf line.
+
 ## Indefinite hold (owner, 2026-11-23)
 
 Owner, 2026-11-23: "Let's setup an indefinite hold area and put realistic at scale, older open PRs (I'd like to know

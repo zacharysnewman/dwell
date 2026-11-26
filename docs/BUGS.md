@@ -6,6 +6,20 @@ pins it.
 
 ## Open
 
+### 247. The desktop app runs at ~30 fps where Chrome runs smoothly; its GPU time shows "-" (owner, 2026-11-26)
+
+"I notice it runs at ~30fps even on mobile settings mostly held up by the GPU (wait frames maybe?). Why does it run worst
+native than in chrome?" and "GPU also showed as \"-\" like nothing to measure." Found: the app was Electron 44.4.5
+(Chromium 152) against Chrome 158. Its WebGPU offered no `timestamp-query` (so `render/timing.rs` measures nothing: the
+"-"), and an instance launched with a debug port drew the game (1 ms of GPU work a frame) but showed a white window, its
+log repeating `SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox`
+every frame: the canvas's frames failing to reach the screen. Owner: "Yeah upgrade electron." Owner should see: the app
+as smooth as Chrome on the same settings, with a GPU time in the perf line.
+**Fixed 2026-11-26 (open until the owner's look):** Electron 45.5.0 (Chromium 156). Checked by hand (a window's drawing
+can't be tested in CI): on 44.4.5 the debug-launched app's window stayed white with the mailbox error each frame and
+`timestamp-query` was missing; on 45.5.0 the same launch draws the world (local world, seed 0, mobile preset) at 60/60 fps,
+interval p95 18 ms, and the perf line reads "GPU 9.3 ms".
+
 ### 246. Far trees' billboards tip side to side (owner, 2026-11-25)
 
 "Also, shouldn't the billboards not tip side to side?" (watching the before/after forest flythrough). Cause: each
