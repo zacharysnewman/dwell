@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.76.19",
+      "changes": [
+        "When the world's server crashes, the message now says it crashed and why, instead of claiming it ran out of memory."
+      ]
+    },
+    {
       "version": "0.76.18",
       "changes": [
         "Holding E on a boat works again: it rights a capsized boat with a helm, and in creative bails the water out while you stand in its hull."

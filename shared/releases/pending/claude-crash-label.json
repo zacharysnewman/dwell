@@ -1,5 +1,0 @@
-{
-  "changes": [
-    "When the world's server crashes, the message now says it crashed and why, instead of claiming it ran out of memory."
-  ]
-}
