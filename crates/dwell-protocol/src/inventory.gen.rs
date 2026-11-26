@@ -60,6 +60,8 @@ pub static RECIPES: &[Recipe] = &[
     Recipe { name: "dwell:stone_brick_slab", inputs: &[("dwell:rock_shard", 4)], output: ("dwell:stone_brick", 4) },
     Recipe { name: "dwell:thatch_slab", inputs: &[("dwell:stick", 2), ("dwell:grass_fiber", 2)], output: ("dwell:thatch", 4) },
     Recipe { name: "dwell:cannon", inputs: &[("dwell:rock_shard", 16), ("dwell:wood", 4)], output: ("dwell:cannon", 1) },
+    Recipe { name: "dwell:door", inputs: &[("dwell:planks", 4)], output: ("dwell:door", 1) },
+    Recipe { name: "dwell:ladder", inputs: &[("dwell:stick", 4)], output: ("dwell:ladder", 1) },
     Recipe { name: "dwell:helm", inputs: &[("dwell:wood", 6), ("dwell:stick", 4)], output: ("dwell:helm", 1) },
     Recipe { name: "dwell:stone_axe", inputs: &[("dwell:stick", 2), ("dwell:rock_shard", 2), ("dwell:grass_fiber", 2)], output: ("dwell:stone_axe", 1) },
     Recipe { name: "dwell:stone_pickaxe", inputs: &[("dwell:stick", 2), ("dwell:rock_shard", 2), ("dwell:grass_fiber", 2)], output: ("dwell:stone_pickaxe", 1) },

@@ -85,15 +85,17 @@ describe('combine and wear (owner, 2026-11-11)', () => {
       ),
     );
     // 4 sticks and 2 fibres also make a wooden shovel; the stone shovel shares the stone tools'
-    // inputs (owner, 2026-11-14); 2 sticks and 2 fibres make thatch (owner, 2026-11-17).
+    // inputs (owner, 2026-11-14); 2 sticks and 2 fibres make thatch (owner, 2026-11-17); 4 sticks
+    // a ladder (owner, 2026-11-26).
     expect(tools.map((c) => [c.recipe.name, c.times])).toEqual([
       ['dwell:thatch_slab', 1],
+      ['dwell:ladder', 1],
       ['dwell:stone_axe', 1],
       ['dwell:stone_pickaxe', 1],
       ['dwell:wooden_shovel', 1],
       ['dwell:stone_shovel', 1],
     ]);
-    expect(tools[1] && recipeInputs(tools[1].recipe)).toBe(
+    expect(tools[2] && recipeInputs(tools[2].recipe)).toBe(
       '2 Stick + 2 Rock shard + 2 Grass fiber',
     );
     expect(itemLabel('dwell:wood')).toBe('Wood chunk');
