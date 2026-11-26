@@ -983,7 +983,8 @@ export function generate() {
         "use crate::{DetailLevel, FirstPerson, FirstPersonBody, Grip, Hand, HandGrip, ModelData, Parts, PropData, PropHold, Retarget, RetargetBone, RoleClip};",
       ) +
         rustProps(props, glbRoot, built, validateHand(propsData.hand)) +
-        rustRampBases(palette),
+        rustRampBases(palette) +
+        rustPaintRamps(palette, data.palette?.exclude ?? []),
     ]);
   }
   return [...outputs, ...glbs];
@@ -1024,6 +1025,17 @@ export function rustRampBases(palette) {
         `(${JSON.stringify(ramp)}, 0x${stops.base.slice(1).toLowerCase()})`,
     );
   return `pub static RAMP_BASES: &[(&str, u32)] = &[${entries.join(", ")}];\n`;
+}
+
+/**
+ * The ramps a player's paint slots choose from (the Character painter, docs/CHARACTERS.md §9.4):
+ * every palette ramp but models.json `palette.exclude`'s utility and effect colours, in palette order.
+ */
+export function rustPaintRamps(palette, exclude) {
+  const names = Object.entries(palette.ramps)
+    .filter(([ramp, stops]) => typeof stops.base === "string" && !exclude.includes(ramp))
+    .map(([ramp]) => JSON.stringify(ramp));
+  return `pub static PAINT_RAMPS: &[&str] = &[${names.join(", ")}];\n`;
 }
 
 if (

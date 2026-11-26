@@ -1110,10 +1110,19 @@ export interface DebugTool {
 }
 
 type Page =
-  SettingsPane | 'controller' | 'controls' | 'theater' | 'structures' | 'debug' | 'host' | 'chisel';
+  | SettingsPane
+  | 'character'
+  | 'controller'
+  | 'controls'
+  | 'theater'
+  | 'structures'
+  | 'debug'
+  | 'host'
+  | 'chisel';
 
 /** The pages in the order they are listed, whatever order they are added in. */
 const PAGE_ORDER: readonly Page[] = [
+  'character',
   ...SETTINGS_PANES,
   'controller',
   'controls',
@@ -1125,6 +1134,7 @@ const PAGE_ORDER: readonly Page[] = [
 ];
 
 const PAGE_TITLES: Record<Page, string> = {
+  character: 'Character',
   graphics: 'Graphics',
   sound: 'Sound',
   gameplay: 'Gameplay',
@@ -1434,6 +1444,29 @@ export class SettingsMenu {
       b.disabled = !allowed();
       note.hidden = allowed();
     });
+  }
+
+  /** Adds the Character page (docs/CHARACTERS.md §9.4): opens the painter. */
+  addCharacterPage(enter: () => boolean): void {
+    const page = el('section');
+    const b = el('button', 'block-button', 'Paint your character');
+    b.type = 'button';
+    b.id = 'menu-character-paint';
+    b.addEventListener('click', () => {
+      this.setOpen(false);
+      enter();
+    });
+    page.append(
+      el(
+        'p',
+        'gm-lead',
+        'Fly round your character as a giant and paint it face by face from seven colours. ' +
+          'Others see your look.',
+      ),
+      b,
+    );
+    this.addPage('character', page);
+    this.pages.get('character')?.tab.setAttribute('id', 'menu-character');
   }
 
   /** Adds the Host page (local worlds, Phase 5c): `panel` is ui/hostPanel.ts's. */

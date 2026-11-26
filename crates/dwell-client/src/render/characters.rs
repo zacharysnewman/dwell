@@ -252,6 +252,8 @@ pub struct BodyDraw {
     /// The base role playing (`walk`, `sprint`): another player's skinned body plays its clip
     /// (render/skinned.rs).
     pub role: &'static str,
+    /// Its paint's key (the Character painter; 0: the model's colours).
+    pub paint: u64,
 }
 
 /// The first-person arms to draw.
@@ -310,6 +312,8 @@ pub struct CharacterStats {
 }
 
 pub struct CharacterRenderer {
+    /// The Character painter's giant, drawn as the only skinned body while it paints.
+    stage: Option<super::skinned::SkinnedDraw>,
     character: &'static Character,
     look: &'static str,
     pipeline: crate::render::pipeline::Lazy,
@@ -765,6 +769,9 @@ pub fn creature_draw(
         }),
         idle_pose: c.pose,
         tint: c.tint,
+        paint: 0,
+        size: 1.0,
+        rest: false,
     };
     (draw, held)
 }
@@ -1162,6 +1169,7 @@ impl CharacterRenderer {
             samples,
         );
         Self {
+            stage: None,
             skinned,
             creatures: Vec::new(),
             character,
@@ -1347,6 +1355,9 @@ impl CharacterRenderer {
                         remap: super::skinned::NO_REMAP,
                         idle_pose: None,
                         tint: crate::render::skinned::NO_TINT,
+                        paint: d.paint,
+                        size: 1.0,
+                        rest: false,
                     },
                     forward: basis.forward(),
                     body: b,
@@ -1384,6 +1395,9 @@ impl CharacterRenderer {
                     remap: super::skinned::NO_REMAP,
                     idle_pose: None,
                     tint: crate::render::skinned::NO_TINT,
+                    paint: d.paint,
+                    size: 1.0,
+                    rest: false,
                 });
                 held_items.push(HeldOnSkin {
                     held: d.held,
@@ -1492,6 +1506,9 @@ impl CharacterRenderer {
             }
             _ => None,
         };
+        if let Some(g) = self.stage {
+            skinned.push(g);
+        }
         let (hands, arms_hand) = self.skinned.prepare(
             device,
             queue,
@@ -1686,6 +1703,22 @@ impl CharacterRenderer {
     /// The Model detail setting (ADR 0070 §10): the skinned bodies' level.
     pub fn set_model_detail(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, level: usize) {
         self.skinned.set_level(device, queue, level);
+    }
+
+    /// The Character painter's giant (None: no stage): drawn as the only skinned body.
+    pub fn set_stage(&mut self, giant: Option<super::skinned::SkinnedDraw>) {
+        self.stage = giant;
+    }
+
+    /// The players' paints drawn now and your own's key (the Character painter).
+    pub fn set_paints<'a>(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        paints: impl Iterator<Item = (u64, &'a std::sync::Arc<dwell_models::paint::Paint>)>,
+        own: u64,
+    ) {
+        self.skinned.set_paints(device, queue, paints, own);
     }
 
     pub fn has_arms(&self) -> bool {
@@ -2042,6 +2075,9 @@ mod tests {
                         remap: crate::render::skinned::NO_REMAP,
                         idle_pose: None,
                         tint: crate::render::skinned::NO_TINT,
+                        paint: 0,
+                        size: 1.0,
+                        rest: false,
                     };
                     let place = body_matrix(&d, data, [0.0; 3]);
                     let p = dwell_models::anim::Player::new(data, model, "idle");
@@ -2478,6 +2514,7 @@ mod tests {
                 light: [1.0, 0.0],
                 seed: 7,
                 role: "idle",
+                paint: 0,
             };
             let posed = bone_transforms(ch, &d.pose);
             let frame = body_frame(&d, [0.0; 3]);
@@ -2508,6 +2545,7 @@ mod tests {
                 light: [1.0, 0.0],
                 seed: 0,
                 role: "idle",
+                paint: 0,
             };
             let f = body_frame(&d, [0.0; 3]);
             // Yaw 90° faces +x on either face.
@@ -2774,6 +2812,7 @@ mod tests {
                                 .map(|&(r, _)| r)
                                 .find(|&r| r == role)
                                 .unwrap_or("idle"),
+                            paint: 0,
                         };
                         let r = |v: V3| v.map(|c| c as f32);
                         let (right, up, fwd) = (r(basis.right), r(basis.up), r(basis.forward()));
@@ -2939,6 +2978,9 @@ mod tests {
                 remap: crate::render::skinned::NO_REMAP,
                 idle_pose: None,
                 tint: crate::render::skinned::NO_TINT,
+                paint: 0,
+                size: 1.0,
+                rest: false,
             }
         }
 
@@ -2976,6 +3018,7 @@ mod tests {
                                 light: [1.0, 0.0],
                                 seed: 0,
                                 role,
+                                paint: 0,
                             };
                             let own = crate::render::skinned::SkinnedOwn { draw: own_skinned_draw(&d), forward: basis.forward(), body, passes: 1 };
                             let (joints, s) = crate::render::skinned::own_joints(data, model, level, &verts, &own, eye).unwrap();

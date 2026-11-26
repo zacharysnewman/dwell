@@ -4864,3 +4864,20 @@ body.theater-take > #theater-touch {
 .blueprint-panel-row.short {
   color: #ff8a78;
 }
+
+/* The Character painter (ui/characterPainter.ts, docs/CHARACTERS.md §9.4). */
+.character-painter { position: fixed; inset: 0; pointer-events: none; z-index: 30; font: 13px system-ui, sans-serif; color: #f0f8f8; }
+.character-painter[hidden] { display: none; }
+.cp-cross { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 2px #000; }
+.cp-slots { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); display: flex; gap: 6px; pointer-events: auto; }
+.cp-slot { width: 46px; height: 46px; border-radius: 8px; border: 2px solid #0006; color: #fff; font-weight: 700; text-shadow: 0 0 3px #000; cursor: pointer; }
+.cp-slot.on { border-color: #fff; outline: 3px solid #82bd45; }
+.cp-size, .cp-hint { position: absolute; left: 50%; transform: translateX(-50%); background: #241c28c0; padding: 3px 10px; border-radius: 6px; }
+.cp-size { bottom: 84px; }
+.cp-hint { top: 14px; }
+.cp-palette { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: grid; grid-template-columns: repeat(8, 40px); gap: 6px; padding: 12px; background: #241c28e6; border-radius: 10px; pointer-events: auto; }
+.cp-palette[hidden] { display: none; }
+.cp-swatch { width: 40px; height: 40px; border-radius: 6px; border: 2px solid #0006; cursor: pointer; }
+.cp-swatch.on { border-color: #fff; }
+.cp-reset { grid-column: 1 / -1; margin-top: 4px; padding: 6px; border-radius: 6px; border: 1px solid #f0f8f855; background: transparent; color: inherit; cursor: pointer; }
+body.character-painting > *:not(#view):not(#character-painter) { visibility: hidden !important; }

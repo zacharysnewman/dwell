@@ -1570,6 +1570,89 @@ impl Client {
             .map_err(|e| JsValue::from_str(&e))?;
         Ok(path.to_json().to_string())
     }
+    /// Opens the Character painter (docs/CHARACTERS.md §9.4): your paint on a 30 m giant on an
+    /// empty stage, the free camera in front of it (fly it with `theaterFly`). False if it was
+    /// open or the game hasn't started.
+    #[wasm_bindgen(js_name = openPainter)]
+    pub fn open_painter(&self) -> bool {
+        let mut s = self.inner.borrow_mut();
+        s.game.as_mut().is_some_and(|g| g.open_painter())
+    }
+    /// Closes the painter; `keep`: its paint becomes yours (drawn, sent to the others; save it
+    /// with `ownLook`).
+    #[wasm_bindgen(js_name = closePainter)]
+    pub fn close_painter(&self, keep: bool) -> bool {
+        let mut s = self.inner.borrow_mut();
+        s.game.as_mut().is_some_and(|g| g.close_painter(keep))
+    }
+    /// A painter action at the crosshair: `brush` (slot, radius in cm), `fill` (slot), `end` (a
+    /// stroke's end), `undo`, `redo`, `reset`. Whether the paint changed.
+    pub fn paint(&self, op: &str, slot: u8, radius_cm: u16) -> bool {
+        use crate::game::PaintOp;
+        let op = match op {
+            "brush" => PaintOp::Brush { slot, radius_cm },
+            "fill" => PaintOp::Fill { slot },
+            "end" => PaintOp::EndStroke,
+            "undo" => PaintOp::Undo,
+            "redo" => PaintOp::Redo,
+            "reset" => PaintOp::Reset,
+            _ => return false,
+        };
+        let mut s = self.inner.borrow_mut();
+        s.game.as_mut().is_some_and(|g| g.paint(op))
+    }
+    /// A painter slot's colour (a ramp of `paintRamps`). Whether it changed.
+    #[wasm_bindgen(js_name = paintSlot)]
+    pub fn paint_slot(&self, k: usize, ramp: &str) -> bool {
+        let mut s = self.inner.borrow_mut();
+        s.game.as_mut().is_some_and(|g| g.paint_slot(k, ramp))
+    }
+    /// The open painter's slots as JSON (an array of ramp names), or "null".
+    #[wasm_bindgen(js_name = painterSlots)]
+    pub fn painter_slots(&self) -> String {
+        let s = self.inner.borrow();
+        let slots = s.game.as_ref().and_then(|g| g.painter_slots());
+        serde_json::to_string(&slots).unwrap_or_default()
+    }
+    /// The ramps a slot can take, as JSON `[[name, "#rrggbb"], ...]` (the art palette).
+    #[wasm_bindgen(js_name = paintRamps)]
+    pub fn paint_ramps(&self) -> String {
+        let list: Vec<(&str, String)> = dwell_models::PAINT_RAMPS
+            .iter()
+            .map(|n| {
+                (
+                    *n,
+                    format!("#{:06x}", dwell_models::ramp_base(n).unwrap_or(0)),
+                )
+            })
+            .collect();
+        serde_json::to_string(&list).unwrap_or_default()
+    }
+    /// Your look as JSON `{slots, faces}` (faces as a run string), or "null": for the device's store.
+    #[wasm_bindgen(js_name = ownLook)]
+    pub fn own_look(&self) -> String {
+        let s = self.inner.borrow();
+        let look = s
+            .game
+            .as_ref()
+            .and_then(|g| g.looks.own().map(|(_, p)| crate::looks::to_json(p)));
+        look.map_or_else(|| "null".into(), |v| v.to_string())
+    }
+    /// Your look from the device's store (`ownLook`'s JSON; "null" or one that doesn't fit the
+    /// model: the model's colours). Whether it was taken.
+    #[wasm_bindgen(js_name = setOwnLook)]
+    pub fn set_own_look(&self, json: &str) -> bool {
+        let paint = serde_json::from_str(json)
+            .ok()
+            .and_then(|v| crate::looks::from_json(&v));
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = &mut s.game else {
+            return false;
+        };
+        let ok = paint.is_some();
+        g.set_own_look(paint);
+        ok
+    }
     /// Theater mode's free-fly camera (docs/THEATER_MODE.md §2): moves the placed view (from the
     /// player's eyes the first time) by `forward`, `right` and `up` metres along its face-local
     /// look, and turns it by `yaw`/`pitch` degrees (pitch held within ±89°). The body stays put.

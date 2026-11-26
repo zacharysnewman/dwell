@@ -11,6 +11,7 @@ pub mod damage;
 pub mod defeat;
 pub mod fragment;
 pub mod inventory;
+pub mod looks;
 pub mod markers;
 mod messages;
 pub mod modes;

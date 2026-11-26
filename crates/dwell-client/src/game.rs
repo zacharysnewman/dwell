@@ -298,6 +298,10 @@ pub trait Scene: TerrainRenderer {
     fn set_debug_lines(&mut self, lines: Option<&[Line]>);
     /// The LOD colour map's rings this frame (ARCHITECTURE.md §6.6 "Colour map"), or none (off).
     fn set_lod_map(&mut self, _map: Option<&crate::lod_map::LodMap>) {}
+    /// The players' looks (the Character painter): each body's paint.
+    fn set_paints(&mut self, _looks: &crate::looks::Looks) {}
+    /// The Character painter's empty stage (None: the world as usual): the giant drawn alone.
+    fn set_stage(&mut self, _giant: Option<crate::looks::StageGiant>) {}
     /// A strip of ring `ring` rasterised: world texels `rect`, rgba8 sRGB rows of x.
     fn lod_map_tile(&mut self, _ring: usize, _rect: crate::lod_map::Rect, _rgba: &[u8]) {}
     /// Whether the clouds' shape noise is wanted and not yet asked for (docs/CLOUDS.md §9.4): the
@@ -863,6 +867,8 @@ pub struct LodSettings {
 }
 
 mod blueprints;
+mod looks;
+pub use looks::PaintOp;
 pub mod streaming_report;
 
 pub struct Game<S: Scene> {
@@ -1177,6 +1183,9 @@ pub struct Game<S: Scene> {
     /// aimed one's ghost and panel, the held Place's pace.
     pub(crate) blueprints: crate::blueprints::ClientBlueprints,
     blueprints_synced: bool,
+    /// Players' looks (the Character painter, `players.looks`): others' by player id, yours, and
+    /// whether the server takes them and yours is still to go.
+    pub(crate) looks: crate::looks::Looks,
     /// The server takes `BodyHold` (`bodies.hold`).
     body_hold: bool,
     /// Since when interact has been held (ms), and when the last `BodyHold` went.
@@ -1424,6 +1433,7 @@ impl<S: Scene> Game<S> {
             markers_in: None,
             blueprints: Default::default(),
             blueprints_synced: false,
+            looks: Default::default(),
             body_hold: false,
             interact_since: None,
             body_hold_sent_ms: f64::NEG_INFINITY,
@@ -2502,6 +2512,7 @@ impl<S: Scene> Game<S> {
             }
             Message::Markers(m) => self.markers_in = Some(m),
             Message::Blueprints(m) => self.blueprints.apply(m),
+            Message::Looks(list) => self.looks.apply(list),
             Message::Swordplay(dwell_protocol::SwordplayMessage::Guards(list)) => {
                 for g in list {
                     self.remote_guards.insert(g.who, (g.vertical, g.raised));
@@ -3272,6 +3283,7 @@ impl<S: Scene> Game<S> {
         self.set_hits_at_contact(has(c::HITS_AT_CONTACT));
         self.set_markers_synced(has(c::MARKERS_PRIVATE));
         self.set_blueprints_synced(has(c::BLUEPRINTS_WORLD));
+        self.set_looks_synced(has(c::PLAYERS_LOOKS));
         self.set_body_hold(has(c::BODIES_HOLD));
     }
 
@@ -5615,6 +5627,11 @@ impl<S: Scene> Game<S> {
             if n > 0 {
                 telemetry::add(remesh_name(name), n as f64);
             }
+        }
+        // Players' looks changed: the renderer's paints (the Character painter).
+        if self.looks.drawn_dirty {
+            self.looks.drawn_dirty = false;
+            self.scene.borrow_mut().set_paints(&self.looks);
         }
         // Queued region edits (a brush stroke) as the server's cell rate allows.
         self.pump_region(now_ms);

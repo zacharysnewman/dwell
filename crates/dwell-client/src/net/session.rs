@@ -782,6 +782,7 @@ impl Session {
                     | Message::Swordplay(_)
                     // The server sends the world's blueprints on the world channel (BUGS.md #183).
                     | Message::Blueprints(_)
+                    | Message::Looks(_)
             ) && (self.joined()
                 || self.worldgen_wait.is_some()
                 || matches!(self.state, SessionState::Confirming { .. }))
