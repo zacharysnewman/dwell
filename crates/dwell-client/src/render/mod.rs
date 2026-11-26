@@ -40,6 +40,8 @@ pub mod staged;
 pub mod streaming;
 pub mod timing;
 pub mod tree_fade;
+#[cfg(test)]
+mod tree_once;
 pub mod upscale;
 pub mod water;
 pub mod water_tiles;
@@ -1193,6 +1195,9 @@ struct Chunk {
     opaque: Option<GpuMesh>,
     water: Option<GpuMesh>,
     cutout: Option<GpuMesh>,
+    /// Its opaque mesh's listed trees' logs, tree by tree: each tree's anchor (face-local) and
+    /// index range (`dwell_mesh::tree_log_ranges`), drawn while their tree is (BUGS.md #197).
+    tree_logs: Vec<([i32; 3], std::ops::Range<u32>)>,
 }
 
 /// `Part::Facing`'s bit for the listed trees' logs (`MeshArrays::tree_logs`): left out past the
@@ -1244,6 +1249,9 @@ enum Part {
     /// The opaque mesh's facing groups in the mask (`dwell_mesh::facing_mask`): the ones that can
     /// face the camera; the rest would be culled after their vertices were shaded.
     Facing(u8),
+    /// [`Part::Facing`] with the listed trees' logs of the trees drawn as themselves, not as
+    /// their impostors (`impostors::tree_logs_drawn`, BUGS.md #197), in place of all of them.
+    FacingTrees(u8),
     /// The cutout mesh past `blades::BILLBOARD_M`: its plants' first quads (each a card turned to
     /// the eye there) and its trees' leaves, without the plants' other quads.
     CutoutCards,
@@ -1397,6 +1405,11 @@ impl TerrainRenderer for RasterTerrain {
         }
         let chunk = Chunk {
             origin: chunk_origin_m(coord),
+            tree_logs: if opaque.is_some() {
+                dwell_mesh::tree_log_ranges(&m.opaque)
+            } else {
+                Vec::new()
+            },
             opaque,
             water,
             cutout,
@@ -4289,7 +4302,7 @@ impl Renderer {
             DrawMesh::Chunk(c, part) => {
                 let chunk = &self.terrain.chunks[c];
                 let m = match part {
-                    Part::Opaque | Part::Facing(_) => chunk.opaque.as_ref(),
+                    Part::Opaque | Part::Facing(_) | Part::FacingTrees(_) => chunk.opaque.as_ref(),
                     Part::Water => chunk.water.as_ref(),
                     Part::Cutout
                     | Part::Plants
@@ -4300,6 +4313,25 @@ impl Renderer {
                 .expect("collected");
                 match part {
                     Part::Facing(mask) => (m, facing_draws(&m.parts, *mask)),
+                    Part::FacingTrees(mask) => {
+                        let face = FaceFrame::at_row(c.y * dwell_world::CHUNK_SIZE);
+                        let fades = self
+                            .impostors
+                            .as_ref()
+                            .filter(|_| face == self.face)
+                            .map(|i| &i.fades);
+                        let far = self.far_drawn();
+                        let mut r = facing_draws(&m.parts, *mask & !TREE_LOGS_BIT);
+                        let trees = chunk.tree_logs.iter().filter(|(a, _)| {
+                            // A tree on the other face has no impostor drawn: its own.
+                            let share = fades.map_or(1.0, |f| {
+                                f.share_at(f64::from(a[0]) + 0.5, f64::from(a[2]) + 0.5)
+                            });
+                            impostors::tree_logs_drawn(far, share)
+                        });
+                        r.extend(trees.map(|(_, x)| x.clone()));
+                        (m, merge_ranges(r))
+                    }
                     Part::PlantCards | Part::CutoutCards => {
                         let cards = m.parts.get(2).unwrap_or(&m.parts[0]).clone();
                         let mut r = vec![cards];
@@ -4387,17 +4419,9 @@ impl Renderer {
             let offset = [r[0], r[1], r[2], 1.0];
             if c.opaque.is_some() {
                 // Only the facing groups that can face the eye (the eye from the chunk's corner).
-                // Past the far trees' hand-over its trees' logs are their impostors' to draw.
-                let logs = far.is_none_or(|_| {
-                    let d2: f64 = (0..3)
-                        .map(|k| {
-                            let lo = f64::from(r[k]);
-                            let d = (-lo).clamp(0.0, CHUNK_EXTENT_M[k]) + lo;
-                            d * d
-                        })
-                        .sum();
-                    impostors::cutout_draw(far, d2.sqrt() as f32) == impostors::CutoutDraw::All
-                });
+                // With impostors, a listed tree's logs draw while the tree does, not its
+                // impostor (`Part::FacingTrees`, BUGS.md #197).
+                let logs = far.is_none() || c.tree_logs.is_empty();
                 let facing = if self.facing_cull {
                     dwell_mesh::facing_mask(
                         std::array::from_fn(|k| self.eye[k] - c.origin[k]),
@@ -4420,7 +4444,14 @@ impl Renderer {
                     page: 0,
                     passes,
                     key: 0,
-                    mesh: DrawMesh::Chunk(coord, Part::Facing(facing)),
+                    mesh: DrawMesh::Chunk(
+                        coord,
+                        if logs {
+                            Part::Facing(facing)
+                        } else {
+                            Part::FacingTrees(facing)
+                        },
+                    ),
                 });
             }
             // The chunk's nearest point from the eye, for the far trees' hand-over.
@@ -7998,6 +8029,8 @@ mod tests {
             stage: 7,
             stem: [0, 100, 0],
             stem_cells: 4,
+            columns: [-4, -4, 4, 4],
+            rows: [100, 140],
         };
         let local = r.face.point(r.eye);
         for (i, k) in impostors::tiles_within([local[0], local[2]], impostors::ready_radius(&far)) {

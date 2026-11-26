@@ -1,0 +1,188 @@
+//! BUGS.md #197's invariant (owner, 2026-11-23: "We likely need better (non-visual) testing around
+//! this"): every listed tree is drawn exactly once, its real cells (leaves and logs) or its
+//! impostor, never both and never neither once a switch's fade is done, for every species, growth
+//! stage (each world day's: `FarTree::grown_by` picks one), seed variant and distance, coming and
+//! going, on both faces. Decided by the renderer's own rules over the same data: the chunk
+//! meshers' ownership (`tree_tint::owner` over the generator's box, `terrain::grown_bounds`), the
+//! fade map (`TreeFades`, the CPU twin of the shaders' `tree_near_at`), a chunk's cutout draw
+//! (`impostors::cutout_draw`), the leaves' vertex drop past their reach (`card_dropped`), the logs'
+//! rule (`impostors::tree_logs_drawn`) and the impostor's own lookup (`imp_vs`).
+
+use std::collections::HashMap;
+
+use dwell_world::FaceFrame;
+use dwell_world::tree_tint::{Tint, TreeTint, owner};
+use dwell_worldgen::impostor::{Config, Far, FarTree};
+use dwell_worldgen::species::{Part, SPECIES, grow};
+
+use super::impostors::{self, CutoutDraw};
+use super::tree_fade::{self, TreeFades};
+use dwell_world::{CHUNK_EXTENT_M, chunk_origin_m};
+
+/// The anchor's row: a tree on high ground, face-local.
+const ROW: i32 = 1200;
+
+fn far() -> Far {
+    Config::get().far("on").expect("the on tier")
+}
+
+/// A tree's cells as the server places them (face-local cells) and whether the meshers own each
+/// to it, its fade-map tree, and its far tree.
+struct Fixture {
+    cells: Vec<([i32; 3], Part, bool)>,
+    tree: tree_fade::Tree,
+}
+
+fn fixture(
+    config: &Config,
+    layers: &mut HashMap<u32, [f32; 4]>,
+    s: u16,
+    seed: u32,
+    stage: u32,
+) -> Fixture {
+    let anchor = [0, ROW, 0];
+    let sp = &SPECIES[usize::from(s)];
+    let grown = grow(sp, seed, stage);
+    let (gmin, gmax) = dwell_worldgen::terrain::grown_bounds(s, seed).expect("a species tree");
+    let (mut min, mut max) = (gmin, gmax);
+    // The placed cells' bounds too, as `tree_box` widens them.
+    for c in grown.cells.keys() {
+        for a in 0..3 {
+            min[a] = min[a].min(c[a]);
+            max[a] = max[a].max(c[a]);
+        }
+    }
+    let abs = |c: [i32; 3]| std::array::from_fn(|a| anchor[a] + c[a]);
+    let tint = TreeTint {
+        anchor,
+        min: abs(min),
+        max: abs(max),
+        tint: Tint::NONE,
+    };
+    let far_tree = FarTree {
+        anchor,
+        species: s,
+        seed,
+        stage,
+        stem: anchor,
+        stem_cells: 1,
+        columns: [tint.min[0], tint.min[2], tint.max[0], tint.max[2]],
+        rows: [tint.min[1], tint.max[1]],
+    };
+    let list = [tint];
+    let cells = grown
+        .cells
+        .iter()
+        .map(|(&c, &p)| {
+            let at = abs(c);
+            (at, p, owner(&list, at).is_some())
+        })
+        .collect();
+    let inst = config.instances(&[far_tree])[0];
+    let layer = *layers.entry(inst.layer).or_insert_with(|| {
+        let b = config.bake_layer(inst.layer, 8).expect("a layer");
+        [b.centre[1], b.radius, 1.0, 0.0]
+    });
+    Fixture {
+        cells,
+        tree: impostors::fade_tree(&inst, far_tree.columns, far_tree.rows, layer),
+    }
+}
+
+/// The nearest point (m) of the chunk holding face-local cell `c` from the eye `e` (world).
+fn chunk_distance(face: FaceFrame, c: [i32; 3], e: [f64; 3]) -> f32 {
+    let w = face.cell(c);
+    let o = chunk_origin_m(dwell_world::chunk_of(w[0], w[1], w[2]));
+    let d2: f64 = (0..3)
+        .map(|k| {
+            let lo = o[k] - e[k];
+            let d = (-lo).clamp(0.0, CHUNK_EXTENT_M[k]) + lo;
+            d * d
+        })
+        .sum();
+    d2.sqrt() as f32
+}
+
+/// What of a tree draws with the eye at `e` (world), its fade map settled: its real cells drawn
+/// and its impostor's share.
+fn drawn(face: FaceFrame, far: Far, fades: &TreeFades, x: &Fixture, e: [f64; 3]) -> (usize, f32) {
+    let t = &x.tree;
+    let share = |c: [i32; 3]| fades.share_at(f64::from(c[0]) + 0.5, f64::from(c[2]) + 0.5);
+    let tree_share = share(t.key);
+    let cell_h = dwell_world::CELL_H;
+    let mut real = 0;
+    for &(c, part, owned) in &x.cells {
+        let d_chunk = chunk_distance(face, c, e);
+        let shown = match part {
+            Part::Leaf => {
+                let centre = face.point([
+                    f64::from(c[0]) + 0.5,
+                    (f64::from(c[1]) + 0.5) * cell_h,
+                    f64::from(c[2]) + 0.5,
+                ]);
+                let d = (0..3)
+                    .map(|k| (centre[k] - e[k]).powi(2))
+                    .sum::<f64>()
+                    .sqrt() as f32;
+                let chunk = impostors::cutout_draw(Some(far), d_chunk) == CutoutDraw::All;
+                if !owned {
+                    chunk
+                } else {
+                    chunk && d <= tree_fade::leaves_reach(&far) + 2.0 && share(c) > 0.0
+                }
+            }
+            Part::Log(..) => !owned || impostors::tree_logs_drawn(Some(far), tree_share),
+        };
+        real += usize::from(shown);
+    }
+    let impostor = if t.baked && tree_share < 0.999 {
+        1.0 - tree_share
+    } else {
+        0.0
+    };
+    (real, impostor)
+}
+
+dwell_world::both_faces! {
+    fn every_far_tree_is_drawn_once_at_every_distance_stage_and_variant(face: FaceFrame) {
+        let config = Config::get();
+        let far = far();
+        let mut layers = HashMap::new();
+        let mut failures: Vec<String> = Vec::new();
+        let mut checked = 0usize;
+        for s in 0..SPECIES.len() as u16 {
+            for stage in 0..SPECIES[usize::from(s)].stages {
+                for seed in [1u32, 77, 4242, 0xdead_beef] {
+                    let x = fixture(config, &mut layers, s, seed, stage);
+                    let t = x.tree;
+                    let centre = [t.foot[0], t.foot[1] + t.centre_y, t.foot[2]].map(f64::from);
+                    let mut fades = TreeFades::new(tree_fade::window());
+                    let mut now = 0.0;
+                    // In from 110 m to 6 m, then back out: both sides of the hysteresis.
+                    let path = (6..=110).rev().chain(6..=110);
+                    for (step, d) in path.enumerate() {
+                        let coming = step < 105;
+                        let e = face.point([centre[0] - f64::from(d), centre[1], centre[2]]);
+                        for dt in [0.0, 5.0] {
+                            now += dt;
+                            fades.update(now, face, e, &far, || Box::new(std::iter::once(t)), |_| true);
+                        }
+                        let (real, impostor) = drawn(face, far, &fades, &x, e);
+                        checked += 1;
+                        let all = x.cells.len();
+                        let ok = if impostor > 0.0 { real == 0 } else { real == all };
+                        if !ok && failures.len() < 12 {
+                            failures.push(format!(
+                                "{} stage {stage} seed {seed} at {d} m {}: {real} of {all} real cells drawn, impostor {impostor}",
+                                SPECIES[usize::from(s)].name,
+                                if coming { "coming" } else { "going" },
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(checked > 0);
+        assert!(failures.is_empty(), "{} checks; drawn other than once:\n{}", checked, failures.join("\n"));
+    }
+}

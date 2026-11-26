@@ -1,0 +1,7 @@
+{
+  "changes": [
+    "Far trees no longer show a trunk under their billboard when they're 55–90 m away.",
+    "Leaves on big trees no longer show through a billboard or go missing at the hand-over distance.",
+    "The biggest trees switch to their billboard a little sooner, so none of their leaves are cut off."
+  ]
+}

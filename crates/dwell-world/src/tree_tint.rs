@@ -69,12 +69,21 @@ impl TreeTint {
 }
 
 /// The tree owning cell `c`: of those whose bounds hold it, the one whose anchor is nearest
-/// across (x, z), then along y, then the least anchor — independent of the list's order.
+/// across (x, z), then the least anchor — independent of the list's order. By column alone
+/// ([`column_rank`]), so the far trees' hand-over map, a column a texel, owns the same column by
+/// the same rule (BUGS.md #197).
 pub fn owner(trees: &[TreeTint], c: [i32; 3]) -> Option<&TreeTint> {
-    trees.iter().filter(|t| t.holds(c)).min_by_key(|t| {
-        let d = |a: usize| i64::from(c[a] - t.anchor[a]);
-        (d(0) * d(0) + d(2) * d(2), d(1).abs(), t.anchor)
-    })
+    trees
+        .iter()
+        .filter(|t| t.holds(c))
+        .min_by_key(|t| column_rank(t.anchor, c[0], c[2]))
+}
+
+/// How a tree anchored at `anchor` ranks for column (`x`, `z`) among those whose box holds it,
+/// the least owning: its squared distance across, then its anchor.
+pub fn column_rank(anchor: [i32; 3], x: i32, z: i32) -> (i64, [i32; 3]) {
+    let (dx, dz) = (i64::from(x - anchor[0]), i64::from(z - anchor[2]));
+    (dx * dx + dz * dz, anchor)
 }
 
 /// The tint of cell `c`: its owning tree's, else [`Tint::NONE`].

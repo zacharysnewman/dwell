@@ -4084,14 +4084,7 @@ impl TerrainGenerator {
                     .map_or(dwell_world::tree_tint::Tint::NONE, |s| {
                         crate::species::tint(s, seed)
                     });
-                let placed = p.place(&t);
-                let (mut min, mut max) = (placed.min, placed.max);
-                if let Some((gmin, gmax)) = grown_bounds(i, seed) {
-                    for a in 0..3 {
-                        min[a] = min[a].min(t.anchor[a] + gmin[a]);
-                        max[a] = max[a].max(t.anchor[a] + gmax[a]);
-                    }
-                }
+                let (min, max) = tree_box(p, &t, i, seed);
                 Some(TreeTint {
                     anchor: t.anchor,
                     min,
@@ -4127,6 +4120,7 @@ impl TerrainGenerator {
                 let p = &self.planters[t.planter as usize];
                 let (species, seed, stage) = p.far_tree(&t)?;
                 let (stem, stem_cells) = p.stem(&t);
+                let (min, max) = tree_box(p, &t, species, seed);
                 Some(crate::impostor::FarTree {
                     anchor: t.anchor,
                     species,
@@ -4134,6 +4128,8 @@ impl TerrainGenerator {
                     stage,
                     stem,
                     stem_cells,
+                    columns: [min[0], min[2], max[0], max[2]],
+                    rows: [min[1], max[1]],
                 })
             })
             .collect();
@@ -6390,6 +6386,26 @@ mod spawn_tests {
     );
 }
 
+/// A listed tree's box (face-local cells, inclusive): its placed cells' bounds widened to its
+/// species' full-grown reach (BUGS.md #197). The meshers own its cells by it (`tree_tints`) and
+/// the far trees' hand-over its columns (`FarTree::columns`): one box for both.
+fn tree_box(
+    p: &crate::placements::Planter,
+    t: &crate::placements::Tree,
+    species: u16,
+    seed: u32,
+) -> ([i32; 3], [i32; 3]) {
+    let placed = p.place(t);
+    let (mut min, mut max) = (placed.min, placed.max);
+    if let Some((gmin, gmax)) = grown_bounds(species, seed) {
+        for a in 0..3 {
+            min[a] = min[a].min(t.anchor[a] + gmin[a]);
+            max[a] = max[a].max(t.anchor[a] + gmax[a]);
+        }
+    }
+    (min, max)
+}
+
 /// How far (cells) past its generated box a tree the server grew on can reach: the widest
 /// full-grown crown's half-width, for the trees a chunk asks for (BUGS.md #197).
 const GROWN_REACH: i32 = 16;
@@ -6397,7 +6413,7 @@ const GROWN_REACH: i32 = 16;
 /// A species tree's full-grown cells' box about its anchor (cells; x and z symmetric, as its turn
 /// is unknown here): the most any of its stages reaches. Memoised by (species, seed). None for a
 /// hand-built tree (no species).
-fn grown_bounds(species: u16, seed: u32) -> Option<([i32; 3], [i32; 3])> {
+pub fn grown_bounds(species: u16, seed: u32) -> Option<([i32; 3], [i32; 3])> {
     use std::collections::HashMap;
     use std::sync::{Mutex, OnceLock};
     type Bounds = ([i32; 3], [i32; 3]);
