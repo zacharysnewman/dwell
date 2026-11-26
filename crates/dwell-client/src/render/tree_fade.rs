@@ -128,11 +128,17 @@ pub struct Tree {
     pub baked: bool,
 }
 
+/// The most (m) a big tree switches sooner than its crown's distance says ([`switch_distance`];
+/// owner, 2026-11-25: "Cap + true-size billboards"): a giant is its real self again within `inM`
+/// less this, its top past [`leaves_reach`] dropped while it is.
+pub const EARLY_SWITCH_M: f32 = 16.0;
+
 /// The distance (m) a tree switches by, the eye at `e` (face-local): its crown's centre's, or, for
 /// a tree whose box reaches farther than [`CROWN_M`] from it, its box's farthest point's less
 /// `CROWN_M`, so a near tree's every leaf lies within [`leaves_reach`] (BUGS.md #197: a big crown's
-/// far leaves, past the reach, were dropped while the tree was near; the crown's centre is its
-/// baked variant's, and a giant grows far past it).
+/// far leaves, past the reach, were dropped while the tree was near), but never more than
+/// [`EARLY_SWITCH_M`] past its crown's (a giant's box never came within the reach, so 0.76.20 kept
+/// it its billboard at every distance).
 pub fn switch_distance(t: &Tree, e: [f64; 3]) -> f32 {
     let c = [t.foot[0], t.foot[1] + t.centre_y, t.foot[2]].map(f64::from);
     let crown = (0..3).map(|k| (c[k] - e[k]).powi(2)).sum::<f64>().sqrt();
@@ -151,7 +157,8 @@ pub fn switch_distance(t: &Tree, e: [f64; 3]) -> f32 {
         .map(|k| (e[k] - lo[k]).abs().max((e[k] - hi[k]).abs()).powi(2))
         .sum::<f64>()
         .sqrt();
-    crown.max(farthest - f64::from(CROWN_M)) as f32
+    let early = (farthest - f64::from(CROWN_M)).min(crown + f64::from(EARLY_SWITCH_M));
+    crown.max(early) as f32
 }
 
 /// The chunk whose mesh holds a tree's real foot: the ground cell under its trunk (face-local, a

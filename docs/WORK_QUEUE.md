@@ -287,6 +287,14 @@ context) at a time with a choice to table it as well as the other options?" Answ
      `tree_tint::column_rank`). Test: `render/tree_once.rs`, every species, stage, variant and distance, coming and
      going, both faces. **Owner should see:** flying over and through forests at any day, no tree drawn as billboard
      and full tree at once, no trunk beside or under a billboard.
+     Owner (2026-11-25): "Make a before and after forest flythrough, slow, like 10m/s." **Owner should see:** two
+     videos (or one side by side), the same slow ~10 m/s flight through a forest on 0.76.18 (before) and 0.76.19
+     (after): trunks under billboards and doubled crowns in the first, none in the second. Sent 2026-11-25 (40 s, 10 m/s,
+     93 m over test:forest, 0.76.19 above 0.76.20). It showed a regression: a giant pine stayed a normal-size billboard
+     up close in 0.76.20 (BUGS.md #197). Asked how big trees should trade off; owner: "Cap + true-size billboards": a
+     tree switches at most ~16 m sooner for its size (a giant is real again within ~40 m; its top past 70 m may lose
+     leaves while real), and each billboard is scaled to its real tree's size. **Owner should see:** the giants real
+     when near, and far giants drawn giant-sized as billboards.
   5. Section 4, blocks: the door and ladder recipes; the hit-rule table for the owner; tall grass at most three cells,
      drawn as one connected stalk (#192); particles scaled with the hit; leafy trees' leaves fading up close (#225).
   6. Section 3: the creative water bucket (sources added and removed, marked while held).
