@@ -125,7 +125,7 @@ pub fn fade_tree(
             inst.foot[2].floor() as i32,
         ],
         foot: inst.foot,
-        centre_y: layer[0],
+        centre_y: layer[0] * inst.scale,
         columns,
         rows,
         baked: layer[2] > 0.5,
@@ -368,7 +368,8 @@ pub fn pack(face: FaceFrame, inst: &Instance, tint: [f32; 3]) -> [u8; INSTANCE_B
     for (k, c) in tint.iter().enumerate() {
         out[16 + k] = ((c * 0.5).clamp(0.0, 1.0) * 255.0).round() as u8;
     }
-    out[19] = 255;
+    // The billboard's scale (`Instance::scale`) in the tint's fourth byte: 4 × byte / 255.
+    out[19] = ((inst.scale / 4.0).clamp(0.0, 1.0) * 255.0).round() as u8;
     out
 }
 
@@ -545,8 +546,10 @@ fn imp_vs(v: ImpIn, @builtin(vertex_index) vi: u32) -> ImpOut {
     let q = (v.packed >> 16u) & 3u;
     let info = imp_layers[layer];
     let face = imp.eye.w;
-    let centre = v.foot + face_up(face) * info.x - imp.eye.xyz;
-    let r = info.y;
+    // Scaled to its real tree's size (the tint's fourth byte, `pack`; owner 2026-11-25).
+    let scale = v.tint.a * 4.0;
+    let centre = v.foot + face_up(face) * info.x * scale - imp.eye.xyz;
+    let r = info.y * scale;
     // Toward the eye from the centre, in the baked tree's frame (the turn undone).
     let d = imp_turn(face_vector(face, -centre), (4u - q) % 4u);
     let dist = length(centre);
@@ -1397,6 +1400,7 @@ mod tests {
                 foot: [10.5, 140.0, -3.5],
                 layer: 37,
                 quarter_turns: 3,
+                scale: 1.0,
             };
             let b = pack(f, &inst, [1.0, 0.5, 2.0]);
             let rd = |k: usize| f32::from_le_bytes(b[k * 4..k * 4 + 4].try_into().unwrap());

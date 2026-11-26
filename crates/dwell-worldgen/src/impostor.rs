@@ -1092,6 +1092,32 @@ pub fn stem_seen(
     seen
 }
 
+/// A species tree's height (m) grown from `seed` to `stage`: its cells' rows. Memoised (a forest's
+/// trees share their shapes' seeds).
+fn tree_height(species: u16, seed: u32, stage: u32) -> f32 {
+    use std::sync::Mutex;
+    type Heights = HashMap<(u16, u32, u32), f32>;
+    static MEMO: OnceLock<Mutex<Heights>> = OnceLock::new();
+    let memo = MEMO.get_or_init(Default::default);
+    if let Some(&h) = memo.lock().expect("memo").get(&(species, seed, stage)) {
+        return h;
+    }
+    let Some(sp) = crate::species::SPECIES.get(usize::from(species)) else {
+        return 0.0;
+    };
+    let g = grow(sp, seed, stage);
+    let (lo, hi) = g.cells.keys().fold((i32::MAX, i32::MIN), |(lo, hi), c| {
+        (lo.min(c[1]), hi.max(c[1]))
+    });
+    let h = if lo > hi {
+        0.0
+    } else {
+        (hi - lo + 1) as f32 * CELL[1]
+    };
+    memo.lock().expect("memo").insert((species, seed, stage), h);
+    h
+}
+
 /// [`stem_seen`] short of felled: the tree is drawn.
 pub fn standing(tree: &FarTree, held: impl Fn([i32; 3]) -> Option<dwell_blocks::StateId>) -> bool {
     stem_seen(tree, held) != Some(false)
@@ -1105,6 +1131,9 @@ pub struct Instance {
     pub foot: [f32; 3],
     pub layer: u32,
     pub quarter_turns: u32,
+    /// The billboard's scale: the real tree's height over its baked tree's ([`Config::scale_of`];
+    /// owner, 2026-11-25: "true-size billboards"), so a giant's billboard is a giant's.
+    pub scale: f32,
 }
 
 impl Config {
@@ -1162,6 +1191,23 @@ impl Config {
         Some(bake(sp, seed, stage, self, px))
     }
 
+    /// The billboard's scale for `t` (owner, 2026-11-25: "true-size billboards"): its real tree's
+    /// height over the baked tree's it draws ([`Config::baked_for`]: the nearest baked stage, a
+    /// seed variant), within 0.25–3.9 (the instance's byte). A hand-built tree: 1.
+    pub fn scale_of(&self, t: &FarTree) -> f32 {
+        let Some(sp) = crate::species::SPECIES.get(usize::from(t.species)) else {
+            return 1.0;
+        };
+        let (slot, variant) = self.baked_for(t.seed, t.stage);
+        let baked_stage = self.stages[slot].min(sp.stages.saturating_sub(1));
+        let real = tree_height(t.species, t.seed, t.stage);
+        let baked = tree_height(t.species, variant_seed(variant), baked_stage);
+        if baked <= 0.0 {
+            return 1.0;
+        }
+        (real / baked).clamp(0.25, 3.9)
+    }
+
     /// The instances of `trees` (a section's list), in the list's order.
     pub fn instances(&self, trees: &[FarTree]) -> Vec<Instance> {
         trees
@@ -1174,6 +1220,7 @@ impl Config {
                 ],
                 layer: self.layer(t.species, t.seed, t.stage),
                 quarter_turns: (t.seed >> 7).wrapping_mul(0x2545_F491) >> 30,
+                scale: self.scale_of(t),
             })
             .collect()
     }

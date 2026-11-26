@@ -374,6 +374,16 @@ missing while near). Now the map owns columns by the meshers' rule over the same
 pine's leaves 72 m from its baked crown's centre) lost their far leaves past the 70 m leaf reach while the tree was near;
 a tree now switches by its box's farthest point less 10 m when that is farther. Not done: the telemetry counter and
 the bench flight; a giant still draws its baked variant's size as its billboard.
+**Regression found in the before/after video (2026-11-25, 0.76.20):** the third fix makes a giant (a big-seeded pine
+whose full-grown box reaches ~90 m up) its billboard at every distance: its box's farthest point never comes within
+the 70 m leaf reach, so it never switches back, and its billboard is a normal tree's size. A giant 20 m off the
+camera's flight drew in 0.76.19 and was missing in 0.76.20. The test passed because "drawn once" held (as the
+billboard alone); it needs a check that a tree within `inM` is its real self.
+Owner: "Cap + true-size billboards". Fixed 2026-11-25: the early switch is at most 16 m (`EARLY_SWITCH_M`), and each
+billboard is scaled to its real tree's height (`Config::scale_of`, the instance's fourth tint byte). The test now also
+checks that a tree within `inM` − 16 m is real, that a real tree misses only leaves past the reach, and that a
+billboard is its tree's height (within a quarter, or 1 m). Red before: an old-oak giant sapling a billboard at 32 m;
+an oak sapling 2 m tall drawn as a 5–6 m billboard.
 
 ### 196. Realistic's rivers don't start in the mountains
 

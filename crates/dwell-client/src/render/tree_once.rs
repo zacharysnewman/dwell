@@ -31,11 +31,13 @@ fn far() -> Far {
 struct Fixture {
     cells: Vec<([i32; 3], Part, bool)>,
     tree: tree_fade::Tree,
+    /// The billboard's height as drawn (m): its baked tree's, scaled by its instance.
+    billboard_h: f32,
 }
 
 fn fixture(
     config: &Config,
-    layers: &mut HashMap<u32, [f32; 4]>,
+    layers: &mut HashMap<u32, ([f32; 4], f32)>,
     s: u16,
     seed: u32,
     stage: u32,
@@ -79,13 +81,23 @@ fn fixture(
         })
         .collect();
     let inst = config.instances(&[far_tree])[0];
-    let layer = *layers.entry(inst.layer).or_insert_with(|| {
+    let (layer, baked_h) = *layers.entry(inst.layer).or_insert_with(|| {
         let b = config.bake_layer(inst.layer, 8).expect("a layer");
-        [b.centre[1], b.radius, 1.0, 0.0]
+        // The baked tree's height: its cells' rows (bake_cells).
+        let (sp, stage, seed) = config.layer_tree(inst.layer).expect("a layer");
+        let g = grow(&SPECIES[usize::from(sp)], seed, stage);
+        let (lo, hi) = g.cells.keys().fold((i32::MAX, i32::MIN), |(lo, hi), c| {
+            (lo.min(c[1]), hi.max(c[1]))
+        });
+        (
+            [b.centre[1], b.radius, 1.0, 0.0],
+            (hi - lo + 1) as f32 * dwell_world::CELL_H as f32,
+        )
     });
     Fixture {
         cells,
         tree: impostors::fade_tree(&inst, far_tree.columns, far_tree.rows, layer),
+        billboard_h: baked_h * inst.scale,
     }
 }
 
@@ -103,27 +115,34 @@ fn chunk_distance(face: FaceFrame, c: [i32; 3], e: [f64; 3]) -> f32 {
     d2.sqrt() as f32
 }
 
-/// What of a tree draws with the eye at `e` (world), its fade map settled: its real cells drawn
-/// and its impostor's share.
-fn drawn(face: FaceFrame, far: Far, fades: &TreeFades, x: &Fixture, e: [f64; 3]) -> (usize, f32) {
+/// What of a tree draws with the eye at `e` (world), its fade map settled: its real cells drawn,
+/// those not drawn that lie within the leaves' reach, and its impostor's share.
+fn drawn(
+    face: FaceFrame,
+    far: Far,
+    fades: &TreeFades,
+    x: &Fixture,
+    e: [f64; 3],
+) -> (usize, usize, f32) {
     let t = &x.tree;
     let share = |c: [i32; 3]| fades.share_at(f64::from(c[0]) + 0.5, f64::from(c[2]) + 0.5);
     let tree_share = share(t.key);
     let cell_h = dwell_world::CELL_H;
     let mut real = 0;
+    let mut missing_near = 0;
     for &(c, part, owned) in &x.cells {
         let d_chunk = chunk_distance(face, c, e);
+        let centre = face.point([
+            f64::from(c[0]) + 0.5,
+            (f64::from(c[1]) + 0.5) * cell_h,
+            f64::from(c[2]) + 0.5,
+        ]);
+        let d = (0..3)
+            .map(|k| (centre[k] - e[k]).powi(2))
+            .sum::<f64>()
+            .sqrt() as f32;
         let shown = match part {
             Part::Leaf => {
-                let centre = face.point([
-                    f64::from(c[0]) + 0.5,
-                    (f64::from(c[1]) + 0.5) * cell_h,
-                    f64::from(c[2]) + 0.5,
-                ]);
-                let d = (0..3)
-                    .map(|k| (centre[k] - e[k]).powi(2))
-                    .sum::<f64>()
-                    .sqrt() as f32;
                 let chunk = impostors::cutout_draw(Some(far), d_chunk) == CutoutDraw::All;
                 if !owned {
                     chunk
@@ -134,13 +153,17 @@ fn drawn(face: FaceFrame, far: Far, fades: &TreeFades, x: &Fixture, e: [f64; 3])
             Part::Log(..) => !owned || impostors::tree_logs_drawn(Some(far), tree_share),
         };
         real += usize::from(shown);
+        // Past the leaves' reach a leaf is dropped whole: a giant's top may be, while it is real
+        // (owner, 2026-11-25: "Cap + true-size billboards").
+        let reach = tree_fade::leaves_reach(&far) + 2.0;
+        missing_near += usize::from(!shown && (d <= reach || !matches!(part, Part::Leaf)));
     }
     let impostor = if t.baked && tree_share < 0.999 {
         1.0 - tree_share
     } else {
         0.0
     };
-    (real, impostor)
+    (real, missing_near, impostor)
 }
 
 dwell_world::both_faces! {
@@ -149,12 +172,28 @@ dwell_world::both_faces! {
         let far = far();
         let mut layers = HashMap::new();
         let mut failures: Vec<String> = Vec::new();
+        let mut sizes: Vec<String> = Vec::new();
         let mut checked = 0usize;
         for s in 0..SPECIES.len() as u16 {
             for stage in 0..SPECIES[usize::from(s)].stages {
                 for seed in [1u32, 77, 4242, 0xdead_beef] {
                     let x = fixture(config, &mut layers, s, seed, stage);
                     let t = x.tree;
+                    // The billboard is its real tree's size (owner, 2026-11-25): its height within
+                    // a quarter of the real tree's.
+                    let (lo, hi) = x.cells.iter().fold((i32::MAX, i32::MIN), |(lo, hi), (c, _, _)| {
+                        (lo.min(c[1]), hi.max(c[1]))
+                    });
+                    let real_h = (hi - lo + 1) as f32 * dwell_world::CELL_H as f32;
+                    let ratio = x.billboard_h / real_h;
+                    let off = (x.billboard_h - real_h).abs() > 1.0 && !(0.75..=1.33).contains(&ratio);
+                    if off && sizes.len() < 6 {
+                        sizes.push(format!(
+                            "{} stage {stage} seed {seed}: billboard {:.1} m tall, the tree {real_h:.1} m",
+                            SPECIES[usize::from(s)].name,
+                            x.billboard_h
+                        ));
+                    }
                     let centre = [t.foot[0], t.foot[1] + t.centre_y, t.foot[2]].map(f64::from);
                     let mut fades = TreeFades::new(tree_fade::window());
                     let mut now = 0.0;
@@ -167,10 +206,17 @@ dwell_world::both_faces! {
                             now += dt;
                             fades.update(now, face, e, &far, || Box::new(std::iter::once(t)), |_| true);
                         }
-                        let (real, impostor) = drawn(face, far, &fades, &x, e);
+                        let (real, missing_near, impostor) = drawn(face, far, &fades, &x, e);
                         checked += 1;
                         let all = x.cells.len();
-                        let ok = if impostor > 0.0 { real == 0 } else { real == all };
+                        // Within `inM` less the early switch's cap a tree is its real self (BUGS.md
+                        // #197: 0.76.20 kept a giant its billboard at every distance).
+                        let near = (d as f32) < far.in_m - tree_fade::EARLY_SWITCH_M;
+                        let ok = if impostor > 0.0 {
+                            real == 0 && !near
+                        } else {
+                            missing_near == 0
+                        };
                         if !ok && failures.len() < 12 {
                             failures.push(format!(
                                 "{} stage {stage} seed {seed} at {d} m {}: {real} of {all} real cells drawn, impostor {impostor}",
@@ -183,6 +229,7 @@ dwell_world::both_faces! {
             }
         }
         assert!(checked > 0);
+        failures.extend(sizes);
         assert!(failures.is_empty(), "{} checks; drawn other than once:\n{}", checked, failures.join("\n"));
     }
 }

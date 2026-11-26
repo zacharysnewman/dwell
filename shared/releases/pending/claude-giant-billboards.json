@@ -1,0 +1,6 @@
+{
+  "changes": [
+    "Giant trees turn back into real trees up close again; they stayed billboards in 0.76.20.",
+    "Far trees' billboards are now each tree's own size: giants look giant and saplings small."
+  ]
+}
