@@ -352,6 +352,45 @@ pub fn tree_logs_drawn(far: Option<Far>, share: f32) -> bool {
     far.is_none_or(|f| !f.impostor) || share > 0.0
 }
 
+/// The quad's right in the baked tree's frame for the view toward `v` (`imp_basis_right`): level,
+/// so the quad's up is the tree's up seen from `v`.
+fn basis_right(v: [f32; 3]) -> [f32; 3] {
+    let h = (v[0] * v[0] + v[2] * v[2]).sqrt();
+    if h > 1e-6 {
+        [v[2] / h, 0.0, -v[0] / h]
+    } else {
+        [0.0, 0.0, -1.0]
+    }
+}
+
+fn cross3(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+fn dot3(a: [f32; 3], b: [f32; 3]) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+/// Where in its baked view's square (−1..1 each way) a quad point `local` (from the bounding
+/// centre, the baked tree's frame, in radii) draws, the eye toward `dir`: `imp_fs`'s twin. In the
+/// quad's own frame for a ring view, so the tree stands upright on it (BUGS.md #246: projected onto
+/// the nearest view's plane, up to 30° round from the eye's, a tree seen from above leaned by the
+/// difference); the top view, which has no up, projected, so the crown holds still as the eye
+/// circles.
+pub fn quad_uv(config: &Config, local: [f32; 3], dir: [f32; 3]) -> [f32; 2] {
+    let vk = config.views[config.nearest(dir)];
+    let top = vk[0] == 0.0 && vk[2] == 0.0;
+    let len = dot3(dir, dir).sqrt().max(1e-6);
+    let b = if top { vk } else { dir.map(|k| k / len) };
+    let right = basis_right(b);
+    let up = cross3(b, right);
+    [dot3(local, right), dot3(local, up)]
+}
+
 /// Metres past a fade's end a chunk's cutout still draws (a swaying vertex's reach).
 const REACH_MARGIN_M: f32 = 2.0;
 
@@ -602,8 +641,12 @@ fn imp_fs(i: ImpOut) -> ImpOutFs {
     // The view this pixel draws, then the quad point in that view's square.
     let k = imp_nearest(i.dir);
     let vk = imp_view(k);
-    let right = imp_basis_right(vk);
-    let up = cross(vk, right);
+    // The quad's own frame for a ring view, so the tree stands upright (BUGS.md #246: projected
+    // onto the nearest view's plane it leaned as the eye passed); the top view projected
+    // (`quad_uv`, its CPU twin).
+    let b = select(normalize(i.dir), vk, IMP_TOP && k == IMP_NE * IMP_AZ);
+    let right = imp_basis_right(b);
+    let up = cross(b, right);
     let u = dot(i.local, right) / r;
     let v = dot(i.local, up) / r;
     let dbg = u32(imp.debug.x);
@@ -633,7 +676,7 @@ fn imp_fs(i: ImpOut) -> ImpOutFs {
     }
     let nd = textureLoad(imp_normal, cell + t, i.layer, i32(level));
     // The texel's real point: on the view's plane at the sphere's near side, moved back by its depth.
-    let p = right * u * r + up * v * r + vk * r * (1.0 - 2.0 * nd.a);
+    let p = right * u * r + up * v * r + b * r * (1.0 - 2.0 * nd.a);
     let rel = i.centre + face_vector(face, imp_turn(p, i.turns));
     // The hand-over: the near leaves keep the pixels whose noise is under their tree's share
     // (`cutout_fs`), cross-faded in time (render/tree_fade.rs).
@@ -1264,6 +1307,44 @@ impl Impostors {
 
 #[cfg(test)]
 mod tests {
+    /// BUGS.md #246 (owner, 2026-11-25: "shouldn't the billboards not tip side to side?"): a tree
+    /// stands upright on its quad from every side and height: the point straight up the quad from
+    /// its centre draws on its baked view's centre line, whatever the eye's azimuth and elevation.
+    #[test]
+    fn a_billboard_stands_upright_from_every_side_and_height() {
+        // face-a-only: the baked tree's frame; faces cross in by `face_vector` after.
+        let c = Config::get();
+        let mut worst = (0.0f32, 0, 0);
+        for elev in (0..=80).step_by(5) {
+            for az in (0..360).step_by(3) {
+                let (e, a) = ((elev as f32).to_radians(), (az as f32).to_radians());
+                let n = [e.cos() * a.cos(), e.sin(), e.cos() * a.sin()];
+                let right = super::basis_right(n);
+                let up = super::cross3(n, right);
+                let vk = c.views[c.nearest(n)];
+                if vk[0] == 0.0 && vk[2] == 0.0 {
+                    continue; // the top view: no up to stand on
+                }
+                let [u, _] = super::quad_uv(c, up.map(|k| k * 0.8), n);
+                if u.abs() > worst.0 {
+                    worst = (u.abs(), elev, az);
+                }
+            }
+        }
+        assert!(
+            worst.0 < 1e-4,
+            "the quad's up drew {:.3} of its half-width aside (elevation {}°, azimuth {}°)",
+            worst.0,
+            worst.1,
+            worst.2
+        );
+        // The shader draws by the same frame as its twin.
+        let src = super::super::shaders::source(4);
+        assert!(
+            src.contains("let b = select(normalize(i.dir), vk, IMP_TOP && k == IMP_NE * IMP_AZ);")
+        );
+    }
+
     use super::*;
 
     #[test]

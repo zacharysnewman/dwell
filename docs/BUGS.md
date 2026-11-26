@@ -6,6 +6,19 @@ pins it.
 
 ## Open
 
+### 246. Far trees' billboards tip side to side (owner, 2026-11-25)
+
+"Also, shouldn't the billboards not tip side to side?" (watching the before/after forest flythrough). Cause: each
+billboard faces the eye exactly, but draws the nearest baked view (6 azimuths, so up to 30° off), and `imp_fs` projected
+the quad's point onto that view's plane; looking down at a tree off to the side, the two planes' axes mix, so the tree
+leans by about elevation × azimuth offset, and snaps when the nearest view changes. Owner should see: far trees standing
+upright as the camera passes, whatever the pitch.
+**Fixed 2026-11-25 (open until the owner's look):** `imp_fs` reads a ring view in the quad's own frame (its right level,
+its up the tree's), so the trunk stays on the quad's vertical line; the top view, which has no up, still projects.
+Test: `impostors.rs` `a_billboard_stands_upright_from_every_side_and_height` (the CPU twin `quad_uv`, every azimuth and
+elevation to 80°): red before (the quad's up drew 0.79 of its half-width aside), green now; it also pins the shader's
+line.
+
 ### 245. "The world's server ran out of memory" at ~3 GB on a 64 GB Mac (owner, 2026-11-25; tabled)
 
 "On the Mac the game disconnected due to running out of memory on has 64Gb of ram. It was at around 3GB." Tabled by the
